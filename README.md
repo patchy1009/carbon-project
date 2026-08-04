@@ -1,2 +1,2 @@
 # carbon-project
-This was my final year project at university.
+This is my final year project at university.
