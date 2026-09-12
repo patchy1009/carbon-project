@@ -46,15 +46,50 @@ export default function AuthModal({
     }
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginEmail || !loginPassword) {
       setLoginError(true);
       return;
     }
+    
     setLoginError(false);
-    alert("เข้าสู่ระบบสำเร็จ");
-    onClose();
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: loginEmail,
+          password: loginPassword,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setLoginError(true);
+        // สามารถนำข้อมูล error จาก backend มาแสดงผลเพิ่มเติมได้ เช่น บัญชีถูกล็อก
+        return;
+      }
+
+      // ล็อกอินสำเร็จ ตรวจสอบ Role เพื่อเปลี่ยนเส้นทาง
+      onClose();
+      if (data.role === "admin") {
+        window.location.href = "/admin";
+      } else {
+        window.location.href = "/organization/homepage";
+      }
+    } catch (err) {
+      setLoginError(true);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleRegisterSubmit = (e: React.FormEvent) => {
