@@ -520,6 +520,7 @@ export default function DocumentsPage() {
       ========================= */}
       <Modal
         isOpen={isModalOpen}
+        title="เพิ่มเอกสาร"
         onClose={() => {
           if (!isSaving) {
             setIsModalOpen(false);

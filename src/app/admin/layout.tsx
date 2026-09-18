@@ -1,88 +1,119 @@
-"use client";
+// src/app/admin/layout.tsx
+'use client';
 
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 
 const navItems = [
-  { href: "/admin/dashboard", label: "Dashboard" },
-  { href: "/admin/users", label: "ผู้ใช้งาน" },
-  { href: "/admin/abnormal", label: "มอนิเตอร์บัญชี" },
-  { href: "/admin/activities", label: "ข้อมูลกิจกรรม" },
-  { href: "/admin/formula", label: "สูตรคำนวณ" },
-  { href: "/admin/recommendation", label: "แนวทางลดคาร์บอน" },
-  { href: "/admin/guideline", label: "โครงการ T-VER" },
-  { href: "/admin/documents", label: "เอกสาร" },
-  { href: "/admin/allocation", label: "การจัดสรรคาร์บอนเครดิต" },
-  { href: "/admin/tax", label: "ภาษี" },
+  { label: 'EF & GWP Value', href: '/admin/ef-gwp' },
+  { label: 'Activity Management', href: '/admin/activities' },
+  { label: 'สำนักงาน & คำแนะนำ', href: '/admin/officerec' },
+  { label: 'T-VER Project', href: '/admin/tver' },
+  { label: 'Allocation & TAX & Doc', href: '/admin/allotaxdoc' },
 ];
+
+interface AdminProfile {
+  full_name: string;
+  role: string;
+}
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [profile, setProfile] = useState<AdminProfile | null>(null);
+
+  useEffect(() => {
+    async function loadProfile() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from('user_roles')
+        .select('full_name, role')
+        .eq('user_id', user.id)
+        .single();
+
+      if (data) setProfile(data as AdminProfile);
+    }
+    loadProfile();
+  }, []);
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push('/login');
+  }
 
   return (
-    <div className="min-h-screen bg-[#F7FAF8] text-[#25352F]">
-      <header className="sticky top-0 z-40 bg-gradient-to-r from-[#117056] to-[#158C69] text-white shadow-[0_1px_3px_rgba(15,74,59,0.12)]">
-        <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between gap-6 px-6">
-          <Link href="/admin/dashboard" className="flex shrink-0 items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/15 font-bold">C</div>
-            <div className="leading-tight">
-              <p className="font-semibold text-[15px]">Carbon Calculator</p>
-              <p className="text-[11px] text-[#DEF7EC]">Admin</p>
-            </div>
-          </Link>
-
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              aria-label="การแจ้งเตือน"
-              className="relative flex h-9 w-9 items-center justify-center rounded-lg hover:bg-white/10"
-            >
-              <span className="text-lg">♧</span>
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-400 ring-2 ring-[#117056]" />
-            </button>
-
-            <div className="ml-1 flex items-center gap-2 border-l border-white/20 pl-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-xs font-semibold">
-                อว
-              </div>
-              <div className="hidden leading-tight xl:block">
-                <p className="text-[13px] font-medium">อมรรัตน์ วงศ์ดี</p>
-                <p className="text-[11px] text-[#DEF7EC]">ผู้ดูแลระบบ</p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => router.push("/login")}
-              className="ml-2 rounded-lg bg-white/10 px-3 py-1.5 text-[13px] font-medium hover:bg-white/20"
-            >
-              ออกจากระบบ
-            </button>
-          </div>
+    <div className="min-h-screen bg-[#F8FAFC]">
+      {/* Top Navbar */}
+      <header
+        className="fixed top-0 left-0 right-0 z-50 h-[84px] flex items-center justify-between px-8 rounded-bl-[50px]"
+        style={{
+          background: 'linear-gradient(90deg, #2D4A63 0%, #32885F 100%)',
+          boxShadow: '-1px 6px 12.1px rgba(0, 63, 66, 0.81)',
+        }}
+      >
+        <div>
+          <h1 className="text-white font-bold text-2xl leading-[22px] font-['Prompt']">
+            Carbon Calculator
+          </h1>
+          <p className="text-white text-sm font-['Prompt']">Admin</p>
         </div>
 
-        <nav className="mx-auto flex h-11 max-w-[1440px] items-center gap-6 overflow-x-auto border-t border-white/10 px-6 text-[13px] font-medium">
-          {navItems.map((item) => {
-            const active = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`relative whitespace-nowrap pb-0 transition ${
-                  active
-                    ? "text-white after:absolute after:-bottom-[14px] after:left-0 after:right-0 after:h-[3px] after:rounded-t-md after:bg-[#22AD82]"
-                    : "text-[#BAEDD9] hover:text-white"
-                }`}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-[#FF951B] flex items-center justify-center text-white text-sm font-bold font-['Prompt']">
+              {profile?.full_name?.slice(0, 2) ?? '..'}
+            </div>
+            <div className="text-right">
+              <p className="text-white text-base font-semibold leading-5">
+                {profile?.full_name ?? 'กำลังโหลด...'}
+              </p>
+              <p className="text-white text-sm font-light leading-4">
+                {profile?.role ?? ''}
+              </p>
+            </div>
+          </div>
+          <button onClick={handleLogout} aria-label="ออกจากระบบ">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+          </button>
+        </div>
       </header>
 
-      <main className="mx-auto max-w-[1440px] px-6 py-8">{children}</main>
+      <div className="pt-[84px] flex">
+        {/* Sidebar */}
+        <aside className="fixed left-0 top-[84px] bottom-0 w-[179px] bg-white shadow-[0px_4px_4px_rgba(0,0,0,0.3)] overflow-y-auto">
+          <nav className="flex flex-col gap-1 px-3 pt-6 pb-4">
+            {navItems.map((item) => {
+              const isActive = pathname.startsWith(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`rounded-md px-3 py-2.5 text-sm font-medium font-['Sarabun'] ${
+                    isActive ? 'bg-[#F2D84E] text-black' : 'text-black hover:bg-[#F1F5F9]'
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+        </aside>
+
+        {/* Main content */}
+        <main className="ml-[179px] flex-1 min-h-[calc(100vh-84px)]">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }
