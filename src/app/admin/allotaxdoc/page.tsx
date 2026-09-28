@@ -8,7 +8,7 @@ export default async function AlloTaxDocPage() {
   const { data, error } = await supabase
     .from('documents')
     .select('*')
-    .order('created_at');
+    .order('upload_date');
 
   if (error) {
     console.error(error);

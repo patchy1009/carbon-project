@@ -238,8 +238,8 @@ export default function AlloTaxDocClient({
     const { data, error } = await supabase
       .from('documents')
       .insert({
-        title: docName.trim(),
-        link: filePath,
+        document_name: docName.trim(),
+        file_path: filePath,
       })
       .select()
       .single();
@@ -260,38 +260,41 @@ export default function AlloTaxDocClient({
   }
 
   async function handleDeleteDocument(doc: AlloTaxDoc) {
-    if (!confirm(`ลบเอกสาร "${doc.title ?? 'ไม่มีชื่อ'}"?`)) return;
+    if (!confirm(`ลบเอกสาร "${doc.document_name ?? 'ไม่มีชื่อ'}"?`)) return;
 
-    if (doc.link && !/^https?:\/\//i.test(doc.link)) {
+    if (doc.file_path && !/^https?:\/\//i.test(doc.file_path)) {
       const { error: storageError } = await supabase.storage
         .from(BUCKET)
-        .remove([doc.link]);
+        .remove([doc.file_path]);
       if (storageError) {
         alert('ลบไฟล์ไม่สำเร็จ: ' + storageError.message);
         return;
       }
     }
 
-    const { error } = await supabase.from('documents').delete().eq('id', doc.id);
+    const { error } = await supabase
+      .from('documents')
+      .delete()
+      .eq('document_id', doc.document_id);
     if (error) {
       alert('ลบเอกสารไม่สำเร็จ: ' + error.message);
       return;
     }
 
-    setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
+    setDocuments((prev) => prev.filter((d) => d.document_id !== doc.document_id));
   }
 
   async function handleDownloadDocument(doc: AlloTaxDoc) {
-    if (!doc.link) return;
+    if (!doc.file_path) return;
 
-    if (/^https?:\/\//i.test(doc.link)) {
-      window.open(doc.link, '_blank', 'noopener,noreferrer');
+    if (/^https?:\/\//i.test(doc.file_path)) {
+      window.open(doc.file_path, '_blank', 'noopener,noreferrer');
       return;
     }
 
     const { data, error } = await supabase.storage
       .from(BUCKET)
-      .createSignedUrl(doc.link, 3600);
+      .createSignedUrl(doc.file_path, 3600);
 
     if (data?.signedUrl) {
       window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
@@ -301,7 +304,7 @@ export default function AlloTaxDocClient({
     // A public bucket may reject signed URLs while still exposing a public URL.
     const { data: publicUrlData } = supabase.storage
       .from(BUCKET)
-      .getPublicUrl(doc.link);
+      .getPublicUrl(doc.file_path);
 
     if (publicUrlData.publicUrl) {
       window.open(publicUrlData.publicUrl, '_blank', 'noopener,noreferrer');
@@ -578,7 +581,7 @@ export default function AlloTaxDocClient({
 
             {documents.map((doc) => (
               <div
-                key={doc.id}
+                key={doc.document_id}
                 className="flex items-center justify-between gap-4 rounded-xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm"
               >
                 <div className="flex items-center gap-3">
@@ -587,11 +590,11 @@ export default function AlloTaxDocClient({
                   </span>
                   <div className="flex flex-col">
                     <span className="font-['Be_Vietnam_Pro'] text-[11px] font-bold text-[#1E293B]">
-                      {doc.title ?? 'ไม่มีชื่อเอกสาร'}
+                      {doc.document_name ?? 'ไม่มีชื่อเอกสาร'}
                     </span>
                     <span className="text-[11px] text-[#94A3B8]">
-                      {doc.link && !/^https?:\/\//i.test(doc.link)
-                        ? `${extOf(doc.title ?? '') || 'FILE'} • ไฟล์ในระบบ`
+                      {doc.file_path && !/^https?:\/\//i.test(doc.file_path)
+                        ? `${extOf(doc.file_path) || 'FILE'} • ไฟล์ในระบบ`
                         : 'ลิงก์เอกสาร'}
                     </span>
                   </div>

@@ -1,6 +1,7 @@
 export type AlloTaxDoc = {
-  id: string;
-  title: string | null;
-  link: string | null;
-  created_at: string;
+  admin_id?: string | null 
+  document_id: string
+  document_name: string | null
+  file_path: string 
+  upload_date: string
 };
