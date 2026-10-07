@@ -30,7 +30,7 @@ export default function HomePage() {
             {/* ปุ่มลงทะเบียน */}
             <div className="pt-2">
               <Link 
-                href="/register" 
+                href="/organization/register" 
                 className="inline-flex items-center gap-2 bg-[#2d525d] text-white px-6 py-3 rounded-lg text-sm font-medium hover:bg-[#1f3a42] transition shadow-md"
               >
                 ลงทะเบียน
