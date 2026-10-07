@@ -525,6 +525,7 @@ export default function DocumentsPage() {
             setIsModalOpen(false);
           }
         }}
+        title="เพิ่มเอกสาร"
       >
         <div className="w-full max-w-lg">
           <h2 className="mb-4 text-xl font-bold">
