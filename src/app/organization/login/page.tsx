@@ -1,16 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import AuthModal from "@/components/AuthModal";
 
 export default function LoginPage() {
-  const [isOpen, setIsOpen] = useState(true);
   const router = useRouter();
 
   // เมื่อปิด Modal ให้พาย้อนกลับไปหน้าหลัก (Homepage)
   const handleClose = () => {
-    setIsOpen(false);
     router.push("/organization/homepage");
   };
 
@@ -18,9 +15,8 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       {/* Pop-up Login กลางหน้าจอ */}
       <AuthModal 
-        isOpen={isOpen} 
-        onClose={handleClose} 
-        initialMode="login" 
+        isOpen={true} 
+        onClose={handleClose}
       />
 
       {/* ข้อความแสดงเบื้องหลังกรณีฉากหลังโหลด */}

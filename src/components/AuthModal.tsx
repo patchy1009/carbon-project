@@ -1,64 +1,39 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import Modal from "./Modal";
 import { supabase } from "@/lib/supabaseClient";
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialMode?: "login" | "register";
 }
-
-const industries = [
-  { value: "energy", label: "พลังงานและสาธารณูปโภค" },
-  { value: "manufacturing", label: "การผลิตและอุตสาหกรรม" },
-  { value: "services", label: "บริการและการพาณิชย์" },
-];
 
 export default function AuthModal({
   isOpen,
   onClose,
-  initialMode = "login",
 }: AuthModalProps) {
-  // state จัดการขั้นตอนปัจจุบัน: 'login' | 'register' | 'otp'
-  const [step, setStep] = useState<"login" | "register" | "otp">(initialMode);
+  const router = useRouter();
 
   // state ฟอร์ม Login
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginErrorMessage, setLoginErrorMessage] = useState("");
-
-  // state ฟอร์ม Register
-  const [regEmail, setRegEmail] = useState("");
-  const [regPassword, setRegPassword] = useState("");
-  const [regOrgName, setRegOrgName] = useState("");
-  const [regIndustry, setRegIndustry] = useState(industries[0].value);
-  const [regErrorMessage, setRegErrorMessage] = useState("");
-
-  // state ช่องกรอก OTP 6 ช่อง
-  const [otp, setOtp] = useState<string[]>(["", "", "", "", "", ""]);
-  const [otpErrorMessage, setOtpErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
-
   const [isLoading, setIsLoading] = useState(false);
 
-  // ฟังก์ชันสลับช่อง OTP อัตโนมัติเมื่อพิมพ์
-  const handleOtpChange = (value: string, index: number) => {
-    if (value.length > 1) return;
-    const newOtp = [...otp];
-    newOtp[index] = value.replace(/\D/g, "");
-    setOtp(newOtp);
-    setOtpErrorMessage("");
+  const handleNavigateToRegister = () => {
+    onClose();
+    router.push("/organization/register");
+  };
 
-    if (value && index < 5) {
-      const nextInput = document.getElementById(`otp-input-${index + 1}`);
-      nextInput?.focus();
-    }
+  const handleNavigateToForgotPassword = () => {
+    onClose();
+    router.push("/organization/forgot_password");
   };
 
   // =====================================================
-  // LOGIN SUBMIT (Supabase Auth)
+  // LOGIN SUBMIT (Supabase Auth & Check Role from 'user' table)
   // =====================================================
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,127 +47,135 @@ export default function AuthModal({
     setIsLoading(true);
 
     try {
+      // 1. ล็อกอินผ่าน Supabase Auth
       const { data, error } = await supabase.auth.signInWithPassword({
         email: loginEmail.trim().toLowerCase(),
         password: loginPassword,
       });
 
-      if (error) {
-        throw error;
+      if (error) throw error;
+      if (!data.user) throw new Error("ไม่พบข้อมูลผู้ใช้งาน");
+
+      // 2. ตรวจสอบ Role จากตาราง user
+      const { data: userData, error: userError } = await supabase
+        .from("user")
+        .select("role")
+        .eq("acc_id", data.user.id)
+        .single();
+
+      if (userError || !userData) {
+        throw new Error("ไม่พบข้อมูลสิทธิ์การใช้งานในระบบ");
       }
 
-      if (!data.user) {
-        throw new Error("ไม่พบข้อมูลผู้ใช้งาน");
-      }
-
-      // ตรวจสอบ Role จาก metadata หรือตาราง organizations ถ้ามี
-      // เบื้องต้นให้เปลี่ยนเส้นทางไปหน้า organization homepage หรือ admin ตามต้องการ
       onClose();
-      window.location.href = "/organization/homepage";
+
+      // 3. แยกเส้นทางตาม Role
+      if (userData.role === "admin") {
+        router.push("/admin/recommendation");
+      } else {
+        router.push("/organization/dashboard");
+      }
     } catch (err: any) {
       console.error("Login error:", err);
-      setLoginErrorMessage("อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง");
+
+      // ดักจับ Error รวมถึง Rate Limit / Brute Force ตามมาตรฐาน Supabase Auth
+      if (err?.message?.includes("Invalid login credentials")) {
+        setLoginErrorMessage("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
+      } else if (err?.message?.includes("Too many requests")) {
+        setLoginErrorMessage("มีการพยายามเข้าสู่ระบบถี่เกินไป กรุณารองใหม่อีกครั้งในภายหลัง");
+      } else {
+        setLoginErrorMessage(err?.message || "อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง");
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
-  // =====================================================
-  // REGISTER SUBMIT (Supabase Auth Sign Up & Send OTP)
-  // =====================================================
-  const handleRegisterSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setRegErrorMessage("");
+  <div className="flex justify-end">
+    <button
+      type="button"
+      onClick={handleNavigateToForgotPassword}
+      className="text-sm text-emerald-600 hover:underline"
+    >
+      ลืมรหัสผ่าน?
+    </button>
+  </div>
 
-    if (!regEmail || !regPassword || !regOrgName || !regIndustry) {
-      setRegErrorMessage("กรุณากรอกข้อมูลให้ครบทุกช่อง");
-      return;
-    }
+  return (
+    <Modal isOpen={isOpen} onClose={onClose}>
+      <div className="w-full max-w-md p-6 bg-white rounded-2xl shadow-2xl">
+        <div>
+          <h2 className="text-2xl font-bold mb-4 text-center text-slate-800">
+            เข้าสู่ระบบองค์กร
+          </h2>
 
-    if (regPassword.length < 6) {
-      setRegErrorMessage("รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร");
-      return;
-    }
+          {loginErrorMessage && (
+            <div className="mb-4 p-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl">
+              {loginErrorMessage}
+            </div>
+          )}
 
-    setIsLoading(true);
+          <form onSubmit={handleLoginSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                อีเมล
+              </label>
+              <input
+                type="email"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                className="w-full p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#1c5d41] focus:border-transparent outline-none transition text-sm"
+                placeholder="name@company.com"
+                required
+              />
+            </div>
+            
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <label className="block text-xs font-semibold text-slate-600">
+                  รหัสผ่าน (password)
+                </label>
 
-    try {
-      // 1. ตรวจสอบว่ามีอีเมลนี้ใน organizations หรือยัง
-      const { data: existingOrg } = await supabase
-        .from("organizations")
-        .select("email")
-        .eq("email", regEmail.trim().toLowerCase())
-        .maybeSingle();
+                <button
+                  type="button"
+                  onClick={handleNavigateToForgotPassword}
+                  className="text-xs font-medium text-emerald-500 hover:text-emerald-700 hover:underline"
+                >
+                  ลืมรหัสผ่าน?
+                </button>
+              </div>
 
-      if (existingOrg) {
-        setRegErrorMessage("อีเมลนี้มีบัญชีองค์กรในระบบแล้ว กรุณาเข้าสู่ระบบ");
-        setIsLoading(false);
-        return;
-      }
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 p-2.5 text-sm outline-none transition focus:border-[#1c5d41] focus:ring-2 focus:ring-[#1c5d41]"
+                placeholder="••••••••"
+                required
+              />
+            </div>
 
-      // 2. สมัครสมาชิกผ่าน Supabase Auth
-      const { data, error } = await supabase.auth.signUp({
-        email: regEmail.trim().toLowerCase(),
-        password: regPassword,
-        options: {
-          data: {
-            company_name: regOrgName,
-            industry: regIndustry,
-          },
-        },
-      });
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full py-3 px-4 bg-[#1c5d41] hover:bg-[#154631] text-white font-medium rounded-xl shadow-md transition duration-200 disabled:bg-slate-300 text-sm"
+            >
+              {isLoading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
+            </button>
+          </form>
 
-      if (error) {
-        throw error;
-      }
-
-      if (data.session) {
-        await supabase.auth.signOut();
-        setRegErrorMessage("กรุณาเปิดใช้งาน Confirm Email ใน Supabase ก่อน");
-        setIsLoading(false);
-        return;
-      }
-
-      setStep("otp");
-      setSuccessMessage("ส่งรหัส OTP ไปยังอีเมลของคุณแล้ว");
-    } catch (err: any) {
-      console.error("Register error:", err);
-      setRegErrorMessage(err?.message || "ไม่สามารถสมัครสมาชิกได้ กรุณาลองใหม่อีกครั้ง");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // =====================================================
-  // VERIFY OTP SUBMIT & INSERT TO ORGANIZATIONS TABLE
-  // =====================================================
-  const handleOtpSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setOtpErrorMessage("");
-
-    const fullOtp = otp.join("");
-    if (fullOtp.length < 6) {
-      setOtpErrorMessage("กรุณากรอกรหัส OTP ให้ครบถ้วน 6 หลัก");
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email: regEmail.trim().toLowerCase(),
-        token: fullOtp,
-        type: "signup",
-      });
-
-      if (error) {
-        throw error;
-      }
-
-      if (!data.user) {
-        throw new Error("ไม่พบข้อมูลผู้ใช้");
-      }
-
-      // บันทึกข้อมูลองค์กรลงในฐานข้อมูล Supabase ตาราง organizations
-      const { error: orgError } = await supabase.from("organizations").insert({
-        email: regEmail.trim().toLowerCase(),
+          <p className="mt-5 text-xs text-center text-slate-600">
+            ยังไม่มีบัญชีองค์กร?{" "}
+            <button
+              type="button"
+              onClick={handleNavigateToRegister}
+              className="text-[#1c5d41] hover:underline font-semibold"
+            >
+              สมัครสมาชิก
+            </button>
+          </p>
+        </div>
+      </div>
+    </Modal>
+  );
+}

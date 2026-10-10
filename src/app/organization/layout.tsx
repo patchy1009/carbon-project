@@ -2,10 +2,16 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import AuthModal from "@/components/AuthModal";
 import { supabase } from "@/lib/supabaseClient";
-import { LogOut, User, ChevronDown } from "lucide-react";
+import type { User } from "@supabase/supabase-js";
+import {
+  User as UserIcon,
+  Menu,
+  X,
+  LogIn,
+} from "lucide-react";
 
 export default function OrganizationLayout({
   children,
@@ -13,138 +19,230 @@ export default function OrganizationLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
-  const [user, setUser] = useState<any>(null);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const pathname = usePathname();
 
-  // ตรวจสอบสถานะการล็อกอินของผู้ใช้ปัจจุบัน
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // ตรวจสอบสถานะ Login และติดตามการเปลี่ยนแปลง Auth
   useEffect(() => {
+    let mounted = true;
+
     const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user || null);
+      const { data, error } = await supabase.auth.getSession();
+
+      if (!mounted) return;
+
+      if (error) {
+        console.error("Session error:", error);
+        setUser(null);
+        return;
+      }
+
+      setUser(data.session?.user ?? null);
     };
 
     checkUser();
 
-    // ติดตามการเปลี่ยนแปลง Auth State
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setUser(session?.user || null);
-      }
-    );
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
-  // ฟังก์ชันออกจากระบบ
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setIsDropdownOpen(false);
-    router.push("/organization/homepage");
-  };
+  // ตรวจสอบเมนูที่กำลังใช้งาน
+  const isActive = (path: string) =>
+    pathname === path || pathname.startsWith(`${path}/`);
+
+  // รูปแบบ CSS ของเมนู
+  const getMenuClass = (path: string) =>
+    `transition hover:text-gray-200 ${
+      isActive(path)
+        ? "font-bold underline underline-offset-4 text-emerald-200"
+        : ""
+    }`;
 
   return (
-    <div className="min-h-screen bg-white text-gray-800 font-sans">
-      {/* ================= NAVBAR ฝั่ง USER (อยู่คงที่ทุกหน้า) ================= */}
-      <nav className="bg-[#1c5d41] text-white px-8 py-4 flex justify-between items-center shadow-md sticky top-0 z-50">
-        {/* โลโก้ฝั่งซ้าย */}
-        <Link 
-          href="/organization/homepage" 
-          className="text-xl font-bold tracking-wide hover:opacity-90 transition"
+    <div className="min-h-screen bg-white text-gray-800 font-sans flex flex-col">
+      {/* Navbar */}
+      <nav className="bg-[#1c5d41] text-white px-4 md:px-8 py-4 flex justify-between items-center shadow-md sticky top-0 z-50">
+        {/* Logo */}
+        <Link
+          href={
+            user
+              ? "/organization/dashboard"
+              : "/organization/homepage"
+          }
+          className="text-lg md:text-xl font-bold tracking-wide hover:opacity-90 transition flex items-center gap-2"
         >
           Carbon Calculator
         </Link>
 
-        {/* เมนูตรงกลาง */}
+        {/* เมนูหลัก Desktop */}
         <div className="hidden md:flex space-x-6 text-sm font-medium">
-          <Link href="/organization/homepage" className="hover:text-gray-200 transition">
-            หน้าหลัก
-          </Link>
-          <Link href="/organization/footprint" className="hover:text-gray-200 transition">
+          {/* สลับเมนูแรกตามสถานะการล็อกอิน */}
+          {user ? (
+            <Link
+              href="/organization/dashboard"
+              className={getMenuClass("/organization/dashboard")}
+            >
+              แดชบอร์ด
+            </Link>
+          ) : (
+            <Link
+              href="/organization/homepage"
+              className={getMenuClass("/organization/homepage")}
+            >
+              หน้าแรก
+            </Link>
+          )}
+
+          <Link
+            href="/organization/footprint"
+            className={getMenuClass("/organization/footprint")}
+          >
             คาร์บอนฟุตพริ้นท์
           </Link>
-          <Link href="/organization/tver-simulation" className="hover:text-gray-200 transition">
+
+          <Link
+            href="/organization/tver-simulation"
+            className={getMenuClass("/organization/tver-simulation")}
+          >
             จำลองโครงการ T-VER
           </Link>
-          <Link href="/organization/tax-calculator" className="hover:text-gray-200 transition">
+
+          <Link
+            href="/organization/tax-calculator"
+            className={getMenuClass("/organization/tax-calculator")}
+          >
             คำนวณภาษี
           </Link>
-          <Link href="/organization/documents" className="hover:text-gray-200 transition">
+
+          <Link
+            href="/organization/documents"
+            className={getMenuClass("/organization/documents")}
+          >
             เอกสาร
           </Link>
         </div>
 
-        {/* ส่วนจัดการผู้ใช้ฝั่งขวา */}
-        <div>
+        {/* ส่วนผู้ใช้ (ขวาบน) */}
+        <div className="flex items-center space-x-3">
           {user ? (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                className="flex items-center space-x-2 bg-emerald-800/60 hover:bg-emerald-800 px-4 py-2 rounded-full text-sm font-medium transition text-white"
-              >
-                <div className="w-7 h-7 rounded-full bg-white text-[#1c5d41] flex items-center justify-center font-bold text-xs">
-                  {user.email ? user.email.charAt(0).toUpperCase() : <User className="w-4 h-4" />}
-                </div>
-                <span className="max-w-[120px] truncate">{user.email}</span>
-                <ChevronDown className="w-4 h-4" />
-              </button>
-
-              {/* Dropdown Menu เมื่อล็อกอินแล้ว */}
-              {isDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-2xl shadow-xl py-2 z-50 text-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsDropdownOpen(false);
-                      router.push("/organization/dashboard");
-                    }}
-                    className="w-full text-left px-4 py-2 text-xs font-medium hover:bg-slate-50 transition flex items-center space-x-2"
-                  >
-                    <User className="w-4 h-4 text-slate-500" />
-                    <span>จัดการองค์กร / Dashboard</span>
-                  </button>
-                  <div className="h-px bg-slate-100 my-1"></div>
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="w-full text-left px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50 transition flex items-center space-x-2"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    <span>ออกจากระบบ</span>
-                  </button>
-                </div>
-              )}
-            </div>
+            /* เมื่อล็อกอินแล้ว: ปุ่มวงกลมรูปไอคอนคน (แบบรูปขวา) กดแล้วไปหน้า /organization/account_user */
+            <Link
+              href="/organization/account_user"
+              className="w-10 h-10 rounded-full bg-white hover:bg-emerald-50 text-[#1c5d41] flex items-center justify-center shadow-md transition-all transform hover:scale-105 border border-emerald-100"
+              title="ตั้งค่าข้อมูลองค์กร"
+            >
+              <UserIcon className="w-5 h-5 text-[#1c5d41]" />
+            </Link>
           ) : (
-            <div className="flex items-center space-x-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode("login");
-                  setIsAuthOpen(true);
-                }}
-                className="bg-white text-[#1c5d41] font-semibold px-5 py-2 rounded-full text-sm shadow hover:bg-gray-100 transition"
-              >
-                เข้าสู่ระบบ
-              </button>
-            </div>
+            /* เมื่อยังไม่ได้ล็อกอิน: ปุ่มเข้าสู่ระบบแบบเดิมที่กดแล้วเปิด AuthModal */
+            <button
+              type="button"
+              onClick={() => setIsAuthOpen(true)}
+              className="bg-white text-[#1c5d41] font-semibold px-4 md:px-5 py-2 rounded-full text-sm shadow hover:bg-emerald-50 transition flex items-center gap-1.5"
+            >
+              <LogIn className="w-4 h-4" />
+              <span>เข้าสู่ระบบ</span>
+            </button>
           )}
+
+          {/* Mobile Menu Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="md:hidden p-2 text-white hover:bg-emerald-800/50 rounded-xl transition"
+            aria-label="Toggle Menu"
+          >
+            {isMobileMenuOpen ? (
+              <X className="w-6 h-6" />
+            ) : (
+              <Menu className="w-6 h-6" />
+            )}
+          </button>
         </div>
       </nav>
 
-      {/* ================= เนื้อหาของแต่ละหน้า ================= */}
-      <main>{children}</main>
+      {/* Mobile Dropdown Menu (แสดงบนมือถือ) */}
+      {isMobileMenuOpen && (
+        <div className="md:hidden bg-[#154631] text-white px-4 py-4 space-y-3 border-b border-emerald-800 shadow-lg">
+          {user ? (
+            <Link
+              href="/organization/dashboard"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className={`block py-2 text-sm font-medium ${getMenuClass("/organization/dashboard")}`}
+            >
+              แดชบอร์ด
+            </Link>
+          ) : (
+            <Link
+              href="/organization/homepage"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className={`block py-2 text-sm font-medium ${getMenuClass("/organization/homepage")}`}
+            >
+              หน้าแรก
+            </Link>
+          )}
 
-      {/* ================= Pop-up เข้าสู่ระบบ / ลงทะเบียน ================= */}
-      <AuthModal 
-        isOpen={isAuthOpen} 
-        onClose={() => setIsAuthOpen(false)} 
-        initialMode={authMode}
+          <Link
+            href="/organization/footprint"
+            onClick={() => setIsMobileMenuOpen(false)}
+            className={`block py-2 text-sm font-medium ${getMenuClass("/organization/footprint")}`}
+          >
+            คาร์บอนฟุตพริ้นท์
+          </Link>
+          <Link
+            href="/organization/tver-simulation"
+            onClick={() => setIsMobileMenuOpen(false)}
+            className={`block py-2 text-sm font-medium ${getMenuClass("/organization/tver-simulation")}`}
+          >
+            จำลองโครงการ T-VER
+          </Link>
+          <Link
+            href="/organization/tax-calculator"
+            onClick={() => setIsMobileMenuOpen(false)}
+            className={`block py-2 text-sm font-medium ${getMenuClass("/organization/tax-calculator")}`}
+          >
+            คำนวณภาษี
+          </Link>
+          <Link
+            href="/organization/documents"
+            onClick={() => setIsMobileMenuOpen(false)}
+            className={`block py-2 text-sm font-medium ${getMenuClass("/organization/documents")}`}
+          >
+            เอกสาร
+          </Link>
+
+          {user && (
+            <Link
+              href="/organization/account_user"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="block py-2 text-sm font-medium text-emerald-200 border-t border-emerald-800/80 pt-3"
+            >
+              จัดการบัญชีองค์กร
+            </Link>
+          )}
+        </div>
+      )}
+
+      {/* เนื้อหาของแต่ละหน้า */}
+      <main className="flex-grow min-h-[calc(100vh-72px)]">
+        {children}
+      </main>
+
+      {/* Auth Modal (Login / Register Popup) */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
       />
     </div>
   );
