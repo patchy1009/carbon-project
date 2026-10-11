@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Building2,
@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   ArrowRight,
   UserCheck,
+  RefreshCw,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -48,8 +49,29 @@ export default function RegisterPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  // STEP 1: Create Supabase Auth account and send signup confirmation OTP.
-  // (ยังไม่มีการบันทึกข้อมูลเข้าตาราง Database จนกว่าจะผ่าน OTP)
+  const [resendTimer, setResendTimer] = useState(300);
+  const [canResend, setCanResend] = useState(false);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (step === "otp" && resendTimer > 0) {
+      setCanResend(false);
+      timer = setInterval(() => {
+        setResendTimer((prev) => prev - 1);
+      }, 1000);
+    } else if (resendTimer === 0) {
+      setCanResend(true);
+    }
+    return () => clearInterval(timer);
+  }, [step, resendTimer]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  // STEP 1: ตรวจสอบและส่ง OTP
   const handleSendOtp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMessage("");
@@ -63,7 +85,6 @@ export default function RegisterPage() {
       return;
     }
 
-    // Require at least 8 characters, including an English letter and a digit.
     if (!/^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(password)) {
       setErrorMessage("รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร และมีทั้งตัวอักษรภาษาอังกฤษกับตัวเลข");
       return;
@@ -72,7 +93,21 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signUp({
+      // 1. ตรวจสอบในตาราง public.user ก่อน (เผื่อสิทธิ์ RLS อนุญาตให้ Read ได้)
+      const { data: existingUser, error: checkError } = await supabase
+        .from("user")
+        .select("email")
+        .eq("email", normalizedEmail)
+        .maybeSingle();
+
+      if (existingUser) {
+        setErrorMessage("อีเมลนี้ถูกลงทะเบียนใช้งานไปแล้ว กรุณาเข้าสู่ระบบ");
+        setLoading(false);
+        return;
+      }
+
+      // 2. เรียก signUp ของ Supabase Auth
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: normalizedEmail,
         password,
         options: {
@@ -83,19 +118,30 @@ export default function RegisterPage() {
         },
       });
 
-      if (error) throw error;
+      if (signUpError) throw signUpError;
+
+      // 3. เช็คกรณีผู้ใช้มีใน Auth อยู่แล้ว (Identities จะส่งกลับมาเป็น Array ว่าง)
+      if (signUpData.user && signUpData.user.identities && signUpData.user.identities.length === 0) {
+        setErrorMessage("อีเมลนี้ถูกลงทะเบียนใช้งานไปแล้ว กรุณาเข้าสู่ระบบ");
+        setLoading(false);
+        return;
+      }
 
       setEmail(normalizedEmail);
       setCompanyName(normalizedCompanyName);
       setOtpInput("");
+      setResendTimer(300);
       setStep("otp");
       setSuccessMessage("ส่งรหัส OTP ไปยังอีเมลของคุณแล้ว กรุณาตรวจสอบ Inbox และ Spam");
     } catch (error: unknown) {
       console.error("Register error:", error);
       const message = getErrorMessage(error);
 
-      if (message.toLowerCase().includes("already registered")) {
-        setErrorMessage("อีเมลนี้มีบัญชีอยู่แล้ว กรุณาเข้าสู่ระบบ");
+      if (
+        message.toLowerCase().includes("already registered") ||
+        message.toLowerCase().includes("user already registered")
+      ) {
+        setErrorMessage("อีเมลนี้ถูกลงทะเบียนใช้งานไปแล้ว กรุณาเข้าสู่ระบบ");
       } else {
         setErrorMessage(`ไม่สามารถสมัครสมาชิกได้: ${message}`);
       }
@@ -104,7 +150,7 @@ export default function RegisterPage() {
     }
   };
 
-  // STEP 2: Verify OTP, and insert user & organization records directly matching schema
+  // STEP 2: Verify OTP
   const handleVerifyOtp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMessage("");
@@ -122,7 +168,6 @@ export default function RegisterPage() {
     try {
       const normalizedEmail = email.trim().toLowerCase();
 
-      // 1. ยืนยัน OTP ผ่าน Supabase Auth
       const { data, error } = await supabase.auth.verifyOtp({
         email: normalizedEmail,
         token,
@@ -140,13 +185,12 @@ export default function RegisterPage() {
       const company = metadata.company_name || companyName.trim();
       const bizType = metadata.industry || industry;
 
-      // 2. บันทึกข้อมูลลงตาราง public.user ตาม Schema
       const { error: userError } = await supabase
         .from("user")
         .insert({
           acc_id: authUser.id,
           email: normalizedEmail,
-          username: normalizedEmail.split("@")[0], // สร้าง username เริ่มต้นจากส่วนหน้าของ email
+          username: normalizedEmail.split("@")[0],
           role: "organization",
           status: "active",
         });
@@ -155,7 +199,6 @@ export default function RegisterPage() {
         throw new Error(`บันทึกข้อมูลผู้ใช้ไม่สำเร็จ: ${userError.message}`);
       }
 
-      // 3. บันทึกข้อมูลลงตาราง public.organization ตาม Schema
       const { error: organizationError } = await supabase
         .from("organization")
         .insert({
@@ -173,16 +216,7 @@ export default function RegisterPage() {
       setStep("success");
       setSuccessMessage("ยืนยันอีเมลและบันทึกข้อมูลองค์กรเรียบร้อยแล้ว");
     } catch (error: unknown) {
-      const details = error instanceof Error
-        ? { name: error.name, message: error.message, stack: error.stack }
-        : error && typeof error === "object"
-          ? Object.fromEntries(
-            ["message", "code", "status", "details", "hint"].flatMap((key) =>
-              key in error ? [[key, (error as Record<string, unknown>)[key]]] : []
-            )
-          )
-          : { message: String(error) };
-      console.error("Verify OTP error details:", details);
+      console.error("Verify OTP error details:", error);
       setErrorMessage(`ยืนยัน OTP ไม่สำเร็จ: ${getErrorMessage(error)}`);
     } finally {
       setLoading(false);
@@ -190,6 +224,8 @@ export default function RegisterPage() {
   };
 
   const handleResendOtp = async () => {
+    if (!canResend || loading) return;
+
     setErrorMessage("");
     setSuccessMessage("");
     setLoading(true);
@@ -203,7 +239,9 @@ export default function RegisterPage() {
       if (error) throw error;
 
       setOtpInput("");
-      setSuccessMessage("ส่ง OTP ใหม่ไปยังอีเมลของคุณแล้ว");
+      setResendTimer(300);
+      setCanResend(false);
+      setSuccessMessage("ส่งรหัส OTP ใหม่ไปยังอีเมลของคุณแล้ว");
     } catch (error: unknown) {
       console.error("Resend OTP error:", error);
       setErrorMessage(`ไม่สามารถส่ง OTP ใหม่ได้: ${getErrorMessage(error)}`);
@@ -259,7 +297,7 @@ export default function RegisterPage() {
                     setEmail(e.target.value);
                     setErrorMessage("");
                   }}
-                  className="w-full px-4 py-3 pl-10 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800"
+                  className="w-full px-4 py-3 pl-10 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800 font-medium"
                 />
                 <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
               </div>
@@ -303,7 +341,7 @@ export default function RegisterPage() {
                     setCompanyName(e.target.value);
                     setErrorMessage("");
                   }}
-                  className="w-full px-4 py-3 pl-10 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800"
+                  className="w-full px-4 py-3 pl-10 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800 font-medium"
                 />
                 <Building2 className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
               </div>
@@ -317,14 +355,14 @@ export default function RegisterPage() {
                 type="button"
                 onClick={() => setIsDropdownOpen((open) => !open)}
                 aria-expanded={isDropdownOpen}
-                className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-sm bg-slate-50/50 flex items-center justify-between cursor-pointer text-slate-800"
+                className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-sm bg-slate-50/50 flex items-center justify-between cursor-pointer text-slate-800 font-medium"
               >
                 <span>{industry}</span>
                 <ChevronDown className="w-4 h-4 text-slate-400" />
               </button>
 
               {isDropdownOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-lg z-30 overflow-hidden">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-lg z-30 overflow-hidden py-1">
                   {industries.map((item) => (
                     <button
                       type="button"
@@ -333,11 +371,7 @@ export default function RegisterPage() {
                         setIndustry(item);
                         setIsDropdownOpen(false);
                       }}
-                      className={`w-full text-left px-4 py-2.5 text-xs font-medium transition ${
-                        industry === item
-                          ? "bg-[#1F3E35] text-white"
-                          : "hover:bg-slate-50 text-slate-700"
-                      }`}
+                      className="w-full text-left px-4 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition"
                     >
                       {item}
                     </button>
@@ -350,10 +384,10 @@ export default function RegisterPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3.5 bg-[#1F3E35] hover:bg-[#152C25] disabled:opacity-60 text-white font-semibold rounded-2xl text-sm transition shadow-md flex items-center justify-center space-x-2"
+            className="w-full py-3.5 bg-[#2C7A59] hover:bg-[#1f5a41] disabled:opacity-60 text-white font-semibold rounded-2xl text-sm transition shadow-md flex items-center justify-center space-x-2"
           >
             <span>
-              {loading ? "กำลังส่งรหัส OTP ไปที่อีเมล..." : "ถัดไป: ยืนยันอีเมล"}
+              {loading ? "กำลังตรวจสอบข้อมูล..." : "ถัดไป: ยืนยันอีเมล"}
             </span>
             {!loading && <ArrowRight className="w-4 h-4" />}
           </button>
@@ -401,28 +435,33 @@ export default function RegisterPage() {
               required
               autoComplete="one-time-code"
               aria-label="รหัส OTP 6 หลัก"
-              placeholder="• • • • • •"
+              placeholder="000000"
               value={otpInput}
               onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ""))}
               className="w-full text-center tracking-[0.8em] text-xl font-bold py-3.5 rounded-2xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50 text-slate-900"
             />
           </div>
 
+          <div className="text-center">
+            <button
+              type="button"
+              disabled={!canResend || loading}
+              onClick={handleResendOtp}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-800 disabled:text-slate-400 disabled:no-underline hover:underline transition cursor-pointer disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+              {canResend
+                ? "ส่งรหัส OTP อีกครั้ง"
+                : `ส่งรหัสอีกครั้งได้ใน ${formatTime(resendTimer)} นาที`}
+            </button>
+          </div>
+
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3.5 bg-[#1F3E35] hover:bg-[#152C25] disabled:opacity-60 text-white font-semibold rounded-2xl text-sm transition shadow-md"
+            className="w-full py-3.5 bg-[#2C7A59] hover:bg-[#1f5a41] disabled:opacity-60 text-white font-semibold rounded-2xl text-sm transition shadow-md"
           >
             {loading ? "กำลังตรวจสอบรหัส OTP..." : "ยืนยันและสมัครสมาชิก"}
-          </button>
-
-          <button
-            type="button"
-            disabled={loading}
-            onClick={handleResendOtp}
-            className="text-[11px] text-[#1c5d41] font-semibold hover:underline disabled:opacity-50"
-          >
-            ส่ง OTP ใหม่อีกครั้ง
           </button>
 
           <button
@@ -455,7 +494,7 @@ export default function RegisterPage() {
           <button
             type="button"
             onClick={handleGoDashboard}
-            className="w-full py-3.5 bg-[#1F3E35] text-white font-semibold rounded-2xl text-sm hover:bg-[#152C25] transition shadow-md flex items-center justify-center space-x-2"
+            className="w-full py-3.5 bg-[#2C7A59] hover:bg-[#1f5a41] text-white font-semibold rounded-2xl text-sm transition shadow-md flex items-center justify-center space-x-2"
           >
             <UserCheck className="w-4 h-4" />
             <span>เข้าสู่หน้า Dashboard</span>

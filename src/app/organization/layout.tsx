@@ -112,15 +112,15 @@ export default function OrganizationLayout({
           </Link>
 
           <Link
-            href="/organization/tver-simulation"
-            className={getMenuClass("/organization/tver-simulation")}
+            href="/organization/tver_simulation"
+            className={getMenuClass("/organization/tver_simulation")}
           >
             จำลองโครงการ T-VER
           </Link>
 
           <Link
-            href="/organization/tax-calculator"
-            className={getMenuClass("/organization/tax-calculator")}
+            href="/organization/tax_calculator"
+            className={getMenuClass("/organization/tax_calculator")}
           >
             คำนวณภาษี
           </Link>
@@ -201,16 +201,16 @@ export default function OrganizationLayout({
             คาร์บอนฟุตพริ้นท์
           </Link>
           <Link
-            href="/organization/tver-simulation"
+            href="/organization/tver_simulation"
             onClick={() => setIsMobileMenuOpen(false)}
-            className={`block py-2 text-sm font-medium ${getMenuClass("/organization/tver-simulation")}`}
+            className={`block py-2 text-sm font-medium ${getMenuClass("/organization/tver_simulation")}`}
           >
             จำลองโครงการ T-VER
           </Link>
           <Link
-            href="/organization/tax-calculator"
+            href="/organization/tax_calculator"
             onClick={() => setIsMobileMenuOpen(false)}
-            className={`block py-2 text-sm font-medium ${getMenuClass("/organization/tax-calculator")}`}
+            className={`block py-2 text-sm font-medium ${getMenuClass("/organization/tax_calculator")}`}
           >
             คำนวณภาษี
           </Link>
