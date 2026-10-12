@@ -20,8 +20,13 @@ const mockSimulatedProjects: TVerProjectSimulationData[] = [
   {
     id: "proj-001",
     projectName: "โครงการปลูกป่าสัก ที่ราบสูงตอนเหนือ",
+<<<<<<< Updated upstream
     ratioSell: 0.50, // 👈 ปรับเป็น 50% ตามค่าทดลอง
     expenseRatio: 0.20, // 👈 ค่าใช้จ่าย 20% Standard Default
+=======
+    ratioSell: 0.50, //ปรับเป็น 50% ตามค่าทดลอง
+    expenseRatio: 0.20, //ค่าใช้จ่าย 20% Standard Default
+>>>>>>> Stashed changes
     defaultCarbonPrice: 250,
     cSeqYear1: 1250,
     cSeqYear2: 1475,
