@@ -18,4 +18,9 @@ export interface OrgTreeProject {
   org_id: string | null;
   created_at: string;
   updated_at: string | null;
+  // ได้จากการ join ตอนดึงข้อมูลใน Dashboard (พันธุ์ไม้เก็บอยู่ในแถวรายละเอียดของโครงการ)
+  org_tree_project_detail?: {
+    tree_id: string | null;
+    tree_list: { tree_name: string | null } | null;
+  }[];
 }

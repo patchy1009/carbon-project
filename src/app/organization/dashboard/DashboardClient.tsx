@@ -19,6 +19,14 @@ function sumCredits(p: OrgTreeProject): number {
   return (p.credit_year_1 ?? 0) + (p.credit_year_2 ?? 0) + (p.credit_year_3 ?? 0);
 }
 
+// พันธุ์ไม้ของโครงการ ดึงจากแถวรายละเอียดแถวแรกที่มี tree_id
+function getTreeName(p: OrgTreeProject): string {
+  return (
+    p.org_tree_project_detail?.find((d) => d.tree_list)?.tree_list?.tree_name ??
+    'ไม่ระบุพันธุ์ไม้'
+  );
+}
+
 export default function DashboardClient({
   activities,
   treeProjects,
@@ -43,10 +51,8 @@ export default function DashboardClient({
     <div className="max-w-[1256px] mx-auto px-8 py-8 space-y-6">
       {/* Page Header */}
       <div>
-        <h1 className="text-[32px] font-semibold text-black font-['Lato']">
-          การแสดงผลการคำนวณองค์กร
-        </h1>
-        <p className="text-base font-medium text-[#315757] font-['Lato']">
+        <h1 className="text-[32px] font-semibold text-black">การแสดงผลการคำนวณองค์กร</h1>
+        <p className="text-base font-medium text-[#315757]">
           ภาพรวมข้อมูลการปล่อยก๊าซเรือนกระจกขององค์กร
         </p>
       </div>
@@ -54,22 +60,20 @@ export default function DashboardClient({
       {/* Top Metrics */}
       <div className="flex flex-col gap-4">
         {/* Metric: Net Emissions */}
-        <div className="bg-white border-2 border-[#DAE2EA] shadow-sm rounded-xl p-6 flex items-start justify-between">
+        <div className="bg-white border-2 border-[#DAE2EA] shadow-sm rounded-xl p-6">
           <div className="space-y-3">
-            <p className="text-sm font-bold text-[#64748B] font-['Lato']">
-              การปล่อยก๊าซสุทธิ (ล่าสุด)
-            </p>
+            <p className="text-sm font-bold text-[#64748B]">การปล่อยก๊าซสุทธิ (ล่าสุด)</p>
             <div className="flex items-baseline gap-2">
-              <span className="text-[36px] font-bold text-[#0F172A] font-['Noto_Sans_Thai']">
+              <span className="text-[36px] font-bold text-[#0F172A]">
                 {formatNumber(latest?.total_ghg_emission ?? null)}
               </span>
-              <span className="text-base font-bold text-[#64748B] font-['Noto_Sans_Thai']">
+              <span className="text-base font-bold text-[#64748B]">
                 tCO<sub>2</sub>e
               </span>
             </div>
             {changePercent !== null && (
               <p
-                className={`text-sm font-medium font-['Noto_Sans_Thai'] ${
+                className={`text-sm font-medium ${
                   changePercent < 0 ? 'text-[#16A34A]' : 'text-[#F97316]'
                 }`}
               >
@@ -81,22 +85,18 @@ export default function DashboardClient({
         </div>
 
         {/* Metric: Active T-VER Credits */}
-        <div className="bg-white border-2 border-[#DAE2EA] shadow-sm rounded-xl p-6 flex items-start justify-between">
+        <div className="bg-white border-2 border-[#DAE2EA] shadow-sm rounded-xl p-6">
           <div className="space-y-3">
-            <p className="text-sm font-bold text-[#64748B] font-['Lato']">
-              เครดิต T-VER ที่ใช้งานอยู่
-            </p>
+            <p className="text-sm font-bold text-[#64748B]">เครดิต T-VER ที่ใช้งานอยู่</p>
             <div className="flex items-baseline gap-2">
-              <span className="text-[36px] font-bold text-[#0F172A] font-['Noto_Sans_Thai']">
+              <span className="text-[36px] font-bold text-[#0F172A]">
                 {formatNumber(totalActiveCredits)}
               </span>
-              <span className="text-base font-bold text-[#64748B] font-['Noto_Sans_Thai']">
+              <span className="text-base font-bold text-[#64748B]">
                 tCO<sub>2</sub>e
               </span>
             </div>
-            <p className="text-sm text-[#64748B] font-['Noto_Sans_Thai']">
-              จาก {treeProjects.length} โครงการ
-            </p>
+            <p className="text-sm text-[#64748B]">จาก {treeProjects.length} โครงการ</p>
           </div>
         </div>
       </div>
@@ -104,14 +104,14 @@ export default function DashboardClient({
       {/* Emission Logs Section */}
       <div className="bg-white border-2 border-[#DAE2EA] shadow-sm rounded-2xl p-6 space-y-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-[#0F172A] font-['Noto_Sans_Thai']">
+          <h2 className="text-lg font-semibold text-[#0F172A]">
             บันทึกการปล่อยก๊าซเรือนกระจกขององค์กร
           </h2>
           <Link
-            href="/activities"
+            href="/organization/footprint"
             className="flex items-center gap-1 text-sm font-bold text-[#6B7280]"
           >
-            ดูทั้งหมด ›
+            กรอกข้อมูลใหม่ ›
           </Link>
         </div>
 
@@ -127,14 +127,10 @@ export default function DashboardClient({
               }`}
             >
               <div>
-                <h3 className="text-base font-bold text-[#1E293B] font-['Noto_Sans_Thai']">
-                  {log.orgact_name}
-                </h3>
-                <p className="text-xs text-[#64748B] font-['Noto_Sans_Thai']">
-                  {formatThaiDate(log.created_at)}
-                </p>
+                <h3 className="text-base font-bold text-[#1E293B]">{log.orgact_name}</h3>
+                <p className="text-xs text-[#64748B]">{formatThaiDate(log.created_at)}</p>
               </div>
-              <p className="text-base font-bold text-[#0F172A] font-['Noto_Sans_Thai']">
+              <p className="text-base font-bold text-[#0F172A]">
                 {formatNumber(log.total_ghg_emission)} {log.unit ?? 'tCO2e'}
               </p>
             </div>
@@ -145,30 +141,31 @@ export default function DashboardClient({
       {/* T-VER Projects Section */}
       <div className="bg-white border-2 border-[#DAE2EA] shadow-sm rounded-2xl p-6 space-y-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-[#0F172A] font-['Noto_Sans_Thai']">
-            โครงการจำลองป่า T-VER
-          </h2>
+          <h2 className="text-lg font-semibold text-[#0F172A]">โครงการจำลองป่า T-VER</h2>
           <Link
-            href="/tver"
+            href="/organization/tver-simulation"
             className="flex items-center gap-1 text-sm font-bold text-[#64748B]"
           >
-            ดูทั้งหมด ›
+            + จำลองโครงการใหม่
           </Link>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-2">
           {treeProjects.length === 0 && (
             <p className="text-sm text-[#64748B] py-6 text-center">ยังไม่มีโครงการ T-VER</p>
           )}
           {treeProjects.map((p) => (
-            <div key={p.orgtreeproject_id} className="space-y-4 border-b border-[#F8FAFC] pb-4 last:border-b-0">
+            <Link
+              key={p.orgtreeproject_id}
+              href={`/organization/tver-simulation/${p.orgtreeproject_id}`}
+              className="block space-y-4 border-b border-[#F8FAFC] last:border-b-0 rounded-lg p-3 -mx-3 hover:bg-[#F8FAFC] transition"
+            >
               <div className="flex items-start justify-between">
                 <div>
-                  <h3 className="text-base font-bold text-[#1E293B] font-['Noto_Sans_Thai']">
-                    {p.project_name}
-                  </h3>
-                  <p className="text-xs text-[#64748B] font-['Noto_Sans_Thai']">
-                    เข้าร่วมปี {p.join_year}
+                  <h3 className="text-base font-bold text-[#1E293B]">{p.project_name}</h3>
+                  <p className="text-xs text-[#64748B]">
+                    {getTreeName(p)} •{' '}
+                    {p.join_year ? `เข้าร่วมปี พ.ศ. ${p.join_year + 543}` : 'ไม่ระบุปี'}
                   </p>
                 </div>
                 <span className="px-3 py-1 rounded-full bg-[#F0FDF4] border border-[#DCFCE7] text-[11px] font-bold text-[#16A34A]">
@@ -176,12 +173,17 @@ export default function DashboardClient({
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <p className="text-xs text-[#16A34A] font-['Noto_Sans_Thai']">เครดิตสะสม</p>
-                <p className="text-base font-bold text-[#16A34A] font-['Noto_Sans_Thai']">
-                  {formatNumber(sumCredits(p))} tCO<sub>2</sub>e
-                </p>
+                <p className="text-xs text-[#16A34A]">เครดิตสะสม</p>
+                <div className="flex items-center gap-4">
+                  <p className="text-base font-bold text-[#16A34A]">
+                    {formatNumber(sumCredits(p))} tCO<sub>2</sub>e
+                  </p>
+                  <span className="text-xs font-semibold text-[#64748B]">
+                    ดูรายละเอียด/แก้ไข ›
+                  </span>
+                </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       </div>

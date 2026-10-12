@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { supabase } from '@/lib/supabaseClient';
+import { TEMP_ORG_ID } from '@/lib/tempOrg';
 import DashboardClient from './DashboardClient';
 import type { OrgActivityLog, OrgTreeProject } from '@/types/dashboard';
 
@@ -13,10 +14,7 @@ export default async function DashboardPage() {
   //   .eq('user_id', user?.id)
   //   .single();
   // const orgId = org?.org_id ?? null;
-
-  // ===== โหมดชั่วคราว: ใส่ org_id ของบริษัททดสอบตรงๆ ก่อน =====
-  // ไปเอา org_id จริงจากตาราง organization ใน Supabase Table Editor มาแปะตรงนี้
-  const orgId = 'ใส่-org-id-ทดสอบ-ตรงนี้';
+  const orgId = TEMP_ORG_ID;
 
   const [activityRes, treeProjectRes] = await Promise.all([
     supabase
@@ -26,7 +24,7 @@ export default async function DashboardPage() {
       .order('created_at', { ascending: false }),
     supabase
       .from('org_tree_project')
-      .select('*')
+      .select('*, org_tree_project_detail(tree_id, tree_list(tree_name))')
       .eq('org_id', orgId)
       .order('created_at', { ascending: false }),
   ]);
@@ -34,7 +32,7 @@ export default async function DashboardPage() {
   return (
     <DashboardClient
       activities={(activityRes.data ?? []) as OrgActivityLog[]}
-      treeProjects={(treeProjectRes.data ?? []) as OrgTreeProject[]}
+      treeProjects={(treeProjectRes.data ?? []) as unknown as OrgTreeProject[]}
     />
   );
 }
