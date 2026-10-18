@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Building2,
@@ -23,6 +23,9 @@ const industries = [
   "ค้าปลีก ค้าส่ง และการจัดการสินค้า",
   "ก่อสร้าง อสังหาริมทรัพย์ และโครงสร้างพื้นฐาน",
 ];
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -48,12 +51,33 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-
   const [resendTimer, setResendTimer] = useState(300);
   const [canResend, setCanResend] = useState(false);
 
+  // ตรวจสอบรูปแบบอีเมลขณะพิมพ์
+  const normalizedEmail = email.trim();
+  const emailTouched = normalizedEmail.length > 0;
+  const emailValid = EMAIL_REGEX.test(normalizedEmail);
+  const emailError =
+    emailTouched && !emailValid
+      ? "กรุณากรอกอีเมลให้ถูกต้อง เช่น name@company.co.th"
+      : "";
+
+  // ตรวจสอบรหัสผ่านขณะพิมพ์
+  const passwordTouched = password.length > 0;
+  const passwordHasMinLength = password.length >= 8;
+  const passwordHasLetter = /[A-Za-z]/.test(password);
+  const passwordHasNumber = /\d/.test(password);
+  const passwordValid =
+    passwordHasMinLength && passwordHasLetter && passwordHasNumber;
+  const passwordError =
+    passwordTouched && !passwordValid
+      ? "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร เป็นตัวอักษรภาษาอังกฤษและตัวเลข"
+      : "";
+
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: ReturnType<typeof setInterval> | undefined;
+
     if (step === "otp" && resendTimer > 0) {
       setCanResend(false);
       timer = setInterval(() => {
@@ -62,16 +86,21 @@ export default function RegisterPage() {
     } else if (resendTimer === 0) {
       setCanResend(true);
     }
-    return () => clearInterval(timer);
+
+    return () => {
+      if (timer) clearInterval(timer);
+    };
   }, [step, resendTimer]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    return `${mins.toString().padStart(2, "0")}:${secs
+      .toString()
+      .padStart(2, "0")}`;
   };
 
-  // STEP 1: ตรวจสอบและส่ง OTP
+  // STEP 1: ตรวจสอบข้อมูลและส่ง OTP
   const handleSendOtp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMessage("");
@@ -85,45 +114,57 @@ export default function RegisterPage() {
       return;
     }
 
-    if (!/^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(password)) {
-      setErrorMessage("รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร และมีทั้งตัวอักษรภาษาอังกฤษกับตัวเลข");
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
+      setErrorMessage("กรุณากรอกอีเมลให้ถูกต้อง เช่น name@company.co.th");
+      return;
+    }
+
+    if (!PASSWORD_REGEX.test(password)) {
+      setErrorMessage(
+        "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร และมีตัวอักษรภาษาอังกฤษอย่างน้อย 1 ตัวกับตัวเลขอย่างน้อย 1 ตัว"
+      );
       return;
     }
 
     setLoading(true);
 
     try {
-      // 1. ตรวจสอบในตาราง public.user ก่อน (เผื่อสิทธิ์ RLS อนุญาตให้ Read ได้)
+      // ตรวจสอบอีเมลในตาราง public.user ก่อน
       const { data: existingUser, error: checkError } = await supabase
         .from("user")
         .select("email")
         .eq("email", normalizedEmail)
         .maybeSingle();
 
+      if (checkError) {
+        console.warn("Email lookup warning:", checkError.message);
+      }
+
       if (existingUser) {
         setErrorMessage("อีเมลนี้ถูกลงทะเบียนใช้งานไปแล้ว กรุณาเข้าสู่ระบบ");
-        setLoading(false);
         return;
       }
 
-      // 2. เรียก signUp ของ Supabase Auth
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: normalizedEmail,
-        password,
-        options: {
-          data: {
-            company_name: normalizedCompanyName,
-            industry,
+      const { data: signUpData, error: signUpError } =
+        await supabase.auth.signUp({
+          email: normalizedEmail,
+          password,
+          options: {
+            data: {
+              company_name: normalizedCompanyName,
+              industry,
+            },
           },
-        },
-      });
+        });
 
       if (signUpError) throw signUpError;
 
-      // 3. เช็คกรณีผู้ใช้มีใน Auth อยู่แล้ว (Identities จะส่งกลับมาเป็น Array ว่าง)
-      if (signUpData.user && signUpData.user.identities && signUpData.user.identities.length === 0) {
+      if (
+        signUpData.user &&
+        signUpData.user.identities &&
+        signUpData.user.identities.length === 0
+      ) {
         setErrorMessage("อีเมลนี้ถูกลงทะเบียนใช้งานไปแล้ว กรุณาเข้าสู่ระบบ");
-        setLoading(false);
         return;
       }
 
@@ -131,8 +172,11 @@ export default function RegisterPage() {
       setCompanyName(normalizedCompanyName);
       setOtpInput("");
       setResendTimer(300);
+      setCanResend(false);
       setStep("otp");
-      setSuccessMessage("ส่งรหัส OTP ไปยังอีเมลของคุณแล้ว กรุณาตรวจสอบ Inbox และ Spam");
+      setSuccessMessage(
+        "ส่งรหัส OTP ไปยังอีเมลของคุณแล้ว กรุณาตรวจสอบ Inbox และ Spam"
+      );
     } catch (error: unknown) {
       console.error("Register error:", error);
       const message = getErrorMessage(error);
@@ -150,7 +194,7 @@ export default function RegisterPage() {
     }
   };
 
-  // STEP 2: Verify OTP
+  // STEP 2: ยืนยัน OTP
   const handleVerifyOtp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMessage("");
@@ -178,22 +222,22 @@ export default function RegisterPage() {
 
       const authUser = data.user;
       if (!authUser || !data.session) {
-        throw new Error("ยืนยัน OTP ไม่สำเร็จหรือไม่มี session ที่ยืนยันตัวตนแล้ว จึงยังไม่บันทึกข้อมูล");
+        throw new Error(
+          "ยืนยัน OTP ไม่สำเร็จหรือไม่มี session ที่ยืนยันตัวตนแล้ว จึงยังไม่บันทึกข้อมูล"
+        );
       }
 
       const metadata = authUser.user_metadata ?? {};
       const company = metadata.company_name || companyName.trim();
       const bizType = metadata.industry || industry;
 
-      const { error: userError } = await supabase
-        .from("user")
-        .insert({
-          acc_id: authUser.id,
-          email: normalizedEmail,
-          username: normalizedEmail.split("@")[0],
-          role: "organization",
-          status: "active",
-        });
+      const { error: userError } = await supabase.from("user").insert({
+        acc_id: authUser.id,
+        email: normalizedEmail,
+        username: normalizedEmail.split("@")[0],
+        role: "organization",
+        status: "active",
+      });
 
       if (userError) {
         throw new Error(`บันทึกข้อมูลผู้ใช้ไม่สำเร็จ: ${userError.message}`);
@@ -261,10 +305,13 @@ export default function RegisterPage() {
     router.push("/organization/dashboard");
   };
 
+  const inputClass =
+    "w-full px-4 py-3 pl-10 rounded-2xl border text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800 placeholder:text-slate-400";
+
   return (
     <div className="bg-white w-full max-w-lg rounded-3xl p-8 lg:p-10 shadow-xl border border-slate-200/85">
       {step === "form" && (
-        <form onSubmit={handleSendOtp} className="space-y-6">
+        <form onSubmit={handleSendOtp} className="space-y-6" noValidate>
           <div className="text-center space-y-1.5">
             <h1 className="text-2xl lg:text-3xl font-extrabold text-[#11221C]">
               ลงทะเบียนองค์กร
@@ -275,14 +322,20 @@ export default function RegisterPage() {
           </div>
 
           {errorMessage && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl text-center font-medium break-words">
+            <div
+              role="alert"
+              className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl text-center font-medium break-words"
+            >
               {errorMessage}
             </div>
           )}
 
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <label htmlFor="register-email" className="text-xs font-bold text-slate-700">
+              <label
+                htmlFor="register-email"
+                className="text-xs font-bold text-slate-700"
+              >
                 อีเมล (email)
               </label>
               <div className="relative">
@@ -293,18 +346,29 @@ export default function RegisterPage() {
                   autoComplete="email"
                   placeholder="name@company.co.th"
                   value={email}
+                  aria-invalid={Boolean(emailError)}
+                  aria-describedby={emailError ? "register-email-error" : undefined}
                   onChange={(e) => {
                     setEmail(e.target.value);
                     setErrorMessage("");
                   }}
-                  className="w-full px-4 py-3 pl-10 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800 font-medium"
+                  className={`${inputClass} ${emailError ? "border-red-400 focus:ring-red-500" : "border-slate-200"
+                    }`}
                 />
                 <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
               </div>
+              {emailError && (
+                <p id="register-email-error" role="alert" className="text-xs text-red-600">
+                  {emailError}
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="register-password" className="text-xs font-bold text-slate-700">
+              <label
+                htmlFor="register-password"
+                className="text-xs font-bold text-slate-700"
+              >
                 รหัสผ่าน (password)
               </label>
               <div className="relative">
@@ -316,18 +380,37 @@ export default function RegisterPage() {
                   autoComplete="new-password"
                   placeholder="อย่างน้อย 8 ตัวอักษร มีตัวอักษรและตัวเลข"
                   value={password}
+                  aria-invalid={Boolean(passwordError)}
+                  aria-describedby={
+                    passwordError ? "register-password-error" : "register-password-hint"
+                  }
                   onChange={(e) => {
                     setPassword(e.target.value);
                     setErrorMessage("");
                   }}
-                  className="w-full px-4 py-3 pl-10 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800"
+                  className={`${inputClass} ${passwordError
+                      ? "border-red-400 focus:ring-red-500"
+                      : "border-slate-200"
+                    }`}
                 />
                 <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
               </div>
+              {passwordError && (
+                <p
+                  id="register-password-error"
+                  role="alert"
+                  className="text-xs text-red-600"
+                >
+                  {passwordError}
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="register-company" className="text-xs font-bold text-slate-700">
+              <label
+                htmlFor="register-company"
+                className="text-xs font-bold text-slate-700"
+              >
                 ชื่อองค์กร / บริษัท
               </label>
               <div className="relative">
@@ -341,7 +424,7 @@ export default function RegisterPage() {
                     setCompanyName(e.target.value);
                     setErrorMessage("");
                   }}
-                  className="w-full px-4 py-3 pl-10 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800 font-medium"
+                  className={`${inputClass} border-slate-200`}
                 />
                 <Building2 className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
               </div>
@@ -386,9 +469,7 @@ export default function RegisterPage() {
             disabled={loading}
             className="w-full py-3.5 bg-[#2C7A59] hover:bg-[#1f5a41] disabled:opacity-60 text-white font-semibold rounded-2xl text-sm transition shadow-md flex items-center justify-center space-x-2"
           >
-            <span>
-              {loading ? "กำลังตรวจสอบข้อมูล..." : "ถัดไป: ยืนยันอีเมล"}
-            </span>
+            <span>{loading ? "กำลังตรวจสอบข้อมูล..." : "ถัดไป: ยืนยันอีเมล"}</span>
             {!loading && <ArrowRight className="w-4 h-4" />}
           </button>
         </form>
@@ -401,9 +482,7 @@ export default function RegisterPage() {
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-2xl font-bold text-slate-900">
-              ตรวจสอบอีเมลของคุณ
-            </h2>
+            <h2 className="text-2xl font-bold text-slate-900">ตรวจสอบอีเมลของคุณ</h2>
             <p className="text-xs text-slate-500">
               ระบบได้ส่งรหัสยืนยัน 6 หลักไปที่อีเมลของคุณแล้ว
               <br />
@@ -415,13 +494,13 @@ export default function RegisterPage() {
           </div>
 
           {errorMessage && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl font-medium break-words">
+            <div role="alert" className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl font-medium break-words">
               {errorMessage}
             </div>
           )}
 
           {successMessage && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs rounded-xl font-medium break-words">
+            <div role="status" className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs rounded-xl font-medium break-words">
               {successMessage}
             </div>
           )}
@@ -482,9 +561,7 @@ export default function RegisterPage() {
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-2xl font-bold text-slate-900">
-              ลงทะเบียนสำเร็จ!
-            </h2>
+            <h2 className="text-2xl font-bold text-slate-900">ลงทะเบียนสำเร็จ!</h2>
             <p className="text-xs text-slate-500">
               {successMessage ||
                 "บัญชีองค์กรของคุณได้รับการยืนยันอีเมลและบันทึกเรียบร้อยแล้ว"}

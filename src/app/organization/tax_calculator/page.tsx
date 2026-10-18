@@ -2,9 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 
-// ============================================================================
 // Mock Data: จำลองข้อมูลโครงการ T-VER ที่ผู้ใช้เลือกจากหน้า "จำลองโครงการ T-VER"
-// ============================================================================
 interface TVerProjectSimulationData {
   id: string;
   projectName: string;
@@ -57,12 +55,10 @@ const taxBenefitOptions = [
 ];
 
 export default function TaxCalculatorPage() {
-  // ----------------------------------------------------
+
   // 1. STATE สำหรับโครงการที่เลือก
-  // ----------------------------------------------------
   const [selectedProjectId, setSelectedProjectId] = useState<string>(mockSimulatedProjects[0].id);
   const [activeProject, setActiveProject] = useState<TVerProjectSimulationData>(mockSimulatedProjects[0]);
-
   // States สำหรับ Form (Auto-filled เมื่อเปลี่ยนโครงการ)
   const [cSeqYear1, setCSeqYear1] = useState<number | "">(mockSimulatedProjects[0].cSeqYear1);
   const [cSeqYear2, setCSeqYear2] = useState<number | "">(mockSimulatedProjects[0].cSeqYear2);
@@ -70,9 +66,8 @@ export default function TaxCalculatorPage() {
   const [carbonPrice, setCarbonPrice] = useState<number | "">(mockSimulatedProjects[0].defaultCarbonPrice);
   const [selectedTaxBenefitYears, setSelectedTaxBenefitYears] = useState<number>(3);
 
-  // ----------------------------------------------------
+
   // 2. STATE สำหรับผลลัพธ์การคำนวณ
-  // ----------------------------------------------------
   const [isCalculated, setIsCalculated] = useState(false);
   const [calculationResult, setCalculationResult] = useState<{
     creditSold: number;
@@ -91,9 +86,8 @@ export default function TaxCalculatorPage() {
     }>;
   } | null>(null);
 
-  // ----------------------------------------------------
+
   // 3. EFFECT: เมื่อเปลี่ยนโครงการ ให้ Auto-fill ข้อมูลใหม่ทันที
-  // ----------------------------------------------------
   useEffect(() => {
     const proj = mockSimulatedProjects.find((p) => p.id === selectedProjectId);
     if (proj) {
@@ -106,9 +100,8 @@ export default function TaxCalculatorPage() {
     }
   }, [selectedProjectId]);
 
-  // ----------------------------------------------------
+  
   // 4. ฟังก์ชันคำนวณภาษี (ใช้ Ratio_Sell = 50% และ Expense = 20%)
-  // ----------------------------------------------------
   const handleCalculateTax = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -189,9 +182,9 @@ export default function TaxCalculatorPage() {
 
       {/* MAIN CONTAINER */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* ========================================================= */}
+
+
         {/* ฝั่งซ้าย: ฟอร์มตั้งค่าการประเมิน */}
-        {/* ========================================================= */}
         <div className="lg:col-span-4 bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-5">
           <h2 className="text-base font-bold text-[#11221C]">ตั้งค่าการประเมิน</h2>
 
@@ -293,9 +286,7 @@ export default function TaxCalculatorPage() {
           </form>
         </div>
 
-        {/* ========================================================= */}
-        {/* ฝั่งขวา: แสดงผล UI ต้นฉบับเหมือนเดิมทุกประการ */}
-        {/* ========================================================= */}
+        {/* ฝั่งขวา: แสดงผลลัพธ์การคำนวณ */}
         <div className="lg:col-span-8 space-y-6">
           {isCalculated && calculationResult ? (
             <>
@@ -415,7 +406,7 @@ export default function TaxCalculatorPage() {
             </>
           ) : (
             <div className="bg-slate-50/50 border border-dashed border-slate-200 rounded-3xl h-64 flex items-center justify-center text-slate-400 text-xs font-medium">
-              กรอกข้อมูลการประเมินฝั่งซ้าย แล้วกด "คำนวณภาษี" เพื่อดูผลลัพธ์
+              กรอกข้อมูลการประเมินฝั่งซ้ายแล้วคำนวณภาษีเพื่อดูผลลัพธ์
             </div>
           )}
         </div>
