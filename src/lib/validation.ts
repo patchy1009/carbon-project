@@ -1,117 +1,132 @@
-import { normalizeText, normalizeToArabicNumber, normalizeNumberString } from './normalization';
+import {normalizeText, normalizeTextArea, normalizeNumberString, normalizeToArabicNumber, normalizeForCompare} from './normalization';
 
-export type ValidationResult =
-  | { ok: true }
-  | { ok: false; message: string };
+export type validationResult = 
+| { ok : true }
+| { ok : false, message : string };
 
-const OK: ValidationResult = { ok: true };
-const fail = (message: string): ValidationResult => ({ ok: false, message });
+const ok : validationResult = { ok : true };  //เก็บผลที่ผ่านการตรวจสอบ
+const fail = (message : string) : validationResult => ({ ok : false, message });  //เก็บผลที่ไม่ผ่านการตรวจสอบ 
+/*const fail = (message : string) : validationResult => {
+    return {
+        ok : false,
+        message : message
+    };
+};*/
 
-/** ตัวตรวจ 1 ตัว = ฟังก์ชันที่รับข้อความ (ที่ normalize แล้ว) แล้วคืนผล */
-export type FieldRule = (value: string) => ValidationResult;
+export type fieldRule = (value : string) => validationResult;
 
-export const required =
-  (label: string): FieldRule =>
-  (value) =>
-    value === '' ? fail(`กรุณากรอก${label}`) : OK;
+/* บังคับกรอกข้อมูล */ /*func return func 'closure'*/
+export const required = (label : string) : fieldRule => {
+    return (value : string) : validationResult => {
+        if (value.trim() === ''){
+            return fail('กรุณากรอก ' + label);
+        }
+        return ok;
+    };
+};
+// เขียนแบบย่อ
+/*export const required = 
+    (label : string) : fieldRule => 
+    (value) => 
+        value.trim() === ''? fail('กรุณากรอก' + label) : ok;
+*/    
 
-export const notNumericOnly =
-  (label: string): FieldRule =>
-  (value) => {
-    if (value === '') return OK;
-    return /^[\d\s.,\-]+$/.test(value)
-      ? fail(`${label}ต้องไม่เป็นตัวเลขอย่างเดียว`)
-      : OK;
-  };
 
-export const englishOnly =
-  (label: string): FieldRule =>
-  (value) => {
-    if (value === '') return OK;
-    return /^[A-Za-z0-9\s.,()\/%^_\-]+$/.test(value)
-      ? OK
-      : fail(`${label}ต้องเป็นภาษาอังกฤษ (ตัวเลขและสัญลักษณ์ . , ( ) / % ^ _ - ได้)`);
-  };
-
-export const thaiOrEnglish =
-  (label: string): FieldRule =>
-  (value) => {
-    if (value === '') return OK;
-    return /^[\u0E00-\u0E7FA-Za-z0-9\s.,()\/%^_\-]+$/.test(value)
-      ? OK
-      : fail(`${label}ต้องเป็นภาษาไทยหรืออังกฤษ`);
-  };
-
-export const isDecimal =
-  (label: string, opts: { allowNegative?: boolean; maxDecimals?: number } = {}): FieldRule =>
-  (value) => {
-    if (value === '') return OK;
-
-    const num = normalizeToArabicNumber(value);
-    if (num === null) return fail(`${label}ต้องเป็นตัวเลข`);
-
-    if (!opts.allowNegative && num < 0) {
-      return fail(`${label}ต้องไม่เป็นค่าติดลบ`);
-    }
-
-    if (opts.maxDecimals !== undefined) {
-      const decimals = normalizeNumberString(value).split('.')[1] ?? '';
-      if (decimals.length > opts.maxDecimals) {
-        return fail(`${label}ทศนิยมได้ไม่เกิน ${opts.maxDecimals} หลัก`);
-      }
-    }
-    return OK;
-  };
-
-  export const isInteger =
-  (label: string, opts: { min?: number; max?: number } = {}): FieldRule =>
-  (value) => {
-    if (value === '') return OK;
-    if (!/^-?\d+$/.test(normalizeNumberString(value))) {
-      return fail(`${label}ต้องเป็นเลขอารบิกจำนวนเต็ม`);
-    }
-    const n = Number(normalizeNumberString(value));
-    if (opts.min !== undefined && n < opts.min) return fail(`${label}ต้องไม่น้อยกว่า ${opts.min}`);
-    if (opts.max !== undefined && n > opts.max) return fail(`${label}ต้องไม่เกิน ${opts.max}`);
-    return OK;
-  };
-
-  export type FieldSchema = {
-  /** ฟังก์ชัน normalize ของช่องนี้ ถ้าไม่ระบุจะใช้ normalizeText */
-  normalize?: (value: string) => string;
-  /** กฎที่ตรวจเรียงตามลำดับ เจอข้อแรกที่ไม่ผ่านแล้วหยุด */
-  rules: FieldRule[];
+/* ห้ามเป็นตัวเลขล้วน */
+export const notNumericOnly = (label : string) : fieldRule => {
+    return (value : string) : validationResult => {
+        if (value.trim() === '') return ok;
+        if (/[^\d\s.,\-]{5,}$/.test(value.trim())) return fail(label+'ห้ามเป็นตัวเลขล้วน')
+        else return ok;
+    };
 };
 
-export type FormSchema<K extends string> = Record<K, FieldSchema>;
-export type FormErrors<K extends string> = Partial<Record<K, string>>;
+/* ภาษาอังกฤษเท่านั้น */
+export const englishOnly = (label : string) : fieldRule => {
+    return (value : string) : validationResult => {
+        if (value.trim() === '') return ok;
+        if (/^[A-Za-z0-9/]+$/.test(value.trim())) return ok;
+        else return fail(label+'กรุณากรอกเป็นภาษาอังกฤษเท่านั้น');
+    };
+};
 
-export type FormResult<K extends string> =
-  | { ok: true; clean: Record<K, string> }
-  | { ok: false; errors: FormErrors<K>; clean: Record<K, string> };
+/* ได้ทั้งภาษาอังกฤษและภาษาไทย */
+export const thaiOrEnglishOnly = (label : string) : fieldRule => {
+    return (value : string) : validationResult => {
+        if (value.trim() === '') return ok;
+        if (/^[\u0E00-\u0E7FA-Za-z0-9\s/]+$/.test(value.trim())) return ok;
+        else return fail(label+'กรุณากรอกเป็นภาษาอังกฤษหรือภาษาไทยเท่านั้น');  
+    };
+};
+
+/* จำกัดหลักทศนิยม + ห้ามติดลบ */
+export const isDecimal = (label : string, opts : { allowNegative?: boolean, maxDecimals?: number }={} ) : fieldRule => {
+    return (value : string) : validationResult => { 
+        if (value.trim() === '') return ok;
+        const num = normalizeToArabicNumber(value);
+        const numstring = normalizeNumberString(value);
+        if ( num === null ) return fail(label+'ต้องเป็นตัวเลข');
+        // ตรวจว่าไม่ติดลบ
+        if ( opts.allowNegative !== true && num < 0 ) return fail(label+'ห้ามติดลบ');
+        // ตรวจว่ามีทศนิยมเกินกำหนดหรือไม่
+        if ( opts.maxDecimals !== undefined ) {
+            const decimalPart = numstring.split('.')[1]??'';
+            if ( decimalPart.length > opts.maxDecimals ) {
+                return fail(label+'จำนวนทศนิยมต้องไม่เกิน '+opts.maxDecimals+' หลัก');
+            }
+        }
+        return ok;
+    };
+};
+
+/* จำนวนเต็มบวกเท่านั้น */
+export const isPositiveInteger = (label : string) : fieldRule => {
+    return (value : string) : validationResult => {
+        if (value.trim() === '') return ok;
+        const num = normalizeToArabicNumber(value);
+        if ( num === null ) return fail(label+'ต้องเป็นตัวเลข');
+        if ( !Number.isInteger(num) || num <= 0) return fail(label+'ห้ามเป็นทศนิยมและต้องมีค่ามากกว่าศูนย์');
+        return ok;
+    };
+};
+
+/* -- เรียก normalizeและvalidate ทีเดียว -- */
+/* ฟอร์ม 1 ช่องต้อง normalized + validate */
+export type fieldSchema = {
+    normalize? : (value : string) => string,  // ไม่ระบุจะ normalizeText
+    rules : fieldRule[]   // รายการกฎ ตรวจตามลำดับ ไม่ผ่านข้อไหนจะหยุดตรวจ
+};
+
+export type formSchema<K extends string> = Record<K, fieldSchema>;  // กติกาที่ใช้ตรวจสอบ
+export type formError<K extends string> = Partial<Record<K, string>>;  // แบบแผนของ error
+
+// ผลลัฑธ์ของการตรวจสอบฟอร์ม 1 ช่อง
+export type formResult<K extends string> =
+    | { ok : true, clean : Record<K, string> }
+    | { ok : false, errors : formError<K>, clean : Record<K, string> };  //เก็บค่าที่ normalize แล้วของแต่ละ field
 
 export function validateForm<K extends string>(
-  values: Record<K, string>,
-  schema: FormSchema<K>
-): FormResult<K> {
-  const clean = {} as Record<K, string>;
-  const errors: FormErrors<K> = {};
+    schema : formSchema<K>, 
+    formData : Record<K, string> 
+) : formResult<K> { 
+    const clean = {} as Record<K, string>;
+    const errors : formError<K> = {};
 
-  for (const key of Object.keys(schema) as K[]) {
-    const { normalize = normalizeText, rules } = schema[key];
-    const value = normalize(values[key] ?? '');   // (1) normalize ก่อน
-    clean[key] = value;
+    for ( const key of Object.keys(schema) as K[] ) {
+        const { normalize = normalizeText, rules } = schema[key];
+        const value = normalize(formData[key] ?? '');  // normalize
+        clean[key] = value;
 
-    for (const rule of rules) {                   // (2) แล้วค่อย validate
-      const r = rule(value);
-      if (!r.ok) {
-        errors[key] = r.message;                  // (3) เก็บ error แรกของช่องนี้
-        break;
-      }
+        for ( const rule of rules ) {       // validate ตามลำดับ ถ้าไม่ผ่านข้อไหนจะหยุดตรวจ
+            const result = rule(value);
+            if ( !result.ok ) {
+                errors[key] = result.message;     // เก็บ error ที่เจอ
+                break;  //หยุดตรวจข้ออื่นๆ ของ field นี้
+            }
+        }
     }
-  }
 
-  return Object.keys(errors).length === 0
-    ? { ok: true, clean }
-    : { ok: false, errors, clean };
+    return Object.keys(errors).length === 0
+        ? { ok : true, clean }
+        : { ok : false, clean, errors };
 }
