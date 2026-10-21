@@ -106,8 +106,8 @@ export type formResult<K extends string> =
     | { ok : false, errors : formError<K>, clean : Record<K, string> };  //เก็บค่าที่ normalize แล้วของแต่ละ field
 
 export function validateForm<K extends string>(
-    schema : formSchema<K>, 
-    formData : Record<K, string> 
+    formData : Record<K, string>,
+    schema : formSchema<K>
 ) : formResult<K> { 
     const clean = {} as Record<K, string>;
     const errors : formError<K> = {};

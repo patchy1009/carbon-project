@@ -1,8 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+//import { supabase } from '@/lib/supabaseClient';
 import type { EfType, EmissionFactor, GwpValue } from '@/types/ef-gwp';
+import { ModalActions, ModalShell} from '@/components/Modal'
+import { deleteRecord, insertRecord } from '@/lib/supabaseCrud';
+import { validateForm, type formError } from '@/lib/validation'; 
+import { normalizeNumberString, normalizeToArabicNumber } from '@/lib/normalization';
+import { fieldError as FieldError } from '@/components/FieldError';
+import { efTypeSchema, efSchema,gwpSchema, EfTypeField, type EfField, type GwpField } from './schema';
+
+
+const inputCls = (hasError: boolean) =>
+  `w-full border rounded-lg px-3 py-2 text-sm ${hasError ? 'border-red-500' : ''}`;
 
 const palette = [
   { bg: 'bg-[#D3F1FF]', border: 'border-[#84CCFF]', text: 'text-[#1B4FB1]' },
@@ -28,6 +38,10 @@ export default function EfGwpClient({
   const [efList, setEfList] = useState<EmissionFactor[]>(initialEf);
   const [gwpList, setGwpList] = useState<GwpValue[]>(initialGwp);
 
+  const [typeErrors, setTypeErrors] = useState<formError<EfTypeField>>({});
+  const [efError, setEfError] = useState<formError<EfField>>({});
+  const [gwpErrors, setGwpErrors] = useState<formError<GwpField>>({});
+
   const [showTypeModal, setShowTypeModal] = useState(false);
   const [showEfModal, setShowEfModal] = useState(false);
   const [showGwpModal, setShowGwpModal] = useState(false);
@@ -41,8 +55,12 @@ export default function EfGwpClient({
   });
   const [gwpForm, setGwpForm] = useState({ gas_name: '', gwp_value: '' });
 
+  function closeTypeModal() { setShowTypeModal(false); setTypeErrors({}); }
+  function closeEfModal() { setShowEfModal(false); setEfError({}); }
+  function closeGwpModal() { setShowGwpModal(false); setGwpErrors({}); }
+  
   // --- ประเภท EF ---
-  async function handleAddType(e: React.FormEvent) {
+  /*async function handleAddType(e: React.FormEvent) {
     e.preventDefault();
     const { data, error } = await supabase
       .from('ef_type')
@@ -53,17 +71,41 @@ export default function EfGwpClient({
     setEfTypes((prev) => [...prev, data as EfType]);
     setShowTypeModal(false);
     setTypeForm({ type_name: '' });
+  }*/
+  async function handleAddType(e : React.FormEvent) {
+    e.preventDefault();
+    const created = await insertRecord<EfType>(
+      'ef_type',
+      { type_name : typeForm.type_name },
+      '*',
+      'เพิ่มประเภท'
+    );
+    if (!created) return;
+    setEfTypes((prev) => [...prev, created]);
+    setShowEfModal(false);
+    setTypeForm({ type_name : '' });
+    
   }
 
-  async function handleDeleteType(id: string) {
+  /*async function handleDeleteType(id: string) {
     if (!confirm('ลบประเภทนี้? (emission_factor ที่ผูกอยู่จะถูก unlink)')) return;
     const { error } = await supabase.from('ef_type').delete().eq('eftype_id', id);
     if (error) return alert('ลบไม่สำเร็จ: ' + error.message);
     setEfTypes((prev) => prev.filter((t) => t.eftype_id !== id));
+  }*/
+  async function handleDeleteType( id : string ){
+    const ok = await deleteRecord(
+      'ef_type',
+      'eftype_id',
+      id,
+      'ลบประเภทนี้? (emission_factor ที่ผูกอยู่จะ unlink)'
+    );
+    if (!ok) return;
+    setEfTypes((prev) => prev.filter((t) => t.eftype_id != id));
   }
 
   // --- ค่า EF ---
-  async function handleAddEf(e: React.FormEvent) {
+  /*async function handleAddEf(e: React.FormEvent) {
     e.preventDefault();
     const { data, error } = await supabase
       .from('emission_factor')
@@ -79,17 +121,50 @@ export default function EfGwpClient({
     setEfList((prev) => [...prev, data as EmissionFactor]);
     setShowEfModal(false);
     setEfForm({ eftype_id: '', ef_name: '', ef_value: '', real_unit: '' });
+  }*/
+  async function handleAddEf(e : React.FormEvent) {
+    e.preventDefault();
+    // normalize + validate
+    const result = validateForm(efForm, efSchema);
+    if (!result.ok) {
+      setEfError(result.errors); // โชว์ error ใต้ช่อง
+      return;
+    } 
+    setEfError({});
+
+    // นำค่า clean มาบันทึกลง funcกลาง
+    const created = await insertRecord<EmissionFactor>(
+      'emission_factor',
+      {
+        ef_name : result.clean.ef_name,
+        ef_value : normalizeToArabicNumber(result.clean.ef_value),
+        real_unit : result.clean.real_unit,
+        eftype_id : efForm.eftype_id || null,
+      },
+      '*, ef_type(eftype_id, type_name)',
+      'เพิ่ม EF'
+    );
+    if (!created) return;
+
+    setEfList((prev) => [...prev, created]);
+    setShowEfModal(false);
+    setEfForm({ef_name: '', ef_value: '', real_unit: '', eftype_id: ''});
   }
 
-  async function handleDeleteEf(id: string) {
+  /*async function handleDeleteEf(id: string) {
     if (!confirm('ลบค่า EF นี้?')) return;
     const { error } = await supabase.from('emission_factor').delete().eq('ef_id', id);
     if (error) return alert('ลบไม่สำเร็จ: ' + error.message);
     setEfList((prev) => prev.filter((r) => r.ef_id !== id));
+  }*/
+  async function handleDeleteEf(id: string){
+    const ok = await deleteRecord('emission_factor', 'ef_id', id, 'ลบค่า EF?');
+    if (!ok) return;
+    setEfList((prev) => prev.filter((r) => r.ef_id !== id));
   }
 
   // --- ค่า GWP ---
-  async function handleAddGwp(e: React.FormEvent) {
+  /*async function handleAddGwp(e: React.FormEvent) {
     e.preventDefault();
     const { data, error } = await supabase
       .from('global_warming_potential')
@@ -103,15 +178,40 @@ export default function EfGwpClient({
     setGwpList((prev) => [...prev, data as GwpValue]);
     setShowGwpModal(false);
     setGwpForm({ gas_name: '', gwp_value: '' });
+  }*/
+  async function handleAddGwp(e: React.FormEvent) {
+    e.preventDefault();
+    const result = validateForm(gwpForm, gwpSchema);
+    if (!result.ok) { setGwpErrors(result.errors); return; }
+    setGwpErrors({});
+
+    const created = await insertRecord<GwpValue>(
+      'global_warming_potential',
+      {
+        gas_name: result.clean.gas_name,
+        gwp_value: normalizeToArabicNumber(result.clean.gwp_value),
+      },
+      '*',
+      'เพิ่มค่า GWP'
+    );
+    if (!created) return;
+    setGwpList((prev) => [...prev, created]);
+    closeGwpModal();
+    setGwpForm({ gas_name: '', gwp_value: '' });
   }
 
-  async function handleDeleteGwp(id: string) {
+  /*async function handleDeleteGwp(id: string) {
     if (!confirm('ลบค่า GWP นี้?')) return;
     const { error } = await supabase
       .from('global_warming_potential')
       .delete()
       .eq('gwp_id', id);
     if (error) return alert('ลบไม่สำเร็จ: ' + error.message);
+    setGwpList((prev) => prev.filter((r) => r.gwp_id !== id));
+  }*/
+  async function handleDeleteGwp(id: string) {
+    const ok = await deleteRecord('global_warming_potential', 'gwp_id', id, 'ลบค่า GWP นี้?');
+    if (!ok) return;
     setGwpList((prev) => prev.filter((r) => r.gwp_id !== id));
   }
 
@@ -264,6 +364,17 @@ export default function EfGwpClient({
               onChange={(e) => setTypeForm({ type_name: e.target.value })}
               required
             />
+            <div>
+              <input
+                className={`w-full border rounded-lg px-3 py-2 text-sm ${typeErrors.type_name ? 'border-red-500' : ''}`}
+                placeholder="ชื่อประเภท เช่น Stationary Source"
+                type='text'
+                value={typeForm.type_name}
+                onChange={(e) => setTypeForm({ type_name: e.target.value })}
+                required
+              />
+              < FieldError message={typeErrors.type_name} />
+            </div>
             <ModalActions onCancel={() => setShowTypeModal(false)} />
           </form>
         </ModalShell>
@@ -294,15 +405,18 @@ export default function EfGwpClient({
               onChange={(e) => setEfForm({ ...efForm, ef_name: e.target.value })}
               required
             />
-            <input
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-              placeholder="ค่า EF"
-              type="number"
-              step="any"
-              value={efForm.ef_value}
-              onChange={(e) => setEfForm({ ...efForm, ef_value: e.target.value })}
-              required
-            />
+            <div>
+              <input
+                className={`w-full border rounded-lg px-3 py-2 text-sm ${efError.ef_value ? 'border-red-500' : ''}`}
+                placeholder="ค่า EF"
+                type="text"
+                inputMode='decimal'
+                value={efForm.ef_value}
+                onChange={(e) => setEfForm({ ...efForm, ef_value: e.target.value })}
+                required
+              />
+              < FieldError message = {efError.ef_value} />
+            </div>
             <input
               className="w-full border rounded-lg px-3 py-2 text-sm"
               placeholder="หน่วย เช่น kWh, Litre, kg"
@@ -340,38 +454,100 @@ export default function EfGwpClient({
           </form>
         </ModalShell>
       )}
+
+      {/* --- Modal: เพิ่มค่า EF --- */}
+      {showEfModal && (
+        <ModalShell onClose={closeEfModal}>
+          <form onSubmit={handleAddEf} className="space-y-4" noValidate>
+            <h3 className="text-lg font-bold">เพิ่มค่า EF ใหม่</h3>
+
+            <div>
+              <select
+                className={inputCls(!!efError.eftype_id)}
+                value={efForm.eftype_id}
+                onChange={(e) => setEfForm({ ...efForm, eftype_id: e.target.value })}
+              >
+                <option value="">เลือกประเภท EF</option>
+                {efTypes.map((t) => (
+                  <option key={t.eftype_id} value={t.eftype_id}>
+                    {t.type_name}
+                  </option>
+                ))}
+              </select>
+              <FieldError message={efError.eftype_id} />
+            </div>
+
+            <div>
+              <input
+                className={inputCls(!!efError.ef_name)}
+                placeholder="ชื่อกิจกรรม/เชื้อเพลิง"
+                value={efForm.ef_name}
+                onChange={(e) => setEfForm({ ...efForm, ef_name: e.target.value })}
+              />
+              <FieldError message={efError.ef_name} />
+            </div>
+
+            <div>
+              <input
+                className={inputCls(!!efError.ef_value)}
+                placeholder="ค่า EF"
+                type="text"
+                inputMode="decimal"
+                value={efForm.ef_value}
+                onChange={(e) => setEfForm({ ...efForm, ef_value: e.target.value })}
+              />
+              <FieldError message={efError.ef_value} />
+            </div>
+
+            <div>
+              <input
+                className={inputCls(!!efError.real_unit)}
+                placeholder="หน่วย เช่น kWh, Litre, kg"
+                value={efForm.real_unit}
+                onChange={(e) => setEfForm({ ...efForm, real_unit: e.target.value })}
+              />
+              <FieldError message={efError.real_unit} />
+            </div>
+
+            <ModalActions onCancel={closeEfModal} />
+          </form>
+        </ModalShell>
+      )}
+
+      {/* --- Modal: เพิ่มค่า GWP --- */}
+      {showGwpModal && (
+        <ModalShell onClose={closeGwpModal}>
+          <form onSubmit={handleAddGwp} className="space-y-4" noValidate>
+            <h3 className="text-lg font-bold">เพิ่มค่า GWP ใหม่</h3>
+
+            <div>
+              <input
+                className={inputCls(!!gwpErrors.gas_name)}
+                placeholder="ชื่อก๊าซ เช่น คาร์บอนไดออกไซด์ (CO2)"
+                value={gwpForm.gas_name}
+                onChange={(e) => setGwpForm({ ...gwpForm, gas_name: e.target.value })}
+              />
+              <FieldError message={gwpErrors.gas_name} />
+            </div>
+
+            <div>
+              <input
+                className={inputCls(!!gwpErrors.gwp_value)}
+                placeholder="ค่า GWP"
+                type="text"
+                inputMode="decimal"
+                value={gwpForm.gwp_value}
+                onChange={(e) => setGwpForm({ ...gwpForm, gwp_value: e.target.value })}
+              />
+              <FieldError message={gwpErrors.gwp_value} />
+            </div>
+
+            <ModalActions onCancel={closeGwpModal} />
+          </form>
+        </ModalShell>
+      )}
     </div>
   );
 }
 
-function ModalShell({
-  children,
-  onClose,
-}: {
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  return (
-    <div
-      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-      onClick={onClose}
-    >
-      <div className="bg-white rounded-xl p-6 w-[420px]" onClick={(e) => e.stopPropagation()}>
-        {children}
-      </div>
-    </div>
-  );
-}
 
-function ModalActions({ onCancel }: { onCancel: () => void }) {
-  return (
-    <div className="flex justify-end gap-2 pt-2">
-      <button type="button" onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border">
-        ยกเลิก
-      </button>
-      <button type="submit" className="px-4 py-2 text-sm rounded-lg bg-[#059669] text-white">
-        บันทึก
-      </button>
-    </div>
-  );
-}
