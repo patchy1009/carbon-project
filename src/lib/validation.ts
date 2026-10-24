@@ -84,7 +84,7 @@ export const isPositiveInteger = (label : string) : fieldRule => {
     return (value : string) : validationResult => {
         if (value.trim() === '') return ok;
         const num = normalizeToArabicNumber(value);
-        if ( num === null ) return fail(label+'ต้องเป็นตัวเลข');
+        if ( num === null || Number.isNaN(num) ) return fail(label+'ต้องเป็นตัวเลข');
         if ( !Number.isInteger(num) || num <= 0) return fail(label+'ห้ามเป็นทศนิยมและต้องมีค่ามากกว่าศูนย์');
         return ok;
     };

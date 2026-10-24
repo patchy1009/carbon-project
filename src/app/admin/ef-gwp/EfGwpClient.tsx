@@ -8,7 +8,7 @@ import { deleteRecord, insertRecord } from '@/lib/supabaseCrud';
 import { validateForm, type formError } from '@/lib/validation'; 
 import { normalizeNumberString, normalizeToArabicNumber } from '@/lib/normalization';
 import { fieldError as FieldError } from '@/components/FieldError';
-import { efTypeSchema, efSchema,gwpSchema, EfTypeField, type EfField, type GwpField } from './schema';
+import { efTypeSchema, efSchema,gwpSchema, type EfTypeField, type EfField, type GwpField } from './schema';
 
 
 const inputCls = (hasError: boolean) =>
@@ -75,7 +75,7 @@ export default function EfGwpClient({
   async function handleAddType(e : React.FormEvent) {
     e.preventDefault();
     const created = await insertRecord<EfType>(
-      'ef_type',
+      'car ',
       { type_name : typeForm.type_name },
       '*',
       'เพิ่มประเภท'
@@ -102,6 +102,9 @@ export default function EfGwpClient({
     );
     if (!ok) return;
     setEfTypes((prev) => prev.filter((t) => t.eftype_id != id));
+    setEfList((prev) =>
+      prev.map((r) => (r.eftype_id === id ? { ...r, eftype_id: null, ef_type: null } : r))
+    );
   }
 
   // --- ค่า EF ---
@@ -357,13 +360,6 @@ export default function EfGwpClient({
         <ModalShell onClose={() => setShowTypeModal(false)}>
           <form onSubmit={handleAddType} className="space-y-4">
             <h3 className="text-lg font-bold">เพิ่มประเภท EF ใหม่</h3>
-            <input
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-              placeholder="ชื่อประเภท เช่น Stationary Source"
-              value={typeForm.type_name}
-              onChange={(e) => setTypeForm({ type_name: e.target.value })}
-              required
-            />
             <div>
               <input
                 className={`w-full border rounded-lg px-3 py-2 text-sm ${typeErrors.type_name ? 'border-red-500' : ''}`}

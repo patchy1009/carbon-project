@@ -20,7 +20,7 @@ export function normalizeTextArea(input: string | null | undefined): string {
     .trim(); // ตัดช่องว่างหัวท้าย
 }
 
-/* Normalization ให้เป็น arabic number sring */
+/* Normalization ให้เป็น arabic number string */
 const thaidigit = '๐๑๒๓๔๕๖๗๘๙';
 export function normalizeNumberString(input: string | null | undefined): string {
     const base = normalizeText(input);

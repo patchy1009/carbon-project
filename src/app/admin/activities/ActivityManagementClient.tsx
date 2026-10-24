@@ -1,9 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+//import { supabase } from '@/lib/supabaseClient';
 import type { CarbonScope, Activity, ActivityDetail } from '@/types/activity-management';
 import type { EmissionFactor, GwpValue } from '@/types/ef-gwp';
+//import { insertRecord } from '@/lib/supabaseCrud';
+import { scopeSchema, activitySchema, detailSchema, type ScopeField, type ActivityField, type DetailField } from './schema';
+
+
+
+import { ModalActions, ModalShell} from '@/components/Modal'
+import { deleteRecord, insertRecord } from '@/lib/supabaseCrud';
+import { validateForm, type formError } from '@/lib/validation'; 
+import { normalizeNumberString, normalizeToArabicNumber } from '@/lib/normalization';
+import { fieldError as FieldError } from '@/components/FieldError';
 
 const scopeBadgeStyle: Record<number, string> = {
   1: 'bg-[#B8EED8] text-[#3C6E5C]',
@@ -15,17 +25,25 @@ export default function ActivityManagementClient({
   initialScopes,
   initialActivities,
   initialDetails,
+  initialEfOptions,        
+  initialGwpOptions, 
 }: {
   initialScopes: CarbonScope[];
   initialActivities: Activity[];
   initialDetails: ActivityDetail[];
+  initialEfOptions: EmissionFactor[];     
+  initialGwpOptions: GwpValue[];          
 }) {
   const [scopes, setScopes] = useState<CarbonScope[]>(initialScopes);
   const [activities, setActivities] = useState<Activity[]>(initialActivities);
   const [details, setDetails] = useState<ActivityDetail[]>(initialDetails);
 
-  const [efOptions, setEfOptions] = useState<EmissionFactor[]>([]);
-  const [gwpOptions, setGwpOptions] = useState<GwpValue[]>([]);
+  const [efOptions] = useState<EmissionFactor[]>(initialEfOptions);
+  const [gwpOptions] = useState<GwpValue[]>(initialGwpOptions);
+
+  const [scopeErrors, setScopeErrors] = useState<formError<ScopeField>>({});
+  const [activityErrors, setActivityErrors] = useState<formError<ActivityField>>({});
+  const [detailErrors, setDetailErrors] = useState<formError<DetailField>>({});
 
   const [showScopeModal, setShowScopeModal] = useState(false);
   const [showActivityModal, setShowActivityModal] = useState(false);
@@ -42,7 +60,7 @@ export default function ActivityManagementClient({
     gwp_id: '',
   });
 
-  async function openDetailModal() {
+  /*async function openDetailModal() {
     if (efOptions.length === 0) {
       const { data } = await supabase.from('emission_factor').select('*');
       setEfOptions((data ?? []) as EmissionFactor[]);
@@ -52,24 +70,63 @@ export default function ActivityManagementClient({
       setGwpOptions((data ?? []) as GwpValue[]);
     }
     setShowDetailModal(true);
-  }
+  }*/
 
+  // ประเภท scope 
   async function handleAddScope(e: React.FormEvent) {
     e.preventDefault();
-    const { data, error } = await supabase
-      .from('carbon_scope')
-      .insert({
-        scope_number: Number(scopeForm.scope_number),
-        scope_name: scopeForm.scope_name,
-        scope_detail: scopeForm.scope_detail,
-      })
-      .select()
-      .single();
-    if (error) return alert('เพิ่มขอบเขตไม่สำเร็จ: ' + error.message);
-    setScopes((prev) => [...prev, data as CarbonScope]);
+    const result = validateForm(scopeForm, scopeSchema);
+    if (!result.ok) { setScopeErrors(result.errors); return; }
+    setScopeErrors({});
+
+    const newScope = await insertRecord<CarbonScope>(
+      'carbon_scope',
+      {
+        scope_number: Number(result.clean.scope_number),
+        scope_name: result.clean.scope_name,
+        scope_detail: result.clean.scope_detail || null,   // ว่าง → null
+      },
+      '*',
+      'เพิ่มขอบเขต'
+    );
+    if (!newScope) return;
+    setScopes((prev) => [...prev, newScope]);
     setShowScopeModal(false);
     setScopeForm({ scope_number: '', scope_name: '', scope_detail: '' });
   }
+
+  async function handleDeleteScope( id : string ){
+    const ok = await deleteRecord(
+      'carbon_scope',  // ชื่อตาราง
+      'scope_id',
+      id,
+      'ลบขอบเขตนี้?'
+    );
+    if (!ok) return;
+    setScopes((prev) => prev.filter((t) => t.scope_id != id));
+    setActivities((prev) =>
+      prev.map((r) => (r.scope_id === id ? { ...r, scope_id: null } : r))
+    );
+    /*setDetails((prev) =>
+      prev.map((r) => (r.activity_id === id ? { ...r, activity_id: null} : r))
+    )*/
+  }  
+
+   /* 
+   async function handleAddType(e : React.FormEvent) {
+      e.preventDefault();
+      const created = await insertRecord<EfType>(
+        'ef_type',
+        { type_name : typeForm.type_name },
+        '*',
+        'เพิ่มประเภท'
+      );
+      if (!created) return;
+      setEfTypes((prev) => [...prev, created]);
+      setShowEfModal(false);
+      setTypeForm({ type_name : '' });
+      
+    }
 
   async function handleDeleteScope(id: string) {
     if (!confirm('ลบขอบเขตนี้? (กิจกรรมที่ผูกอยู่จะถูก unlink)')) return;
@@ -77,7 +134,47 @@ export default function ActivityManagementClient({
     if (error) return alert('ลบไม่สำเร็จ: ' + error.message);
     setScopes((prev) => prev.filter((s) => s.scope_id !== id));
   }
+  */
 
+
+  // กิจกรรมแต่ละขอบเขต
+    async function handleAddActivity(e: React.FormEvent) {
+    e.preventDefault();
+    const result = validateForm(activityForm, activitySchema);
+    if (!result.ok) { setActivityErrors(result.errors); return; }
+    setActivityErrors({});
+
+    const newActivity = await insertRecord<Activity>(
+      'activity',
+      {
+        scope_id: result.clean.scope_id,
+        activity_name: result.clean.activity_name,
+      },
+      '*, carbon_scope(scope_id, scope_name, scope_number)',
+      'เพิ่มกิจกรรม'
+    );
+    if (!newActivity) return;
+    setActivities((prev) => [...prev, newActivity]);
+    setShowActivityModal(false);
+    setActivityForm({ scope_id: '', activity_name: ''});
+  }
+
+  async function handleDeleteActivity( id : string ){
+    const ok = await deleteRecord(
+      'activity',  // ชื่อตาราง
+      'activity_id',
+      id,
+      'ลบกิจกรรมนี้?'
+    );
+    if (!ok) return;
+    setActivities((prev) => prev.filter((t) => t.activity_id !== id));
+    setDetails((prev) =>
+      prev.map((r) => (r.activity_id === id ? { ...r, activity_id: null } : r))
+    );
+  } 
+
+
+  /*
   async function handleAddActivity(e: React.FormEvent) {
     e.preventDefault();
     const { data, error } = await supabase
@@ -100,7 +197,45 @@ export default function ActivityManagementClient({
     if (error) return alert('ลบไม่สำเร็จ: ' + error.message);
     setActivities((prev) => prev.filter((a) => a.activity_id !== id));
   }
+  */
 
+  // รายละเอียดในแต่ละกิจกรรม
+  async function handleAddDetail(e: React.FormEvent) {
+    e.preventDefault();
+    const result = validateForm(detailForm, detailSchema);
+    if (!result.ok) { setDetailErrors(result.errors); return; }
+    setDetailErrors({});
+
+    const newDetail = await insertRecord<ActivityDetail>(
+      'activity_detail',
+      {
+        activity_id: result.clean.activity_id,
+        detail_name: result.clean.detail_name,
+        unit: result.clean.unit,
+        description: result.clean.description || null,
+        ef_id: result.clean.ef_id || null,
+        gwp_id: result.clean.gwp_id || null,
+      },
+      '*, activity(activity_id, activity_name, scope_id, carbon_scope(scope_id, scope_name, scope_number)), emission_factor(ef_id, ef_name, ef_value, real_unit),global_warming_potential(gwp_id, gas_name, gwp_value)' ,
+      'เพิ่มรายการนี้'
+    );
+    if (!newDetail) return;
+    setDetails((prev) => [...prev, newDetail]);
+    setShowDetailModal(false);
+    setDetailForm({ activity_id: '', detail_name: '', unit: '', description: '', ef_id: '', gwp_id: ''});
+  }
+
+  async function handleDeleteDetail( id : string ){
+    const ok = await deleteRecord(
+      'activity_detail',  // ชื่อตาราง
+      'scopedetail_id',
+      id,
+      'ลบรายการนี้?'
+    );
+    if (!ok) return;
+    setDetails((prev) => prev.filter((t) => t.scopedetail_id != id));
+  }
+  /*
   async function handleAddDetail(e: React.FormEvent) {
     e.preventDefault();
     const { data, error } = await supabase
@@ -139,6 +274,7 @@ export default function ActivityManagementClient({
     if (error) return alert('ลบไม่สำเร็จ: ' + error.message);
     setDetails((prev) => prev.filter((d) => d.scopedetail_id !== id));
   }
+  */
 
   const activitiesByScope = scopes
     .slice()
@@ -277,7 +413,7 @@ export default function ActivityManagementClient({
             </h2>
           </div>
           <button
-            onClick={openDetailModal}
+            onClick={() => setShowDetailModal(true)}
             className="flex items-center gap-1.5 rounded-lg bg-[#266955] px-3 py-2 text-sm text-white shadow-sm"
           >
             + เพิ่มรายละเอียด
@@ -472,7 +608,7 @@ export default function ActivityManagementClient({
   );
 }
 
-function ModalShell({
+/*function ModalShell({
   children,
   onClose,
 }: {
@@ -505,4 +641,4 @@ function ModalActions({ onCancel }: { onCancel: () => void }) {
       </button>
     </div>
   );
-}
+}*/

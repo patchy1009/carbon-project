@@ -3,9 +3,10 @@ export const dynamic = 'force-dynamic';
 import { supabase } from '@/lib/supabaseClient';
 import ActivityManagementClient from './ActivityManagementClient';
 import type { CarbonScope, Activity, ActivityDetail } from '@/types/activity-management';
+import type { EmissionFactor, GwpValue } from '@/types/ef-gwp'; 
 
 export default async function ActivityManagementPage() {
-  const [scopesRes, activitiesRes, detailsRes] = await Promise.all([
+  const [scopesRes, activitiesRes, detailsRes, efRes, gwpRes] = await Promise.all([
     supabase.from('carbon_scope').select('*').order('scope_number'),
     supabase
       .from('activity')
@@ -20,6 +21,8 @@ export default async function ActivityManagementPage() {
         global_warming_potential(gwp_id, gas_name, gwp_value)`
       )
       .order('updated_at'),
+    supabase.from('emission_factor').select('*'),
+    supabase.from('global_warming_potential').select('*'),
   ]);
 
   return (
@@ -27,6 +30,8 @@ export default async function ActivityManagementPage() {
       initialScopes={(scopesRes.data ?? []) as CarbonScope[]}
       initialActivities={(activitiesRes.data ?? []) as Activity[]}
       initialDetails={(detailsRes.data ?? []) as ActivityDetail[]}
+      initialEfOptions={(efRes.data ?? []) as EmissionFactor[]}
+      initialGwpOptions={(gwpRes.data ?? []) as GwpValue[]}
     />
   );
 }
