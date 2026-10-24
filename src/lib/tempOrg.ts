@@ -1,4 +1,4 @@
 // ⚠️ ชั่วคราว: ยังไม่ผูก Auth จริง ทุกหน้าฝั่งบริษัทใช้ org_id ตัวนี้ร่วมกัน
 // ถ้าคอลัมน์ org_id ในตารางมี foreign key ไปตาราง organization ต้องใช้ UUID ที่มีอยู่จริงในตารางนั้น
 // เมื่อทำ Auth จริงแล้ว ให้ลบไฟล์นี้และดึง org_id จากผู้ใช้ที่ล็อกอินแทน
-export const TEMP_ORG_ID = '3e285a57-2f20-4312-9ee2-3cdbf3ff9e1e';
+export const TEMP_ORG_ID = '3eb66a2e-c6d1-4e15-b331-fe03965a3c02';

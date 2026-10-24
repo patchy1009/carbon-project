@@ -120,9 +120,10 @@ export default function DashboardClient({
             <p className="text-sm text-[#64748B] py-6 text-center">ยังไม่มีบันทึกการปล่อยก๊าซ</p>
           )}
           {activities.slice(0, 3).map((log, idx) => (
-            <div
+            <Link
               key={log.orgactlist_id}
-              className={`flex items-center justify-between py-5 ${
+              href={`/organization/footprint/report/${log.orgactlist_id}`}
+              className={`flex items-center justify-between py-5 hover:bg-[#F8FAFC] transition ${
                 idx > 0 ? 'border-t border-[#F1F5F9]' : ''
               }`}
             >
@@ -130,10 +131,13 @@ export default function DashboardClient({
                 <h3 className="text-base font-bold text-[#1E293B]">{log.orgact_name}</h3>
                 <p className="text-xs text-[#64748B]">{formatThaiDate(log.created_at)}</p>
               </div>
-              <p className="text-base font-bold text-[#0F172A]">
-                {formatNumber(log.total_ghg_emission)} {log.unit ?? 'tCO2e'}
-              </p>
-            </div>
+              <div className="flex items-center gap-4">
+                <p className="text-base font-bold text-[#0F172A]">
+                  {formatNumber(log.total_ghg_emission)} {log.unit ?? 'tCO2e'}
+                </p>
+                <span className="text-xs font-semibold text-[#64748B]">ดูรายงาน ›</span>
+              </div>
+            </Link>
           ))}
         </div>
       </div>
