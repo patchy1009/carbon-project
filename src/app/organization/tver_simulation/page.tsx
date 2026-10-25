@@ -395,7 +395,7 @@ export default function TVERSimulationPage() {
       }
 
       setSaved(true);
-      showMessage("บันทึกและอัปเดตข้อมูลลงฐานข้อมูลตาม Proposal เรียบร้อยแล้ว", "success");
+      showMessage("บันทึกและอัปเดตข้อมูลลงฐานข้อมูลเรียบร้อย", "success");
     } catch (error: any) {
       console.error("Database error details:", error);
       const errCode = error?.code || "";
@@ -639,7 +639,7 @@ export default function TVERSimulationPage() {
                     การประมาณคาร์บอนเครดิตสะสม 3 ปี
                   </h2>
                   <p className="mt-2 max-w-sm text-sm leading-6 text-gray-400">
-                    กรอกข้อมูลโครงการทางด้านซ้าย แล้วกดคำนวณเพื่อแสดงกราฟยอดสะสมตามสูตร T-VER
+                    กรอกข้อมูลโครงการแล้วกดคำนวณเพื่อแสดงกราฟยอดสะสมคาร์บอนเครดิตของโครงการปลูกป่า
                   </p>
                 </div>
               ) : (
@@ -647,9 +647,6 @@ export default function TVERSimulationPage() {
                   <h2 className="text-lg font-bold text-gray-800">
                     การประมาณคาร์บอนเครดิตสะสม 3 ปี
                   </h2>
-                  <p className="mt-1 text-sm text-gray-500">
-                    ยอดกักเก็บสะสมตามสูตร T-VER (C_TT = T x t x MAI x 10^-3) (tCO₂e)
-                  </p>
 
                   <div className="mt-7 flex h-72">
                     <div className="flex flex-col justify-between pb-7 pr-3 text-right text-xs text-gray-400">
@@ -712,7 +709,7 @@ export default function TVERSimulationPage() {
                         className="rounded-xl border border-gray-100 bg-gray-50 p-3 text-center sm:p-4"
                       >
                         <p className="text-xs text-gray-500">
-                          สะสมปีที่ {index + 1}
+                          ปีที่ {index + 1}
                         </p>
                         <p className="mt-2 text-xl font-bold text-green-600">
                           {formatNumber(credit)}
@@ -910,7 +907,7 @@ export default function TVERSimulationPage() {
                     รายงานผลการจัดสรรเครดิต
                   </h2>
                   <p className="mt-2 max-w-sm text-sm leading-6 text-gray-400">
-                    เลือกเป้าหมายองค์กรและรายการปล่อยก๊าซทางด้านซ้าย แล้วกดปุ่ม <b>"คำนวณการจัดสรรเครดิต"</b> เพื่อดูผลลัพธ์
+                    เลือกเป้าหมายองค์กรและรายการปล่อยก๊าซ แล้วคำนวณการจัดสรรเครดิตเพื่อดูผลลัพธ์
                   </p>
                 </div>
               ) : (
@@ -954,10 +951,6 @@ export default function TVERSimulationPage() {
                       </span>
                     </div>
                   </div>
-
-                  <p className="mt-4 text-xs leading-5 text-gray-400">
-                    การนำเครดิตจากโครงการปลูกป่ามาหักลบกับกิจกรรมการปล่อยก๊าซ เพื่อประเมินสถานะคาร์บอนขององค์กร
-                  </p>
 
                   <Link
                     href="/organization/tax_calculator"
