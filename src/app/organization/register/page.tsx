@@ -12,6 +12,7 @@ import {
   ArrowRight,
   UserCheck,
   RefreshCw,
+  User,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -26,6 +27,7 @@ const industries = [
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
+const USERNAME_REGEX = /^[a-zA-Z0-9_-]{3,20}$/;
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -42,6 +44,7 @@ export default function RegisterPage() {
   const router = useRouter();
 
   const [step, setStep] = useState<"form" | "otp" | "success">("form");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [companyName, setCompanyName] = useState("");
@@ -53,6 +56,15 @@ export default function RegisterPage() {
   const [successMessage, setSuccessMessage] = useState("");
   const [resendTimer, setResendTimer] = useState(300);
   const [canResend, setCanResend] = useState(false);
+
+  // ตรวจสอบรูปแบบ Username ขณะพิมพ์
+  const normalizedUsername = username.trim();
+  const usernameTouched = normalizedUsername.length > 0;
+  const usernameValid = USERNAME_REGEX.test(normalizedUsername);
+  const usernameError =
+    usernameTouched && !usernameValid
+      ? "Username ต้องมีความยาว 3-20 ตัวอักษร (A-Z, a-z, 0-9, _, -)"
+      : "";
 
   // ตรวจสอบรูปแบบอีเมลขณะพิมพ์
   const normalizedEmail = email.trim();
@@ -106,15 +118,21 @@ export default function RegisterPage() {
     setErrorMessage("");
     setSuccessMessage("");
 
-    const normalizedEmail = email.trim().toLowerCase();
-    const normalizedCompanyName = companyName.trim();
+    const cleanUsername = username.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanCompanyName = companyName.trim();
 
-    if (!normalizedEmail || !password || !normalizedCompanyName) {
+    if (!cleanUsername || !cleanEmail || !password || !cleanCompanyName) {
       setErrorMessage("กรุณากรอกข้อมูลให้ครบถ้วน");
       return;
     }
 
-    if (!EMAIL_REGEX.test(normalizedEmail)) {
+    if (!USERNAME_REGEX.test(cleanUsername)) {
+      setErrorMessage("Username ต้องมีความยาว 3-20 ตัวอักษร และใช้ได้เฉพาะภาษาอังกฤษ ตัวเลข _ และ - เท่านั้น");
+      return;
+    }
+
+    if (!EMAIL_REGEX.test(cleanEmail)) {
       setErrorMessage("กรุณากรอกอีเมลให้ถูกต้อง เช่น name@company.co.th");
       return;
     }
@@ -129,11 +147,28 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      // ตรวจสอบอีเมลในตาราง public.user ก่อน
+      // ตรวจสอบ Username ซ้ำในฐานข้อมูล
+      const { data: existingUsername, error: checkUsernameError } = await supabase
+        .from("user")
+        .select("username")
+        .eq("username", cleanUsername)
+        .maybeSingle();
+
+      if (checkUsernameError) {
+        console.warn("Username lookup warning:", checkUsernameError.message);
+      }
+
+      if (existingUsername) {
+        setErrorMessage("ชื่อผู้ใช้งาน (Username) นี้ถูกใช้งานไปแล้ว กรุณาใช้ชื่ออื่น");
+        setLoading(false);
+        return;
+      }
+
+      // ตรวจสอบ Email ซ้ำในฐานข้อมูล
       const { data: existingUser, error: checkError } = await supabase
         .from("user")
         .select("email")
-        .eq("email", normalizedEmail)
+        .eq("email", cleanEmail)
         .maybeSingle();
 
       if (checkError) {
@@ -142,16 +177,18 @@ export default function RegisterPage() {
 
       if (existingUser) {
         setErrorMessage("อีเมลนี้ถูกลงทะเบียนใช้งานไปแล้ว กรุณาเข้าสู่ระบบ");
+        setLoading(false);
         return;
       }
 
       const { data: signUpData, error: signUpError } =
         await supabase.auth.signUp({
-          email: normalizedEmail,
+          email: cleanEmail,
           password,
           options: {
             data: {
-              company_name: normalizedCompanyName,
+              username: cleanUsername,
+              company_name: cleanCompanyName,
               industry,
             },
           },
@@ -165,11 +202,13 @@ export default function RegisterPage() {
         signUpData.user.identities.length === 0
       ) {
         setErrorMessage("อีเมลนี้ถูกลงทะเบียนใช้งานไปแล้ว กรุณาเข้าสู่ระบบ");
+        setLoading(false);
         return;
       }
 
-      setEmail(normalizedEmail);
-      setCompanyName(normalizedCompanyName);
+      setUsername(cleanUsername);
+      setEmail(cleanEmail);
+      setCompanyName(cleanCompanyName);
       setOtpInput("");
       setResendTimer(300);
       setCanResend(false);
@@ -210,10 +249,10 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const normalizedEmail = email.trim().toLowerCase();
+      const cleanEmail = email.trim().toLowerCase();
 
       const { data, error } = await supabase.auth.verifyOtp({
-        email: normalizedEmail,
+        email: cleanEmail,
         token,
         type: "signup",
       });
@@ -228,13 +267,14 @@ export default function RegisterPage() {
       }
 
       const metadata = authUser.user_metadata ?? {};
+      const finalUsername = metadata.username || username.trim();
       const company = metadata.company_name || companyName.trim();
       const bizType = metadata.industry || industry;
 
       const { error: userError } = await supabase.from("user").insert({
         acc_id: authUser.id,
-        email: normalizedEmail,
-        username: normalizedEmail.split("@")[0],
+        email: cleanEmail,
+        username: finalUsername,
         role: "organization",
         status: "active",
       });
@@ -331,6 +371,41 @@ export default function RegisterPage() {
           )}
 
           <div className="space-y-4">
+            {/* ช่องกรอก Username */}
+            <div className="space-y-1.5">
+              <label
+                htmlFor="register-username"
+                className="text-xs font-bold text-slate-700"
+              >
+                ชื่อผู้ใช้งาน (Username)
+              </label>
+              <div className="relative">
+                <input
+                  id="register-username"
+                  type="text"
+                  required
+                  autoComplete="username"
+                  placeholder="username ของคุณ"
+                  value={username}
+                  aria-invalid={Boolean(usernameError)}
+                  aria-describedby={usernameError ? "register-username-error" : undefined}
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                    setErrorMessage("");
+                  }}
+                  className={`${inputClass} ${
+                    usernameError ? "border-red-400 focus:ring-red-500" : "border-slate-200"
+                  }`}
+                />
+                <User className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+              </div>
+              {usernameError && (
+                <p id="register-username-error" role="alert" className="text-xs text-red-600">
+                  {usernameError}
+                </p>
+              )}
+            </div>
+
             <div className="space-y-1.5">
               <label
                 htmlFor="register-email"
@@ -352,8 +427,9 @@ export default function RegisterPage() {
                     setEmail(e.target.value);
                     setErrorMessage("");
                   }}
-                  className={`${inputClass} ${emailError ? "border-red-400 focus:ring-red-500" : "border-slate-200"
-                    }`}
+                  className={`${inputClass} ${
+                    emailError ? "border-red-400 focus:ring-red-500" : "border-slate-200"
+                  }`}
                 />
                 <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
               </div>
@@ -388,10 +464,11 @@ export default function RegisterPage() {
                     setPassword(e.target.value);
                     setErrorMessage("");
                   }}
-                  className={`${inputClass} ${passwordError
+                  className={`${inputClass} ${
+                    passwordError
                       ? "border-red-400 focus:ring-red-500"
                       : "border-slate-200"
-                    }`}
+                  }`}
                 />
                 <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
               </div>

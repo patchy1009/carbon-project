@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -103,8 +102,8 @@ export default function OrganizationLayout({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Navbar */}
-      <header className="w-full bg-[#1F3E35] text-white shadow-md">
+      {/* Navbar - เพิ่ม sticky top-0 และ z-50 เพื่อให้แถบเมนูติดอยู่ด้านบนเวลาเลื่อนหน้าจอ */}
+      <header className="sticky top-0 z-50 w-full bg-[#1F3E35] text-white shadow-md">
         <nav className="mx-auto grid min-h-20 max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-6 py-4">
           {/* Logo */}
           <Link

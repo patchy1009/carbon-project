@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -36,6 +35,16 @@ function getErrorMessage(error: unknown): string {
   return "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ กรุณาลองใหม่อีกครั้ง";
 }
 
+function formatTime(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+}
+
+const STORAGE_KEY = "pw_reset_expiry_time";
+const FLOW_KEY = "is_in_reset_flow";
+const TEN_MINUTES_MS = 10 * 60 * 1000; // 10 นาที (600 วินาที)
+
 export default function ForgotPasswordPage() {
   const router = useRouter();
 
@@ -50,7 +59,38 @@ export default function ForgotPasswordPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  // ตรวจสอบว่าผู้ใช้เข้ามาผ่านลิงก์กู้คืนรหัสผ่านหรือไม่
+  const [timeLeft, setTimeLeft] = useState(600);
+
+  // ระบบนับถอยหลัง 10 นาที (อิงจากเวลาจริง และจำค่าไว้แม้รีเฟรชหน้าเว็บ)
+  useEffect(() => {
+    if (step !== "reset") return;
+
+    let expiryTime = sessionStorage.getItem(STORAGE_KEY);
+
+    if (!expiryTime) {
+      expiryTime = (Date.now() + TEN_MINUTES_MS).toString();
+      sessionStorage.setItem(STORAGE_KEY, expiryTime);
+    }
+
+    const targetTime = parseInt(expiryTime, 10);
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const remainingSecs = Math.max(0, Math.floor((targetTime - now) / 1000));
+      setTimeLeft(remainingSecs);
+
+      if (remainingSecs === 0) {
+        clearInterval(timer);
+      }
+    };
+
+    updateTimer();
+    const timer = setInterval(updateTimer, 1000);
+
+    return () => clearInterval(timer);
+  }, [step]);
+
+  // ตรวจสอบสถานะและลิงก์กู้คืนรหัสผ่าน (รองรับการกดรีเฟรชหน้าเว็บไม่ให้เด้งกลับ)
   useEffect(() => {
     let mounted = true;
     let recoveryDetected = false;
@@ -65,12 +105,16 @@ export default function ForgotPasswordPage() {
         setStep("reset");
         setErrorMessage("");
         setSuccessMessage("");
+        sessionStorage.setItem(FLOW_KEY, "true");
+
+        if (!sessionStorage.getItem(STORAGE_KEY)) {
+          sessionStorage.setItem(STORAGE_KEY, (Date.now() + TEN_MINUTES_MS).toString());
+        }
       }
     });
 
     const checkRecoveryUrl = async () => {
       try {
-        // รองรับลิงก์ recovery ที่ส่ง token มาใน URL fragment
         const hash = window.location.hash;
 
         if (hash) {
@@ -89,16 +133,18 @@ export default function ForgotPasswordPage() {
               refresh_token: refreshToken,
             });
 
-            if (error) {
-              throw error;
-            }
+            if (error) throw error;
 
             if (mounted) {
               recoveryDetected = true;
               setStep("reset");
               setErrorMessage("");
+              sessionStorage.setItem(FLOW_KEY, "true");
 
-              // ลบ token ออกจาก URL หลังตั้ง session แล้ว
+              if (!sessionStorage.getItem(STORAGE_KEY)) {
+                sessionStorage.setItem(STORAGE_KEY, (Date.now() + TEN_MINUTES_MS).toString());
+              }
+
               window.history.replaceState(
                 null,
                 "",
@@ -110,14 +156,31 @@ export default function ForgotPasswordPage() {
           }
         }
 
-        // ตรวจสอบ event ที่อาจเกิดก่อนติดตั้ง listener
+        // ตรวจสอบ Session ปัจจุบัน
         const { data, error } = await supabase.auth.getSession();
-
         if (error) throw error;
         if (!mounted || recoveryDetected) return;
 
-        // ห้ามใช้ session ปกติเป็นหลักฐานว่าเป็น recovery session
-        // หากไม่มี recovery event หรือลิงก์ recovery ให้แสดงหน้าขออีเมล
+        // ถ้าผู้ใช้เคยเข้ามาถูกต้องแล้ว และกดรีเฟรชหน้าเว็บ (ยังมี session และอยู่ใน Flow reset)
+        const isInResetFlow = sessionStorage.getItem(FLOW_KEY) === "true";
+        if (isInResetFlow && data.session) {
+          // ตรวจสอบว่าหมดอายุหรือยัง
+          const expiryTime = sessionStorage.getItem(STORAGE_KEY);
+          if (expiryTime) {
+            const targetTime = parseInt(expiryTime, 10);
+            if (Date.now() >= targetTime) {
+              sessionStorage.removeItem(STORAGE_KEY);
+              sessionStorage.removeItem(FLOW_KEY);
+              await supabase.auth.signOut();
+              setStep("request");
+              return;
+            }
+          }
+
+          setStep("reset");
+          return;
+        }
+
         setStep("request");
       } catch (error: unknown) {
         console.error("Check recovery session error:", error);
@@ -147,6 +210,10 @@ export default function ForgotPasswordPage() {
     setErrorMessage("");
     setSuccessMessage("");
 
+    // ล้างค่าเก่าทิ้งเมื่อขอลิงก์ใหม่
+    sessionStorage.removeItem(STORAGE_KEY);
+    sessionStorage.removeItem(FLOW_KEY);
+
     const normalizedEmail = email.trim().toLowerCase();
 
     if (!normalizedEmail) {
@@ -167,7 +234,7 @@ export default function ForgotPasswordPage() {
       if (error) throw error;
 
       setSuccessMessage(
-        "ส่งลิงก์สำหรับตั้งรหัสผ่านใหม่ไปยังอีเมลของคุณแล้ว กรุณาตรวจสอบ Inbox หรือ Spam"
+        "ส่งลิงก์สำหรับตั้งรหัสผ่านใหม่ไปยังอีเมลของคุณแล้ว กรุณาตรวจสอบอีเมล"
       );
     } catch (error: unknown) {
       console.error("Request reset error:", error);
@@ -202,7 +269,6 @@ export default function ForgotPasswordPage() {
     setLoading(true);
 
     try {
-      // ตรวจสอบว่ามี session ที่ใช้ยืนยันตัวตนอยู่
       const { data, error: sessionError } =
         await supabase.auth.getSession();
 
@@ -214,14 +280,16 @@ export default function ForgotPasswordPage() {
         );
       }
 
-      // Supabase จะตรวจสอบสิทธิ์และเงื่อนไขของ session ก่อนเปลี่ยนรหัสผ่าน
       const { error: updateError } = await supabase.auth.updateUser({
         password,
       });
 
       if (updateError) throw updateError;
 
-      // ออกจาก session หลังเปลี่ยนรหัสผ่านสำเร็จ
+      // เคลียร์ค่า Session Storage ทั้งหมดเมื่อทำรายการสำเร็จ
+      sessionStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem(FLOW_KEY);
+
       const { error: signOutError } = await supabase.auth.signOut();
 
       if (signOutError) {
@@ -336,6 +404,19 @@ export default function ForgotPasswordPage() {
             <p className="text-xs text-slate-500">
               กรุณากำหนดรหัสผ่านใหม่สำหรับบัญชีของคุณ
             </p>
+
+            {/* แสดงเวลานับถอยหลัง */}
+            <div className="pt-2 flex justify-center">
+              <div
+                className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
+                  timeLeft > 60
+                    ? "bg-amber-50 text-amber-700 border border-amber-200"
+                    : "bg-red-50 text-red-600 border border-red-200 animate-pulse"
+                }`}
+              >
+                ลิงก์นี้จะหมดอายุใน {formatTime(timeLeft)} นาที
+              </div>
+            </div>
           </div>
 
           {errorMessage && (
@@ -344,71 +425,99 @@ export default function ForgotPasswordPage() {
             </div>
           )}
 
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <label
-                htmlFor="new-password"
-                className="text-xs font-bold text-slate-700"
+          {/* เงื่อนไขเมื่อเวลาหมด (timeLeft === 0) */}
+          {timeLeft === 0 ? (
+            <div className="p-4 bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl text-center space-y-3">
+              <p className="font-bold text-sm">ลิงก์เปลี่ยนรหัสผ่านหมดอายุแล้ว</p>
+              <p className="text-slate-500">
+                กรุณาขอลิงก์ใหม่อีกครั้งเพื่อความปลอดภัย
+              </p>
+              <button
+                type="button"
+                onClick={async () => {
+                  sessionStorage.removeItem(STORAGE_KEY);
+                  sessionStorage.removeItem(FLOW_KEY);
+                  await supabase.auth.signOut();
+                  setPassword("");
+                  setConfirmPassword("");
+                  setErrorMessage("");
+                  setSuccessMessage("");
+                  setStep("request");
+                }}
+                className="block w-full py-3 bg-[#1F3E35] hover:bg-[#152C25] text-white rounded-xl font-semibold transition cursor-pointer"
               >
-                รหัสผ่านใหม่
-              </label>
-
-              <div className="relative">
-                <input
-                  id="new-password"
-                  type="password"
-                  required
-                  minLength={8}
-                  autoComplete="new-password"
-                  placeholder="อย่างน้อย 8 ตัวอักษร มีตัวอักษรและตัวเลข"
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    setErrorMessage("");
-                  }}
-                  className="w-full px-4 py-3 pl-10 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800"
-                />
-                <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
-              </div>
+                ขอลิงก์ใหม่อีกครั้ง
+              </button>
             </div>
+          ) : (
+            <>
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="new-password"
+                    className="text-xs font-bold text-slate-700"
+                  >
+                    รหัสผ่านใหม่
+                  </label>
 
-            <div className="space-y-1.5">
-              <label
-                htmlFor="confirm-password"
-                className="text-xs font-bold text-slate-700"
+                  <div className="relative">
+                    <input
+                      id="new-password"
+                      type="password"
+                      required
+                      minLength={8}
+                      autoComplete="new-password"
+                      placeholder="อย่างน้อย 8 ตัวอักษร มีตัวอักษรและตัวเลข"
+                      value={password}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                        setPassword(e.target.value);
+                        setErrorMessage("");
+                      }}
+                      className="w-full px-4 py-3 pl-10 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800"
+                    />
+                    <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="confirm-password"
+                    className="text-xs font-bold text-slate-700"
+                  >
+                    ยืนยันรหัสผ่านใหม่
+                  </label>
+
+                  <div className="relative">
+                    <input
+                      id="confirm-password"
+                      type="password"
+                      required
+                      minLength={8}
+                      autoComplete="new-password"
+                      placeholder="กรอกรหัสผ่านใหม่อีกครั้ง"
+                      value={confirmPassword}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                        setConfirmPassword(e.target.value);
+                        setErrorMessage("");
+                      }}
+                      className="w-full px-4 py-3 pl-10 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800"
+                    />
+                    <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3.5 bg-[#1F3E35] hover:bg-[#152C25] disabled:opacity-60 text-white font-semibold rounded-2xl text-sm transition shadow-md"
               >
-                ยืนยันรหัสผ่านใหม่
-              </label>
-
-              <div className="relative">
-                <input
-                  id="confirm-password"
-                  type="password"
-                  required
-                  minLength={8}
-                  autoComplete="new-password"
-                  placeholder="กรอกรหัสผ่านใหม่อีกครั้ง"
-                  value={confirmPassword}
-                  onChange={(e) => {
-                    setConfirmPassword(e.target.value);
-                    setErrorMessage("");
-                  }}
-                  className="w-full px-4 py-3 pl-10 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800"
-                />
-                <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3.5 bg-[#1F3E35] hover:bg-[#152C25] disabled:opacity-60 text-white font-semibold rounded-2xl text-sm transition shadow-md"
-          >
-            {loading
-              ? "กำลังบันทึกรหัสผ่านใหม่..."
-              : "บันทึกรหัสผ่านใหม่"}
-          </button>
+                {loading
+                  ? "กำลังบันทึกรหัสผ่านใหม่..."
+                  : "บันทึกรหัสผ่านใหม่"}
+              </button>
+            </>
+          )}
         </form>
       )}
 
@@ -432,7 +541,11 @@ export default function ForgotPasswordPage() {
 
           <button
             type="button"
-            onClick={() => router.replace("/organization/login")}
+            onClick={() => {
+              sessionStorage.removeItem(STORAGE_KEY);
+              sessionStorage.removeItem(FLOW_KEY);
+              router.replace("/organization/login");
+            }}
             className="w-full py-3.5 bg-[#1F3E35] text-white font-semibold rounded-2xl text-sm hover:bg-[#152C25] transition shadow-md"
           >
             ไปที่หน้าเข้าสู่ระบบ

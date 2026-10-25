@@ -27,8 +27,9 @@ export default function AccountUserPage() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [user, setUser] = useState<any>(null);
 
-  // รายละเอียดองค์กร
+  // รายละเอียดองค์กรและผู้ใช้
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [industry, setIndustry] = useState(industries[0]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -64,7 +65,7 @@ export default function AccountUserPage() {
     return "";
   };
 
-  // โหลดข้อมูลผู้ใช้งานและองค์กร
+  // โหลดข้อมูลผู้ใช้งาน องค์กร และ Username
   useEffect(() => {
     let isMounted = true;
 
@@ -85,6 +86,20 @@ export default function AccountUserPage() {
         setUser(currentUser);
         setEmail(currentUser.email || "");
 
+        // ดึงข้อมูล username จากตาราง user
+        const { data: userData, error: userError } = await supabase
+          .from("user")
+          .select("username")
+          .eq("acc_id", currentUser.id)
+          .maybeSingle();
+
+        if (userData?.username) {
+          setUsername(userData.username);
+        } else if (currentUser.user_metadata?.username) {
+          setUsername(currentUser.user_metadata.username);
+        }
+
+        // ดึงข้อมูลองค์กร
         const { data: orgData, error: orgError } = await supabase
           .from("organization")
           .select("org_name, business_type")
@@ -97,7 +112,6 @@ export default function AccountUserPage() {
         const activeOrgName =
           orgData?.org_name ||
           currentUser.user_metadata?.company_name ||
-          currentUser.user_metadata?.username ||
           "บริษัท ตัวอย่าง จำกัด";
 
         setCompanyName(activeOrgName);
@@ -186,7 +200,7 @@ export default function AccountUserPage() {
     }
   };
 
-  // บันทึกชื่อองค์กรและประเภทอุตสาหกรรม
+  // บันทึกชื่อองค์กร Username และประเภทอุตสาหกรรม
   const handleUpdateOrganization = async (
     e: React.FormEvent<HTMLFormElement>
   ) => {
@@ -197,6 +211,15 @@ export default function AccountUserPage() {
       setOrgMessage({
         type: "error",
         text: "ไม่พบข้อมูลผู้ใช้งาน กรุณาเข้าสู่ระบบใหม่",
+      });
+
+      return;
+    }
+
+    if (!username.trim()) {
+      setOrgMessage({
+        type: "error",
+        text: "กรุณากรอกชื่อผู้ใช้งาน (Username)",
       });
 
       return;
@@ -214,25 +237,28 @@ export default function AccountUserPage() {
     setOrgLoading(true);
 
     try {
+      // บันทึกชื่อองค์กรและประเภทอุตสาหกรรม
       await saveOrganizationDetails(companyName.trim(), industry);
 
+      // บันทึก Username ลงในตาราง user
+      const { error: userTableError } = await supabase
+        .from("user")
+        .update({ username: username.trim() })
+        .eq("acc_id", user.id);
+
+      if (userTableError) throw userTableError;
+
+      // อัปเดต Metadata ของ Auth
       const { error: metadataError } =
         await supabase.auth.updateUser({
           data: {
-            username: companyName.trim(),
+            username: username.trim(),
             company_name: companyName.trim(),
             org_name: companyName.trim(),
           },
         });
 
       if (metadataError) throw metadataError;
-
-      const { error: userTableError } = await supabase
-        .from("user")
-        .update({ username: companyName.trim() })
-        .eq("acc_id", user.id);
-
-      if (userTableError) throw userTableError;
 
       setOrgMessage({
         type: "success",
@@ -403,17 +429,20 @@ export default function AccountUserPage() {
         </button>
       </div>
 
-      {/* PROFILE BANNER */}
+      {/* PROFILE BANNER (แสดงทั้งชื่อองค์กรและ Username) */}
       <div className="bg-white rounded-[2.5rem] p-6 md:p-8 border border-slate-200/80 shadow-md flex flex-col md:flex-row items-center justify-center gap-6 relative overflow-hidden">
-        <div className="text-center md:text-left space-y-2">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200/60">
+        <div className="text-center md:text-left space-y-1">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200/60 mb-1">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
             <span>ยืนยันตัวตนแล้ว</span>
           </div>
 
-          <div className="flex items-center justify-center md:justify-start gap-2 text-xl md:text-2xl font-extrabold text-[#11221C]">
-            <h2>{companyName}</h2>
-          </div>
+          <h2 className="text-xl md:text-2xl font-extrabold text-[#11221C]">
+            {companyName}
+          </h2>
+          <p className="text-xs text-slate-500 font-medium">
+            @{username || "username"}
+          </p>
         </div>
       </div>
 
@@ -459,6 +488,24 @@ export default function AccountUserPage() {
               <p className="text-[11px] text-slate-400">
                 อีเมลนี้ใช้สำหรับเข้าสู่ระบบ และไม่สามารถเปลี่ยนจากหน้านี้ได้
               </p>
+            </div>
+
+            {/* ชื่อผู้ใช้งาน  */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700">
+                ชื่อผู้ใช้งาน (username)
+              </label>
+
+              <input
+                type="text"
+                required
+                value={username}
+                onChange={(e) => {
+                  setUsername(e.target.value);
+                  setOrgMessage(null);
+                }}
+                className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 font-medium"
+              />
             </div>
 
             {/* ชื่อองค์กร */}

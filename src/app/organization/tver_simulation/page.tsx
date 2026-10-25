@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Check,
@@ -8,7 +8,13 @@ import {
   ArrowLeft,
   ArrowRight,
   Save,
+  Calculator,
 } from "lucide-react";
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 type ProjectForm = {
   projectName: string;
@@ -24,6 +30,13 @@ type CreditRecord = {
   amount: number;
 };
 
+type TargetRule = {
+  target_id: string;
+  target_name: string;
+  offset_ratio: number;
+  sell_ratio: number;
+};
+
 type MessageType = "success" | "error" | "";
 
 const treeOptions = [
@@ -31,24 +44,6 @@ const treeOptions = [
   "ยูคาลิปตัส (Eucalyptus)",
   "โกงกาง (Rhizophora)",
   "ประดู่ (Pterocarpus macrocarpus)",
-];
-
-const creditRecords: CreditRecord[] = [
-  {
-    id: "FP-2024-001",
-    name: "การดำเนินงานไตรมาส 1 ปี 2024",
-    amount: 6900,
-  },
-  {
-    id: "FP-2024-002",
-    name: "การดำเนินงานไตรมาส 2 ปี 2024",
-    amount: 6030,
-  },
-  {
-    id: "FP-2024-003",
-    name: "การดำเนินงานไตรมาส 3 ปี 2024",
-    amount: 6500,
-  },
 ];
 
 const formatNumber = (value: number) =>
@@ -71,35 +66,89 @@ export default function TVERSimulationPage() {
     "neutral"
   );
 
+  const [creditRecords, setCreditRecords] = useState<CreditRecord[]>([]);
+  const [targetRules, setTargetRules] = useState<TargetRule[]>([]);
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [loadingRecords, setLoadingRecords] = useState(true);
+
   const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
   const [calculated, setCalculated] = useState(false);
+  const [allocationCalculated, setAllocationCalculated] = useState(false);
   const [saved, setSaved] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<MessageType>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ดึงข้อมูลรายการปล่อยก๊าซ, org_id และ target_id จาก Supabase เมื่อโหลดหน้าเว็บ
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoadingRecords(true);
+      try {
+        let fetchedOrgId = null;
+
+        // 1. ดึงข้อมูลจากตาราง organization อย่างปลอดภัย
+        const { data: orgDataList, error: orgFetchError } = await supabase
+          .from("organization")
+          .select("*")
+          .limit(1);
+
+        if (!orgFetchError && orgDataList && orgDataList.length > 0) {
+          const orgRecord = orgDataList[0];
+          fetchedOrgId = orgRecord.org_id || orgRecord.id;
+          console.log("ดึงรหัสองค์กรสำเร็จ:", fetchedOrgId);
+        } else {
+          console.warn("ไม่พบข้อมูลองค์กรในตาราง organization");
+        }
+
+        setOrgId(fetchedOrgId);
+
+        // 2. ดึงข้อมูลรายการปล่อยก๊าซ (ตารางที่ 12: org_activity_list)
+        const { data: activityData, error: actError } = await supabase
+          .from("org_activity_list")
+          .select("orgactlist_id, orgact_name, total_ghg_emission");
+
+        if (actError) throw actError;
+
+        if (activityData && activityData.length > 0) {
+          const mappedRecords: CreditRecord[] = activityData.map((item: any) => ({
+            id: item.orgactlist_id,
+            name: item.orgact_name || "บันทึกการปล่อยก๊าซ",
+            amount: Number(item.total_ghg_emission || 0),
+          }));
+          setCreditRecords(mappedRecords);
+        }
+
+        // 3. ดึงข้อมูลเป้าหมายจากตาราง project_target_rule (ตารางที่ 19)
+        const { data: targetData, error: targetError } = await supabase
+          .from("project_target_rule")
+          .select("target_id, target_name, offset_ratio, sell_ratio");
+
+        if (!targetError && targetData) {
+          setTargetRules(targetData);
+        }
+      } catch (err) {
+        console.error("Error loading initial data:", err);
+      } finally {
+        setLoadingRecords(false);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   const area = Math.max(0, Number(project.area) || 0);
   const treesPerRai = Math.max(0, Number(project.treesPerRai) || 0);
   const totalTrees = area * treesPerRai;
 
-  // ค่าตัวอย่างสำหรับทดลอง UI เท่านั้น
-  // ไม่ใช่สูตรคำนวณ T-VER ที่ได้รับการรับรองอย่างเป็นทางการ
   const yearlyCredits = useMemo(() => {
-    const factors: Record<string, number> = {
-      [treeOptions[0]]: 2.5,
-      [treeOptions[1]]: 2.95,
-      [treeOptions[2]]: 3.45,
-      [treeOptions[3]]: 2.8,
-      [treeOptions[4]]: 2.4,
-    };
-
-    const factor = factors[project.treeType] ?? 2.5;
-
+    const MAI = 9.5; 
     return [1, 2, 3].map((year) =>
-      Math.round(totalTrees * factor * (1 + (year - 1) * 0.18))
+      Math.round(totalTrees * year * MAI * 0.001 * 100) / 100
     );
-  }, [project.treeType, totalTrees]);
+  }, [totalTrees]);
 
-  const totalCredits = yearlyCredits.reduce((sum, value) => sum + value, 0);
+  const cumulativeCredits = yearlyCredits;
+  const totalCredits = cumulativeCredits[cumulativeCredits.length - 1];
 
   const allocationRatio = {
     netzero: { offset: 100, sell: 0 },
@@ -107,20 +156,19 @@ export default function TVERSimulationPage() {
     selling: { offset: 20, sell: 80 },
   }[goal];
 
-  const creditsForOffset = totalCredits * (allocationRatio.offset / 100);
-  const creditsForSale = totalCredits * (allocationRatio.sell / 100);
+  const year1Credit = yearlyCredits[0];
+  const creditsForOffset = year1Credit * (allocationRatio.offset / 100);
+  const creditsForSale = year1Credit * (allocationRatio.sell / 100);
 
   const selectedTotal = creditRecords
     .filter((record) => selectedRecords.includes(record.id))
     .reduce((sum, record) => sum + record.amount, 0);
 
-  const maxCredit = Math.max(...yearlyCredits, 1);
+  const offsetApplied = Math.min(selectedTotal, creditsForOffset);
+  const remainingOffsetCredit = Math.max(0, creditsForOffset - offsetApplied);
+  const remainingEmissions = Math.max(0, selectedTotal - offsetApplied);
 
-  const cumulativeCredits = yearlyCredits.map((_, index) =>
-    yearlyCredits
-      .slice(0, index + 1)
-      .reduce((sum, value) => sum + value, 0)
-  );
+  const maxCredit = Math.max(...cumulativeCredits, 1);
 
   const showMessage = (text: string, type: MessageType) => {
     setMessage(text);
@@ -138,8 +186,8 @@ export default function TVERSimulationPage() {
       [field]: value,
     }));
 
-    // เปลี่ยนข้อมูลแล้วต้องคำนวณใหม่
     setCalculated(false);
+    setAllocationCalculated(false);
     setSaved(false);
     setSelectedRecords([]);
     clearMessage();
@@ -152,6 +200,7 @@ export default function TVERSimulationPage() {
         : [...previous, id]
     );
 
+    setAllocationCalculated(false);
     setSaved(false);
     clearMessage();
   };
@@ -174,10 +223,7 @@ export default function TVERSimulationPage() {
       area <= 0 ||
       treesPerRai <= 0
     ) {
-      showMessage(
-        "กรุณากรอกพื้นที่และจำนวนต้นไม้ต่อไร่ให้มากกว่า 0",
-        "error"
-      );
+      showMessage("กรุณากรอกพื้นที่และจำนวนต้นไม้ต่อไร่ให้มากกว่า 0", "error");
       return;
     }
 
@@ -187,28 +233,183 @@ export default function TVERSimulationPage() {
     }
 
     setCalculated(true);
-    showMessage("คำนวณประมาณการเรียบร้อยแล้ว", "success");
+    showMessage("คำนวณประมาณการตามระเบียบวิธี T-VER เรียบร้อยแล้ว", "success");
   };
 
-  const handleSave = () => {
+  const handleCalculateAllocation = () => {
+    clearMessage();
+    if (selectedRecords.length === 0) {
+      setAllocationCalculated(false);
+      showMessage("กรุณาเลือกรายการปล่อยก๊าซอย่างน้อย 1 รายการก่อนคำนวณการจัดสรร", "error");
+      return;
+    }
+
+    setAllocationCalculated(true);
+    showMessage("คำนวณผลการจัดสรรและหักลบก๊าซเรือนกระจกเรียบร้อยแล้ว", "success");
+  };
+
+  // ฟังก์ชันบันทึกข้อมูลพร้อมผูก org_id และ target_id จริง
+  const handleSave = async () => {
     clearMessage();
 
-    if (!calculated) {
-      showMessage("กรุณาคำนวณโครงการก่อนจัดสรรเครดิต", "error");
+    if (!orgId) {
+      showMessage("ไม่พบข้อมูลรหัสองค์กร (org_id) กรุณาตรวจสอบข้อมูลในตาราง organization", "error");
       return;
     }
 
-    if (selectedRecords.length === 0) {
-      setSaved(false);
-      showMessage("กรุณาเลือกรายการปล่อยก๊าซอย่างน้อย 1 รายการ", "error");
+    if (!allocationCalculated) {
+      showMessage("กรุณากดคำนวณการจัดสรรเครดิตก่อนบันทึก", "error");
       return;
     }
 
-    setSaved(true);
-    showMessage(
-      "จัดสรรเครดิตเรียบร้อยแล้ว แต่ข้อมูลยังไม่ได้บันทึกลงฐานข้อมูล",
-      "success"
-    );
+    setIsSubmitting(true);
+    try {
+      const matchedTarget = targetRules.find((rule) => {
+        if (goal === "netzero") return rule.offset_ratio === 100;
+        if (goal === "neutral") return rule.offset_ratio === 50;
+        if (goal === "selling") return rule.offset_ratio === 20;
+        return false;
+      });
+      const targetIdToSave = matchedTarget ? matchedTarget.target_id : null;
+
+      // 1. บันทึกข้อมูลโครงการปลูกป่าลงตาราง org_tree_project
+      const { data: existingProjects, error: searchError } = await supabase
+        .from("org_tree_project")
+        .select("orgtreeproject_id")
+        .eq("project_name", project.projectName);
+
+      if (searchError) throw searchError;
+
+      let projectId;
+      const existingProject = existingProjects?.[0];
+
+      if (existingProject) {
+        const { data: updatedData, error: updateError } = await supabase
+          .from("org_tree_project")
+          .update({
+            org_id: orgId,
+            join_year: new Date(project.startDate).getFullYear(),
+            credit_year_1: yearlyCredits[0],
+            credit_year_2: yearlyCredits[1],
+            credit_year_3: yearlyCredits[2],
+            updated_date: new Date().toISOString(),
+          })
+          .eq("orgtreeproject_id", existingProject.orgtreeproject_id)
+          .select("orgtreeproject_id");
+
+        if (updateError) throw updateError;
+        projectId = updatedData?.[0]?.orgtreeproject_id || existingProject.orgtreeproject_id;
+      } else {
+        const { data: insertedData, error: insertError } = await supabase
+          .from("org_tree_project")
+          .insert([
+            {
+              org_id: orgId,
+              project_name: project.projectName,
+              join_year: new Date(project.startDate).getFullYear(),
+              credit_year_1: yearlyCredits[0],
+              credit_year_2: yearlyCredits[1],
+              credit_year_3: yearlyCredits[2],
+            },
+          ])
+          .select("orgtreeproject_id");
+
+        if (insertError) throw insertError;
+        projectId = insertedData?.[0]?.orgtreeproject_id;
+      }
+
+      if (!projectId) throw new Error("ไม่สามารถบันทึกข้อมูลโครงการได้");
+
+      // 2. บันทึกข้อมูลการจัดสรรหลักลงตาราง org_credit_allocation
+      const { data: existingAllocations, error: allocSearchError } = await supabase
+        .from("org_credit_allocation")
+        .select("orgallocate_id")
+        .eq("orgtreeproject_id", projectId);
+
+      if (allocSearchError) throw allocSearchError;
+
+      let allocateId;
+      const existingAlloc = existingAllocations?.[0];
+
+      if (existingAlloc) {
+        const { data: updatedAlloc, error: updateAllocError } = await supabase
+          .from("org_credit_allocation")
+          .update({
+            target_id: targetIdToSave,
+            total_credit: totalCredits,
+            net_usable_credit: creditsForOffset,
+            offset_credit: offsetApplied,
+            remaining_credit: creditsForSale,
+            updated_date: new Date().toISOString(),
+          })
+          .eq("orgallocate_id", existingAlloc.orgallocate_id)
+          .select("orgallocate_id");
+
+        if (updateAllocError) throw updateAllocError;
+        allocateId = updatedAlloc?.[0]?.orgallocate_id || existingAlloc.orgallocate_id;
+      } else {
+        const { data: insertedAlloc, error: insertAllocError } = await supabase
+          .from("org_credit_allocation")
+          .insert([
+            {
+              orgtreeproject_id: projectId,
+              target_id: targetIdToSave,
+              total_credit: totalCredits,
+              net_usable_credit: creditsForOffset,
+              offset_credit: offsetApplied,
+              remaining_credit: creditsForSale,
+            },
+          ])
+          .select("orgallocate_id");
+
+        if (insertAllocError) throw insertAllocError; // แก้ไขให้ใช้ insertAllocError ให้ถูกต้อง
+        allocateId = insertedAlloc?.[0]?.orgallocate_id;
+      }
+
+      if (!allocateId) throw new Error("ไม่สามารถบันทึกข้อมูลการจัดสรรหลักได้");
+
+      // 3. บันทึกรายละเอียดการจัดสรรลงตาราง org_credit_allocation_detail
+      await supabase
+        .from("org_credit_allocation_detail")
+        .delete()
+        .eq("orgallocate_id", allocateId);
+
+      const detailPayloads = selectedRecords.map((actListId) => {
+        const record = creditRecords.find((r) => r.id === actListId);
+        const itemAmount = record ? record.amount : 0;
+        return {
+          orgallocate_id: allocateId,
+          orgactlist_id: actListId,
+          net_usable_credit: creditsForOffset,
+          offset_credit: Math.min(itemAmount, creditsForOffset),
+          remaining_credit: creditsForSale,
+        };
+      });
+
+      if (detailPayloads.length > 0) {
+        const { error: detailError } = await supabase
+          .from("org_credit_allocation_detail")
+          .insert(detailPayloads);
+
+        if (detailError) throw detailError;
+      }
+
+      setSaved(true);
+      showMessage("บันทึกและอัปเดตข้อมูลลงฐานข้อมูลตาม Proposal เรียบร้อยแล้ว", "success");
+    } catch (error: any) {
+      console.error("Database error details:", error);
+      const errCode = error?.code || "";
+      const errMessage = error?.message || "";
+      const errDetails = error?.details || "";
+      
+      const displayMsg = errMessage 
+        ? `[${errCode}] ${errMessage} ${errDetails ? `(รายละเอียด: ${errDetails})` : ""}` 
+        : JSON.stringify(error);
+
+      showMessage(`เกิดข้อผิดพลาดในการบันทึกข้อมูล: ${displayMsg}`, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const messageClass =
@@ -217,7 +418,6 @@ export default function TVERSimulationPage() {
   return (
     <div className="min-h-screen bg-white">
       <div className="mx-auto max-w-7xl px-5 py-8 sm:px-8 lg:px-10">
-        {/* หัวข้อ */}
         <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-gray-900">
@@ -228,19 +428,19 @@ export default function TVERSimulationPage() {
             </p>
           </div>
 
-          {step === 2 && calculated && (
+          {step === 2 && allocationCalculated && (
             <button
               type="button"
               onClick={handleSave}
-              className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700"
+              disabled={isSubmitting}
+              className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700 cursor-pointer disabled:opacity-50"
             >
               <Save size={16} />
-              ยืนยันการจัดสรร
+              {isSubmitting ? "กำลังบันทึก..." : "ยืนยันการจัดสรรและบันทึกฐานข้อมูล"}
             </button>
           )}
         </div>
 
-        {/* ขั้นตอน */}
         <div className="mb-8 flex flex-wrap items-center gap-3 text-sm">
           <button
             type="button"
@@ -248,16 +448,14 @@ export default function TVERSimulationPage() {
               setStep(1);
               clearMessage();
             }}
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 cursor-pointer"
           >
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 font-semibold text-white">
               {step === 2 ? <Check size={16} /> : "1"}
             </span>
             <span
               className={
-                step === 1
-                  ? "font-semibold text-gray-800"
-                  : "text-gray-500"
+                step === 1 ? "font-semibold text-gray-800" : "text-gray-500"
               }
             >
               จำลองโครงการ
@@ -273,13 +471,10 @@ export default function TVERSimulationPage() {
                 setStep(2);
                 clearMessage();
               } else {
-                showMessage(
-                  "กรุณากรอกข้อมูลและคำนวณโครงการก่อน",
-                  "error"
-                );
+                showMessage("กรุณากรอกข้อมูลและคำนวณโครงการก่อน", "error");
               }
             }}
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 cursor-pointer"
           >
             <span
               className={`flex h-7 w-7 items-center justify-center rounded-full font-semibold ${
@@ -292,9 +487,7 @@ export default function TVERSimulationPage() {
             </span>
             <span
               className={
-                step === 2
-                  ? "font-semibold text-gray-800"
-                  : "text-gray-400"
+                step === 2 ? "font-semibold text-gray-800" : "text-gray-400"
               }
             >
               จัดสรรเครดิตและรายงาน
@@ -302,10 +495,8 @@ export default function TVERSimulationPage() {
           </button>
         </div>
 
-        {/* ขั้นตอนที่ 1 */}
         {step === 1 && (
           <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[0.82fr_1.18fr]">
-            {/* ฟอร์มโครงการ */}
             <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-7">
               <h2 className="mb-6 text-lg font-bold text-gray-800">
                 ตั้งค่าโครงการปลูกป่า
@@ -322,9 +513,7 @@ export default function TVERSimulationPage() {
                   <input
                     id="projectName"
                     value={project.projectName}
-                    onChange={(e) =>
-                      updateProject("projectName", e.target.value)
-                    }
+                    onChange={(e) => updateProject("projectName", e.target.value)}
                     placeholder="กรอกชื่อโครงการ"
                     className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm text-gray-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                   />
@@ -341,10 +530,8 @@ export default function TVERSimulationPage() {
                     <select
                       id="treeType"
                       value={project.treeType}
-                      onChange={(e) =>
-                        updateProject("treeType", e.target.value)
-                      }
-                      className="w-full appearance-none rounded-xl border border-gray-200 bg-white px-3 py-3 pr-10 text-sm text-gray-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                      onChange={(e) => updateProject("treeType", e.target.value)}
+                      className="w-full appearance-none rounded-xl border border-gray-200 bg-white px-3 py-3 pr-10 text-sm text-gray-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 cursor-pointer"
                     >
                       {treeOptions.map((tree) => (
                         <option key={tree} value={tree}>
@@ -372,9 +559,7 @@ export default function TVERSimulationPage() {
                       type="number"
                       min="0"
                       value={project.area}
-                      onChange={(e) =>
-                        updateProject("area", e.target.value)
-                      }
+                      onChange={(e) => updateProject("area", e.target.value)}
                       className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm text-gray-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                     />
                   </div>
@@ -391,9 +576,7 @@ export default function TVERSimulationPage() {
                       type="number"
                       min="1"
                       value={project.treesPerRai}
-                      onChange={(e) =>
-                        updateProject("treesPerRai", e.target.value)
-                      }
+                      onChange={(e) => updateProject("treesPerRai", e.target.value)}
                       className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm text-gray-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                     />
                   </div>
@@ -410,9 +593,7 @@ export default function TVERSimulationPage() {
                     id="startDate"
                     type="date"
                     value={project.startDate}
-                    onChange={(e) =>
-                      updateProject("startDate", e.target.value)
-                    }
+                    onChange={(e) => updateProject("startDate", e.target.value)}
                     className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm text-gray-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                   />
                 </div>
@@ -430,7 +611,7 @@ export default function TVERSimulationPage() {
                 <button
                   type="button"
                   onClick={handleCalculate}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#31865F] px-5 py-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#26734F]"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#31865F] px-5 py-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#26734F] cursor-pointer"
                 >
                   คำนวณและดูรายงาน
                   <ArrowRight size={17} />
@@ -443,7 +624,7 @@ export default function TVERSimulationPage() {
                       setStep(2);
                       clearMessage();
                     }}
-                    className="w-full rounded-xl border border-emerald-200 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+                    className="w-full rounded-xl border border-emerald-200 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 cursor-pointer"
                   >
                     ไปขั้นตอนจัดสรรเครดิต
                   </button>
@@ -451,24 +632,23 @@ export default function TVERSimulationPage() {
               </div>
             </section>
 
-            {/* ผลประมาณการ */}
             <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-7">
               {!calculated ? (
                 <div className="flex min-h-[400px] flex-col items-center justify-center text-center">
                   <h2 className="text-lg font-bold text-gray-700">
-                    การประมาณคาร์บอนเครดิต 3 ปี
+                    การประมาณคาร์บอนเครดิตสะสม 3 ปี
                   </h2>
                   <p className="mt-2 max-w-sm text-sm leading-6 text-gray-400">
-                    กรอกข้อมูลโครงการทางด้านซ้าย แล้วกดคำนวณเพื่อแสดงกราฟและผลประมาณการ
+                    กรอกข้อมูลโครงการทางด้านซ้าย แล้วกดคำนวณเพื่อแสดงกราฟยอดสะสมตามสูตร T-VER
                   </p>
                 </div>
               ) : (
                 <>
                   <h2 className="text-lg font-bold text-gray-800">
-                    การประมาณคาร์บอนเครดิต 3 ปี
+                    การประมาณคาร์บอนเครดิตสะสม 3 ปี
                   </h2>
                   <p className="mt-1 text-sm text-gray-500">
-                    ปริมาณคาร์บอนเครดิตที่คาดการณ์ (tCO₂e)
+                    ยอดกักเก็บสะสมตามสูตร T-VER (C_TT = T x t x MAI x 10^-3) (tCO₂e)
                   </p>
 
                   <div className="mt-7 flex h-72">
@@ -494,7 +674,7 @@ export default function TVERSimulationPage() {
                         ))}
                       </div>
 
-                      {yearlyCredits.map((credit, index) => (
+                      {cumulativeCredits.map((credit, index) => (
                         <div
                           key={index}
                           className="z-10 flex h-full w-1/4 flex-col items-center justify-end"
@@ -526,29 +706,18 @@ export default function TVERSimulationPage() {
                   </div>
 
                   <div className="mt-5 grid grid-cols-3 gap-3">
-                    {yearlyCredits.map((credit, index) => (
+                    {cumulativeCredits.map((credit, index) => (
                       <div
                         key={index}
                         className="rounded-xl border border-gray-100 bg-gray-50 p-3 text-center sm:p-4"
                       >
                         <p className="text-xs text-gray-500">
-                          ปีที่ {index + 1}
+                          สะสมปีที่ {index + 1}
                         </p>
                         <p className="mt-2 text-xl font-bold text-green-600">
                           {formatNumber(credit)}
                         </p>
-                        <p className="mt-1 text-xs text-gray-400">tCO₂e</p>
-                        {index > 0 && (
-                          <p className="mt-2 text-xs font-semibold text-green-600">
-                            +
-                            {Math.round(
-                              ((credit - yearlyCredits[index - 1]) /
-                                Math.max(yearlyCredits[index - 1], 1)) *
-                                100
-                            )}
-                            % จากปีก่อน
-                          </p>
-                        )}
+                        <p className="mt-1 text-xs text-gray-400">tCO₂e สะสม</p>
                       </div>
                     ))}
                   </div>
@@ -558,7 +727,6 @@ export default function TVERSimulationPage() {
           </div>
         )}
 
-        {/* ขั้นตอนที่ 2 */}
         {step === 2 && (
           <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-2">
             <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-7">
@@ -595,10 +763,11 @@ export default function TVERSimulationPage() {
                     type="button"
                     onClick={() => {
                       setGoal(item.value);
+                      setAllocationCalculated(false);
                       setSaved(false);
                       clearMessage();
                     }}
-                    className={`flex w-full items-start gap-3 rounded-xl border p-4 text-left transition ${
+                    className={`flex w-full items-start gap-3 rounded-xl border p-4 text-left transition cursor-pointer ${
                       goal === item.value
                         ? "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500"
                         : "border-gray-200 hover:border-emerald-300"
@@ -637,40 +806,47 @@ export default function TVERSimulationPage() {
                 </span>
               </div>
 
-              <div className="space-y-3">
-                {creditRecords.map((record) => {
-                  const checked = selectedRecords.includes(record.id);
+              {loadingRecords ? (
+                <div className="py-6 text-center text-xs text-slate-400">
+                  กำลังโหลดรายการปล่อยก๊าซจากฐานข้อมูล...
+                </div>
+              ) : creditRecords.length === 0 ? (
+                <div className="p-4 bg-slate-50 border border-slate-200 text-slate-500 text-xs rounded-xl text-center">
+                  ยังไม่มีข้อมูลรายการปล่อยก๊าซในระบบ
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {creditRecords.map((record) => {
+                    const checked = selectedRecords.includes(record.id);
 
-                  return (
-                    <label
-                      key={record.id}
-                      className={`flex cursor-pointer flex-wrap items-center gap-3 rounded-xl border p-3 sm:flex-nowrap ${
-                        checked
-                          ? "border-emerald-300 bg-emerald-50"
-                          : "border-gray-100 bg-gray-50 hover:border-gray-300"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleRecord(record.id)}
-                        className="h-4 w-4 shrink-0 accent-emerald-600"
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-bold text-gray-800">
-                          {record.id}
+                    return (
+                      <label
+                        key={record.id}
+                        className={`flex cursor-pointer flex-wrap items-center gap-3 rounded-xl border p-3 sm:flex-nowrap ${
+                          checked
+                            ? "border-emerald-300 bg-emerald-50"
+                            : "border-gray-100 bg-gray-50 hover:border-gray-300"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleRecord(record.id)}
+                          className="h-4 w-4 shrink-0 accent-emerald-600 cursor-pointer"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-bold text-gray-800">
+                            {record.name}
+                          </span>
                         </span>
-                        <span className="mt-1 block text-xs text-gray-500">
-                          {record.name}
+                        <span className="whitespace-nowrap text-sm font-bold text-gray-800">
+                          {formatNumber(record.amount)} tCO₂e
                         </span>
-                      </span>
-                      <span className="whitespace-nowrap text-sm font-bold text-gray-800">
-                        {formatNumber(record.amount)} tCO₂e
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
 
               {message && (
                 <p
@@ -691,189 +867,107 @@ export default function TVERSimulationPage() {
                 </div>
               </div>
 
-              <div className="mt-6 grid grid-cols-2 gap-3">
+              <div className="mt-6 space-y-3">
                 <button
                   type="button"
-                  onClick={() => {
-                    setStep(1);
-                    clearMessage();
-                  }}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-gray-200 px-4 py-3 font-semibold text-gray-600 transition hover:bg-gray-50"
+                  onClick={handleCalculateAllocation}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#31865F] px-4 py-3 font-bold text-white transition hover:bg-[#26734F] cursor-pointer"
                 >
-                  <ArrowLeft size={17} />
-                  ย้อนกลับ
+                  <Calculator size={17} />
+                  คำนวณการจัดสรรเครดิต
                 </button>
 
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#31865F] px-4 py-3 font-semibold text-white transition hover:bg-[#26734F]"
-                >
-                  <Save size={17} />
-                  ยืนยันการจัดสรร
-                </button>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep(1);
+                      clearMessage();
+                    }}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-gray-200 px-4 py-3 font-semibold text-gray-600 transition hover:bg-gray-50 cursor-pointer"
+                  >
+                    <ArrowLeft size={17} />
+                    ย้อนกลับ
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={isSubmitting || !allocationCalculated}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white transition hover:bg-emerald-800 cursor-pointer disabled:opacity-50"
+                  >
+                    <Save size={17} />
+                    {isSubmitting ? "กำลังบันทึก..." : "ยืนยันการจัดสรร"}
+                  </button>
+                </div>
               </div>
             </section>
 
-            {/* รายงานผล */}
             <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-7">
-              <h2 className="text-lg font-bold text-gray-800">
-                รายงานผลการจัดสรรเครดิต
-              </h2>
-              <p className="mt-1 text-sm text-gray-500">
-                {goal === "netzero"
-                  ? "Net Zero — ชดเชย 100%"
-                  : goal === "neutral"
-                  ? "Carbon Neutral — ชดเชย 50% · ขาย 50%"
-                  : "Credit Selling — ชดเชย 20% · ขาย 80%"}
-              </p>
-
-              <h3 className="mb-4 mt-7 text-sm font-semibold text-gray-700">
-                เครดิตที่เกิดขึ้นต่อรอบบัญชี
-              </h3>
-
-              <div className="relative h-52 border-b border-gray-100">
-                <div className="absolute inset-0 flex flex-col justify-between">
-                  {[0, 1, 2, 3].map((line) => (
-                    <div key={line} className="border-t border-gray-100" />
-                  ))}
+              {!allocationCalculated ? (
+                <div className="flex min-h-[450px] flex-col items-center justify-center text-center">
+                  <h2 className="text-lg font-bold text-gray-700">
+                    รายงานผลการจัดสรรเครดิต
+                  </h2>
+                  <p className="mt-2 max-w-sm text-sm leading-6 text-gray-400">
+                    เลือกเป้าหมายองค์กรและรายการปล่อยก๊าซทางด้านซ้าย แล้วกดปุ่ม <b>"คำนวณการจัดสรรเครดิต"</b> เพื่อดูผลลัพธ์
+                  </p>
                 </div>
+              ) : (
+                <>
+                  <div className="border-b border-gray-100 pb-4">
+                    <h2 className="text-lg font-bold text-gray-900">
+                      สรุปผลการจัดสรรและการชดเชย
+                    </h2>
+                    <p className="mt-0.5 text-sm text-gray-500">
+                      เป้าหมาย: {goal === "netzero" ? "Net Zero (ชดเชย 100%)" : goal === "neutral" ? "Carbon Neutral (ชดเชย 50% / ขาย 50%)" : "Credit Selling (ชดเชย 20% / ขาย 80%)"}
+                    </p>
+                  </div>
 
-                <div className="absolute inset-0 flex items-center">
-                  <svg
-                    viewBox="0 0 600 180"
-                    preserveAspectRatio="none"
-                    className="h-full w-full overflow-visible"
-                    role="img"
-                    aria-label="กราฟแนวโน้มคาร์บอนเครดิต 3 ปี"
+                  <div className="mt-6 divide-y divide-gray-100 text-sm">
+                    <div className="flex items-center justify-between py-3">
+                      <span className="text-gray-600">ยอดก๊าซที่เลือกชดเชย</span>
+                      <span className="font-semibold text-gray-900">{formatNumber(selectedTotal)} tCO₂e</span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-3">
+                      <span className="text-gray-600">เครดิตใช้ชดเชยจริง</span>
+                      <span className="font-semibold text-emerald-600">-{formatNumber(offsetApplied)} tCO₂e</span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-3">
+                      <span className="text-gray-600">เครดิตสำหรับขาย (ตามเป้าหมาย)</span>
+                      <span className="font-semibold text-gray-900">{formatNumber(creditsForSale)} tCO₂e</span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-3">
+                      <span className="text-gray-600">โควตาชดเชยส่วนที่เหลือ</span>
+                      <span className="font-semibold text-gray-900">{formatNumber(remainingOffsetCredit)} tCO₂e</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 rounded-xl bg-gray-50 p-4 border border-gray-200/60">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-700">ปริมาณก๊าซคงเหลือหลังชดเชย</span>
+                      <span className={`text-xl font-bold ${remainingEmissions > 0 ? "text-red-600" : "text-emerald-600"}`}>
+                        {formatNumber(remainingEmissions)} tCO₂e
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="mt-4 text-xs leading-5 text-gray-400">
+                    การนำเครดิตจากโครงการปลูกป่ามาหักลบกับกิจกรรมการปล่อยก๊าซ เพื่อประเมินสถานะคาร์บอนขององค์กร
+                  </p>
+
+                  <Link
+                    href="/organization/tax_calculator"
+                    className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-[#31865F] px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#26734F] cursor-pointer shadow-sm"
                   >
-                    <defs>
-                      <linearGradient
-                        id="creditArea"
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-                        <stop
-                          offset="0%"
-                          stopColor="#16a34a"
-                          stopOpacity="0.18"
-                        />
-                        <stop
-                          offset="100%"
-                          stopColor="#16a34a"
-                          stopOpacity="0.02"
-                        />
-                      </linearGradient>
-                    </defs>
-
-                    <polygon
-                      points={`0,${150 - (yearlyCredits[0] / maxCredit) * 120} 300,${150 - (yearlyCredits[1] / maxCredit) * 120} 600,${150 - (yearlyCredits[2] / maxCredit) * 120} 600,180 0,180`}
-                      fill="url(#creditArea)"
-                    />
-
-                    <polyline
-                      points={`0,${150 - (yearlyCredits[0] / maxCredit) * 120} 300,${150 - (yearlyCredits[1] / maxCredit) * 120} 600,${150 - (yearlyCredits[2] / maxCredit) * 120}`}
-                      fill="none"
-                      stroke="#16a34a"
-                      strokeWidth="3"
-                      vectorEffect="non-scaling-stroke"
-                    />
-
-                    {yearlyCredits.map((credit, index) => (
-                      <circle
-                        key={index}
-                        cx={index * 300}
-                        cy={150 - (credit / maxCredit) * 120}
-                        r="4"
-                        fill="#16a34a"
-                        stroke="white"
-                        strokeWidth="2"
-                        vectorEffect="non-scaling-stroke"
-                      />
-                    ))}
-                  </svg>
-                </div>
-              </div>
-
-              <div className="mt-3 grid grid-cols-3 text-center text-xs text-gray-400">
-                <span>ปีที่ 1</span>
-                <span>ปีที่ 2</span>
-                <span>ปีที่ 3</span>
-              </div>
-
-              <div className="mt-7 overflow-x-auto rounded-xl border border-gray-100">
-                <table className="w-full min-w-[420px] text-left text-sm">
-                  <thead className="bg-gray-50 text-xs text-gray-500">
-                    <tr>
-                      <th className="px-4 py-3 font-medium">ช่วงเวลา</th>
-                      <th className="px-4 py-3 text-right font-medium">
-                        เครดิตที่เกิดขึ้น
-                      </th>
-                      <th className="px-4 py-3 text-right font-medium">
-                        เครดิตสะสม
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {yearlyCredits.map((credit, index) => (
-                      <tr key={index} className="border-t border-gray-100">
-                        <td className="px-4 py-4 text-gray-700">
-                          ปีที่ {index + 1}
-                        </td>
-                        <td className="px-4 py-4 text-right text-gray-700">
-                          {formatNumber(credit)} tCO₂e
-                        </td>
-                        <td className="px-4 py-4 text-right font-semibold text-green-600">
-                          {formatNumber(cumulativeCredits[index])} tCO₂e
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="mt-5 space-y-3">
-                <div className="flex items-center justify-between gap-3 rounded-xl bg-emerald-50 p-4">
-                  <span className="text-sm font-semibold text-emerald-700">
-                    เครดิตสำหรับชดเชย
-                  </span>
-                  <span className="font-bold text-gray-800">
-                    {formatNumber(creditsForOffset)} tCO₂e
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between gap-3 rounded-xl bg-emerald-50 p-4">
-                  <span className="text-sm font-semibold text-emerald-700">
-                    เครดิตที่จัดสรรเพื่อขาย
-                  </span>
-                  <span className="font-bold text-gray-800">
-                    {formatNumber(creditsForSale)} tCO₂e
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-5 flex items-center justify-between border-t border-gray-100 pt-5">
-                <span className="font-bold text-gray-800">
-                  รวมเครดิตประมาณการ
-                </span>
-                <span className="text-xl font-bold text-gray-900">
-                  {formatNumber(totalCredits)} tCO₂e
-                </span>
-              </div>
-
-              <p className="mt-4 text-xs leading-5 text-gray-500">
-                ผลลัพธ์นี้เป็นค่าประมาณสำหรับทดลองระบบ และยังไม่ใช่ผลคำนวณที่รับรองตามระเบียบ T-VER อย่างเป็นทางการ
-              </p>
-
-              <Link
-                href="/organization/tax_calculator"
-                className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-amber-600 px-5 py-4 text-sm font-bold text-white transition hover:bg-amber-700"
-              >
-                เริ่มคำนวณภาษี
-                <ArrowRight size={17} />
-              </Link>
+                    ไปหน้าประเมินการยกเว้นภาษี
+                    <ArrowRight size={17} />
+                  </Link>
+                </>
+              )}
             </section>
           </div>
         )}
