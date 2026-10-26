@@ -3,7 +3,15 @@
 import { useRef, useState } from 'react';
 import Link from 'next/link';
 
-export type Measure = { name: string; amount: number };
+export type Measure = {
+  name: string;
+  amount: number | null; // tCO2e ที่ลดได้ (ค่ากลาง) null = แนะนำทั่วไป
+  low: number | null;
+  high: number | null;
+  percentMin: number;
+  percentMax: number;
+  basis: string;
+};
 type ReportData = {
   name: string | null;
   createdAt: string;
@@ -25,6 +33,9 @@ const thaiDate = (s: string) =>
     month: 'long',
     year: 'numeric',
   }).format(new Date(s));
+
+const pctText = (m: Measure) =>
+  m.percentMin === m.percentMax ? `${m.percentMin}%` : `${m.percentMin}–${m.percentMax}%`;
 
 // เลือกช่วงแกน Y ให้ดูสวย (1, 2, 5 × 10^n) แบ่ง 4 ช่อง
 function niceStep(max: number) {
@@ -75,7 +86,10 @@ export default function ReportClient({
 
   const { total, s1, s2, s3 } = report;
   const hasBreakdown = s1 + s2 + s3 > 0;
-  const totalReduction = measures.reduce((sum, m) => sum + m.amount, 0);
+
+  const totalReduction = measures.reduce((sum, m) => sum + (m.amount ?? 0), 0);
+  const totalLow = measures.reduce((sum, m) => sum + (m.low ?? 0), 0);
+  const totalHigh = measures.reduce((sum, m) => sum + (m.high ?? 0), 0);
 
   const step = niceStep(Math.max(s1, s2, s3));
   const yMax = step * 4;
@@ -94,13 +108,12 @@ export default function ReportClient({
 
       // จับภาพหน้ารายงาน โดยข้ามส่วนที่ใส่ data-no-export (ปุ่มต่างๆ)
       const dataUrl = await toPng(el, {
-        pixelRatio: 2, // ความคมชัด
+        pixelRatio: 2,
         backgroundColor: '#ffffff',
         filter: (node) =>
           !(node instanceof HTMLElement && node.hasAttribute('data-no-export')),
       });
 
-      // อ่านขนาดภาพ เพื่อเลือกแนวกระดาษ (แนวนอนถ้าภาพกว้างกว่าสูง)
       const probe = new jsPDF();
       const props = probe.getImageProperties(dataUrl);
       const orientation = props.width >= props.height ? 'l' : 'p';
@@ -110,7 +123,6 @@ export default function ReportClient({
       const pageH = pdf.internal.pageSize.getHeight();
       const margin = 8;
 
-      // ย่อภาพให้พอดีกับหน้ากระดาษ รักษาสัดส่วน
       const ratio = Math.min(
         (pageW - margin * 2) / props.width,
         (pageH - margin * 2) / props.height
@@ -214,7 +226,7 @@ export default function ReportClient({
             กลับแดชบอร์ด
           </Link>
           <Link
-            href={`/organization/footprint?edit=${logId}`}
+            href={`/organization/footprint/activity?edit=${logId}`}
             className="rounded-lg border border-[#32885F] bg-white px-4 py-2 text-sm font-semibold text-[#32885F]"
           >
             แก้ไขข้อมูล
@@ -316,28 +328,52 @@ export default function ReportClient({
         {/* มาตรการลดการปล่อยก๊าซ */}
         <div className="rounded-2xl bg-white p-8 shadow-md">
           <h2 className="text-lg font-bold text-[#1E293B]">มาตรการลดการปล่อยก๊าซที่แนะนำ</h2>
+          <p className="mt-1 text-xs text-[#94A3B8]">
+            ประมาณการเบื้องต้นจากเปอร์เซ็นต์อ้างอิงที่ผู้ดูแลระบบกำหนด
+            ไม่ใช่การรับรองปริมาณที่ลดได้จริง
+          </p>
 
           <div className="mt-6 space-y-4">
             {measures.length === 0 && (
-              <p className="py-6 text-center text-sm text-[#94A3B8]">ยังไม่มีมาตรการที่แนะนำ</p>
+              <p className="py-6 text-center text-sm text-[#94A3B8]">
+                ยังไม่มีมาตรการที่เข้าเงื่อนไขสำหรับข้อมูลนี้
+              </p>
             )}
             {measures.map((m, i) => (
               <div key={i} className="rounded-xl border-b-2 border-[#F7F9FB] p-4">
                 <p className="text-sm font-semibold text-[#1E293B]">{m.name}</p>
-                <p className="mt-2 text-sm font-bold text-[#16A34A]">
-                  -{fmt(m.amount)} <Co2e />/ปี
-                </p>
+
+                {m.amount !== null ? (
+                  <>
+                    <p className="mt-2 text-sm font-bold text-[#16A34A]">
+                      -{fmt(m.amount)} <Co2e />/ปี
+                    </p>
+                    <p className="mt-1 text-xs text-[#64748B]">
+                      ช่วงประมาณการ {fmt(m.low ?? m.amount)}–{fmt(m.high ?? m.amount)} tCO
+                      <sub>2</sub>e ({pctText(m)} ของ{m.basis})
+                    </p>
+                  </>
+                ) : (
+                  <p className="mt-2 text-xs text-[#94A3B8]">
+                    แนวทางทั่วไป (ไม่มีตัวเลขประมาณการ)
+                  </p>
+                )}
               </div>
             ))}
           </div>
 
           <div className="mt-6 rounded-2xl border border-[#DCFCE7] bg-[#FAFAFA] p-6">
-            <p className="text-xs font-semibold text-[#166534]">ผลลัพธ์การลดโดยรวม</p>
+            <p className="text-xs font-semibold text-[#166534]">ผลลัพธ์การลดโดยรวม (ประมาณการ)</p>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-4xl font-bold text-[#16A34A]">-{fmt(totalReduction)}</span>
               <Co2e className="text-lg font-bold text-[#16A34A]" />
               <span className="text-lg font-bold text-[#16A34A]">/ปี</span>
             </div>
+            {totalHigh > 0 && (
+              <p className="mt-1 text-xs text-[#64748B]">
+                ช่วง {fmt(totalLow)}–{fmt(totalHigh)} tCO<sub>2</sub>e/ปี
+              </p>
+            )}
           </div>
 
           {/* ปุ่มนี้ไม่ถูกรวมใน PDF */}

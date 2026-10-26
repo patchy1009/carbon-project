@@ -75,7 +75,7 @@ export default function EfGwpClient({
   async function handleAddType(e : React.FormEvent) {
     e.preventDefault();
     const created = await insertRecord<EfType>(
-      'car ',
+      'ef_type',
       { type_name : typeForm.type_name },
       '*',
       'เพิ่มประเภท'
