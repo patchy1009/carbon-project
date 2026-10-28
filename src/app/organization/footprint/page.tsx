@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
-import { supabase } from '@/lib/supabaseClient';
-import { TEMP_ORG_ID } from '@/lib/tempOrg';
+import { createSupabaseServer } from '@/lib/supabaseServer';
+import { requireOrgId } from '@/lib/auth';
 import OfficeInfoClient, { type OfficeInfoType, type SavedInfo } from './OfficeInfoClient';
 
 export default async function FootprintOfficePage({
@@ -9,8 +9,9 @@ export default async function FootprintOfficePage({
 }: {
   searchParams: Promise<{ edit?: string }>;
 }) {
+  const orgId = await requireOrgId(); // org_id = auth.uid() ของบัญชีที่ล็อกอิน
+  const supabase = await createSupabaseServer();
   const { edit } = await searchParams; // มีค่า = กำลังแก้ไขรายการเดิม ต้องส่งต่อไปขั้นที่ 2
-  const orgId = TEMP_ORG_ID; // ตอนผูกบัญชีจริง แก้บรรทัดนี้ที่เดียว
 
   const [typesRes, savedRes] = await Promise.all([
     // หัวข้อที่แอดมินกำหนดไว้ (เรียงตามเวลาที่เพิ่ม)

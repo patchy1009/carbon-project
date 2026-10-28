@@ -1,14 +1,13 @@
 
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { createSupabaseServer } from "@/lib/supabaseServer";
 
 export async function POST(request: Request) {
   try {
+    // client ตัวนี้ผูกกับ cookie: signInWithPassword สำเร็จแล้ว session จะถูกเขียนลง cookie
+    // ทำให้หน้าอื่น ๆ (ทั้ง server และ browser) รู้ว่าใครล็อกอินอยู่
+    const supabase = await createSupabaseServer();
+
     // 1. รับข้อมูลจากหน้า Login
     const body = await request.json();
     const email =
@@ -46,6 +45,7 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (userError) {
+      await supabase.auth.signOut();
       console.error("Failed to fetch user profile:", userError.message);
 
       return NextResponse.json(
@@ -56,6 +56,7 @@ export async function POST(request: Request) {
 
     // 4. ถ้าไม่มีข้อมูลผู้ใช้ใน public.user ให้ปฏิเสธ
     if (!userData) {
+      await supabase.auth.signOut();
       return NextResponse.json(
         { error: "ไม่พบข้อมูลบัญชีผู้ใช้ในระบบ" },
         { status: 403 }
@@ -65,6 +66,7 @@ export async function POST(request: Request) {
     // 5. ตรวจสอบสถานะบัญชี
     // สมมติว่าบัญชีที่ใช้งานได้ใช้ค่า status = "active"
     if (userData.status !== "active") {
+      await supabase.auth.signOut();
       return NextResponse.json(
         { error: "บัญชีนี้ไม่สามารถใช้งานได้" },
         { status: 403 }
@@ -79,6 +81,7 @@ export async function POST(request: Request) {
     } else if (userData.role === "organization") {
       redirectTo = "/organization/dashboard";
     } else {
+      await supabase.auth.signOut();
       return NextResponse.json(
         { error: "Role ของบัญชีไม่ถูกต้องหรือยังไม่ได้กำหนด" },
         { status: 403 }
@@ -90,7 +93,6 @@ export async function POST(request: Request) {
       success: true,
       role: userData.role,
       redirectTo,
-      session: authData.session,
     });
   } catch (error) {
     console.error("Login API error:", error);

@@ -1,11 +1,14 @@
 // src/app/admin/ef-gwp/page.tsx
 export const dynamic = 'force-dynamic';
 
-import { supabase } from '@/lib/supabaseClient';
+import { createSupabaseServer } from '@/lib/supabaseServer';
+import { requireAdminId } from '@/lib/auth';
 import EfGwpClient from './EfGwpClient';
 import type { EfType, EmissionFactor, GwpValue } from '@/types/ef-gwp';
 
 export default async function EfGwpPage() {
+  await requireAdminId(); // ไม่ใช่แอดมิน -> เด้งไปหน้า login
+  const supabase = await createSupabaseServer();
   const [efTypesRes, efListRes, gwpListRes] = await Promise.all([
     supabase.from('ef_type').select('*').order('updated_date'),
     supabase

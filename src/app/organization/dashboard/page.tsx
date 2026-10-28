@@ -1,20 +1,13 @@
 export const dynamic = 'force-dynamic';
 
-import { supabase } from '@/lib/supabaseClient';
-import { TEMP_ORG_ID } from '@/lib/tempOrg';
+import { createSupabaseServer } from '@/lib/supabaseServer';
+import { requireOrgId } from '@/lib/auth';
 import DashboardClient from './DashboardClient';
 import type { OrgActivityLog, OrgTreeProject } from '@/types/dashboard';
 
 export default async function DashboardPage() {
-  // ===== ยังไม่ผูก Auth จริง (TODO: ทำทีหลัง) =====
-  // const { data: { user } } = await supabase.auth.getUser();
-  // const { data: org } = await supabase
-  //   .from('organization')
-  //   .select('org_id')
-  //   .eq('user_id', user?.id)
-  //   .single();
-  // const orgId = org?.org_id ?? null;
-  const orgId = TEMP_ORG_ID;
+  const orgId = await requireOrgId(); // org_id = auth.uid() ของบัญชีที่ล็อกอิน
+  const supabase = await createSupabaseServer();
 
   const [activityRes, treeProjectRes] = await Promise.all([
     supabase

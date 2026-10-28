@@ -1,9 +1,12 @@
 export const dynamic = 'force-dynamic';
 
-import { supabase } from '@/lib/supabaseClient';
+import { createSupabaseServer } from '@/lib/supabaseServer';
+import { requireAdminId } from '@/lib/auth';
 import OfficeRecommendationClient from './OfficeRecommendationClient';
 
 export default async function OfficeRecommendationPage() {
+  await requireAdminId(); // ไม่ใช่แอดมิน -> เด้งไปหน้า login
+  const supabase = await createSupabaseServer();
   const [infoRes, recRes, actRes] = await Promise.all([
     // หัวข้อข้อมูลสำนักงาน
     supabase.from('office_info_type').select('*').order('updated_at', { ascending: true }),

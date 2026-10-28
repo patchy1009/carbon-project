@@ -1,8 +1,8 @@
 export const dynamic = 'force-dynamic';
 
 import { notFound } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
-import { TEMP_ORG_ID } from '@/lib/tempOrg';
+import { createSupabaseServer } from '@/lib/supabaseServer';
+import { requireOrgId } from '@/lib/auth';
 import { evaluate, type OrgData, type Recommendation } from '@/lib/recommendation';
 import ReportClient, { type Measure } from './ReportClient';
 
@@ -19,6 +19,8 @@ export default async function FootprintReportPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const orgId = await requireOrgId(); // org_id = auth.uid() ของบัญชีที่ล็อกอิน
+  const supabase = await createSupabaseServer();
   const { id } = await params;
 
   const [logRes, detailRes, recRes, officeRes] = await Promise.all([
@@ -26,7 +28,7 @@ export default async function FootprintReportPage({
       .from('org_activity_list')
       .select('*')
       .eq('orgactlist_id', id)
-      .eq('org_id', TEMP_ORG_ID) // เปิดดูได้เฉพาะรายงานของตัวเอง
+      .eq('org_id', orgId) // เปิดดูได้เฉพาะรายงานของตัวเอง
       .maybeSingle(),
     supabase
       .from('org_activity_detail')
@@ -40,7 +42,7 @@ export default async function FootprintReportPage({
       .select('*, recommendation_condition(*)')
       .eq('status', 'published'),
     // ข้อมูลสำนักงานขององค์กร (ใช้ตัดสินเงื่อนไข)
-    supabase.from('org_office_info').select('info_id, amount').eq('org_id', TEMP_ORG_ID),
+    supabase.from('org_office_info').select('info_id, amount').eq('org_id', orgId),
   ]);
 
   const log = logRes.data;

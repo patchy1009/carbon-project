@@ -6,6 +6,9 @@ import { supabase } from '@/lib/supabaseClient';
 import Modal from '@/components/Modal';
 import FootprintStepper from '@/components/FootprintStepper';
 import type { ScopeGroup } from '@/types/footprint';
+import BillRow from '@/components/bills/BillRow';
+import { isEdited, keyOf, useBillOcr } from '@/lib/bills/useBillOcr';
+import type { BillType } from '@/lib/bills/types';
 
 export type ExistingBill = {
   bill_id: string;
@@ -15,44 +18,87 @@ export type ExistingBill = {
   file_size: number | null;
 };
 
-type PendingBill = { id: string; file: File; type: string };
+type PeriodType = 'month' | 'year';
 
-const BILL_TYPES = [
-  { value: 'electricity', label: 'บิลค่าไฟฟ้า' },
-  { value: 'water', label: 'บิลค่าน้ำ' },
-  { value: 'fuel', label: 'บิลน้ำมันเชื้อเพลิง' },
-  { value: 'other', label: 'เอกสารอื่นๆ' },
-];
-const billLabel = (v: string) => BILL_TYPES.find((t) => t.value === v)?.label ?? v;
+// หมวดบิลที่ให้แนบ (เรียงตามที่แสดง) ; 'other' เป็นของเดิม แสดงเฉพาะเมื่อมีข้อมูลเก่า
+const BILL_CATEGORIES = [
+  { value: 'water', label: 'บิลค่าน้ำ', hint: 'ใบแจ้งหนี้ค่าน้ำประปา' },
+  { value: 'electricity', label: 'บิลค่าไฟฟ้า', hint: 'ใบแจ้งหนี้ค่าไฟฟ้า' },
+  { value: 'fuel', label: 'บิลน้ำมันเชื้อเพลิง', hint: 'ใบเสร็จหรือใบกำกับภาษีจากปั๊มน้ำมัน' },
+] as const;
+const billLabel = (v: string) =>
+  BILL_CATEGORIES.find((t) => t.value === v)?.label ?? (v === 'other' ? 'เอกสารอื่นๆ' : v);
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-const MAX_BYTES = 10 * 1024 * 1024; // 10 MB ตรงกับที่ตั้งไว้ที่ bucket
-const MAX_FILES = 10;
+const MAX_BYTES = 10 * 1024 * 1024; // 10 MB ตรงกับที่ตั้งไว้ที่ bucket (อ่านอัตโนมัติได้ไม่เกิน 4 MB ดูที่ API)
+// จำนวนไฟล์สูงสุดต่อหมวด (ปรับได้ตามต้องการ)
+const MAX_PER_TYPE: Record<PeriodType, number> = { month: 10, year: 50 };
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const fmtSize = (n: number | null) =>
   n === null ? '' : n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
+// ใช้จับไฟล์ซ้ำที่เลือกซ้ำในหน้าเดียวกัน
+const fileKey = (f: File) => `${f.name}|${f.size}|${f.lastModified}`;
 
-/**
- * ===== จุดต่อ OCR ในอนาคต =====
- * ฟังก์ชันนี้ถูกเรียกทุกครั้งหลังผู้ใช้เลือกไฟล์บิล
- * ถ้าทำ OCR แล้ว ให้ส่งไฟล์ไปอ่าน แล้วคืนค่าเป็น { scopedetail_id: 'ตัวเลขที่อ่านได้' }
- * ระบบจะเติมลงช่องกรอกให้อัตโนมัติ และผู้ใช้ยังแก้ไขเองได้ (เป็นทางเลือกแทนการพิมพ์)
- * ตอนนี้คืน null = ยังไม่อ่านอะไร
- */
-async function extractFromBill(
-  _file: File,
-  _billType: string
-): Promise<Record<string, string> | null> {
-  return null;
+// ไอคอนถังขยะ
+function TrashIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-5 w-5"
+      aria-hidden="true"
+    >
+      <path d="M3 6h18" />
+      <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
+  );
 }
+
+// ---------- ช่วงเวลา (เดือน/ปี) ----------
+const TH_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const TH_MONTHS_FULL = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+// เก็บใน DB เป็น 'YYYY-MM-01' (ค.ศ.) ; รายปีใช้ 1 ม.ค.
+function derivePeriod(type: PeriodType, month: number, yearBE: number): string {
+  if (!yearBE) return '';
+  if (type === 'year') return `${yearBE - 543}-01-01`;
+  return month ? `${yearBE - 543}-${pad2(month)}-01` : '';
+}
+const monthOf = (p: string) => (p ? Number(p.slice(5, 7)) : 0);
+const yearBEOf = (p: string) => (p ? Number(p.slice(0, 4)) + 543 : 0);
+
+// ชื่อที่ระบบแนะนำ: "คาร์บอนฟุตพรินต์ มี.ค.69" หรือ "คาร์บอนฟุตพรินต์ ปี 2569"
+function defaultName(type: PeriodType, p: string): string {
+  if (!p) return '';
+  if (type === 'year') return `คาร์บอนฟุตพรินต์ ปี ${yearBEOf(p)}`;
+  return `คาร์บอนฟุตพรินต์ ${TH_MONTHS_SHORT[monthOf(p) - 1]}${String(yearBEOf(p)).slice(-2)}`;
+}
+function periodLabel(type: PeriodType, p: string): string {
+  return type === 'year'
+    ? `ปี ${yearBEOf(p)}`
+    : `${TH_MONTHS_FULL[monthOf(p) - 1]} ${yearBEOf(p)}`;
+}
+
+const NAME_MAX = 100;
 
 export default function FootprintClient({
   scopeGroups,
   orgId,
-  existingLogId = null, // มีค่า = โหมดแก้ไขรายการเดิม
-  existingValues = {},  // ค่าที่เคยกรอก key = scopedetail_id
-  existingBills = [],   // บิลที่เคยแนบไว้
+  existingLogId = null,       // มีค่า = โหมดแก้ไขรายการเดิม
+  existingValues = {},        // ค่าที่เคยกรอก key = scopedetail_id
+  existingBills = [],         // บิลที่เคยแนบไว้
+  existingName = '',          // ชื่อกิจกรรมเดิม (orgact_name)
+  existingPeriod = '',        // 'YYYY-MM-DD' (period_month)
+  existingPeriodType = 'month',
   hasOfficeInfo = true,
 }: {
   scopeGroups: ScopeGroup[];
@@ -60,6 +106,9 @@ export default function FootprintClient({
   existingLogId?: string | null;
   existingValues?: Record<string, string>;
   existingBills?: ExistingBill[];
+  existingName?: string;
+  existingPeriod?: string;
+  existingPeriodType?: PeriodType;
   hasOfficeInfo?: boolean;
 }) {
   const isEdit = existingLogId !== null;
@@ -68,26 +117,72 @@ export default function FootprintClient({
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState<{ id: string; total: number } | null>(null);
 
+  // ชื่อกิจกรรม + ช่วงเวลา
+  const [name, setName] = useState<string>(existingName);
+  // true = ผู้ใช้พิมพ์ชื่อเอง (หรือเป็นชื่อเดิมจากโหมดแก้ไข) ห้ามเขียนทับอัตโนมัติ
+  const [nameTouched, setNameTouched] = useState<boolean>(isEdit && existingName.trim() !== '');
+  const [periodType, setPeriodType] = useState<PeriodType>(existingPeriodType);
+  const [selMonth, setSelMonth] = useState<number>(
+    existingPeriodType === 'month' ? monthOf(existingPeriod) : 0
+  );
+  const [selYear, setSelYear] = useState<number>(yearBEOf(existingPeriod));
+  const periodMonth = derivePeriod(periodType, selMonth, selYear); // ค่าที่จะบันทึก
+
   // ส่วนแนบบิล
-  const [pending, setPending] = useState<PendingBill[]>([]);
   const [saved, setSaved] = useState<ExistingBill[]>(existingBills);
-  const [billType, setBillType] = useState('electricity');
+  const maxPerType = MAX_PER_TYPE[periodType];
+
+  // ตัวเลือกปี พ.ศ.: ย้อนหลัง 5 ปี ไปข้างหน้า 1 ปี (รวมปีของรายการเดิมถ้าอยู่นอกช่วง)
+  const nowBE = new Date().getFullYear() + 543;
+
+  // อ่านบิลด้วย OCR + ตรวจเดือน/ซ้ำ (ถ้ายังไม่เลือกเดือน ใช้ค่าสำรองเพื่อไม่ให้แถวบิลพัง)
+  const ocrPeriod = {
+    type: periodType,
+    month: periodMonth || `${(selYear || nowBE) - 543}-01-01`,
+  };
+  const bills = useBillOcr(orgId, ocrPeriod);
+
+  const yearOptions = (() => {
+    const set = new Set<number>();
+    for (let y = nowBE + 1; y >= nowBE - 5; y--) set.add(y);
+    if (selYear) set.add(selYear);
+    return Array.from(set).sort((a, b) => b - a);
+  })();
+
+  function updatePeriod(type: PeriodType, m: number, y: number) {
+    setPeriodType(type);
+    setSelMonth(m);
+    setSelYear(y);
+    if (!nameTouched) setName(defaultName(type, derivePeriod(type, m, y)));
+  }
 
   function handleChange(scopedetailId: string, value: string) {
     setValues((prev) => ({ ...prev, [scopedetailId]: value }));
   }
 
-  // ---------- แนบไฟล์บิล ----------
-  async function applyOcr(item: PendingBill) {
-    const result = await extractFromBill(item.file, item.type);
-    if (result) setValues((prev) => ({ ...prev, ...result }));
-  }
+  // ---------- แนบไฟล์บิล (แยกตามหมวด) ----------
+  const countOf = (type: string) =>
+    saved.filter((b) => b.bill_type === type).length +
+    bills.items.filter((p) => p.type === type).length;
 
-  function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleFiles(type: string, e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = ''; // ให้เลือกไฟล์เดิมซ้ำได้
 
-    const accepted: PendingBill[] = [];
+    // ต้องรู้เดือน/ปีของกิจกรรมก่อน เพื่อตรวจว่าบิลตรงกับช่วงเวลานี้
+    if (!periodMonth) {
+      return alert(
+        periodType === 'year'
+          ? 'กรุณาเลือกปีของกิจกรรมก่อนแนบบิล'
+          : 'กรุณาเลือกเดือนและปีของกิจกรรมก่อนแนบบิล'
+      );
+    }
+
+    const accepted: File[] = [];
+    const seen = new Set(
+      bills.items.filter((p) => p.type === type).map((p) => fileKey(p.file))
+    );
+
     for (const f of files) {
       if (!ALLOWED_TYPES.includes(f.type)) {
         alert(`ไฟล์ "${f.name}" ไม่รองรับ (รองรับ JPG, PNG, WEBP และ PDF)`);
@@ -101,15 +196,20 @@ export default function FootprintClient({
         alert(`ไฟล์ "${f.name}" ใหญ่เกิน 10 MB`);
         continue;
       }
-      accepted.push({ id: uid(), file: f, type: billType });
+      if (seen.has(fileKey(f))) {
+        alert(`ไฟล์ "${f.name}" ถูกเลือกไว้แล้วในหมวดนี้`);
+        continue;
+      }
+      seen.add(fileKey(f));
+      accepted.push(f);
     }
 
-    if (pending.length + saved.length + accepted.length > MAX_FILES) {
-      alert(`แนบไฟล์ได้สูงสุด ${MAX_FILES} ไฟล์ต่อรายการ`);
+    if (accepted.length === 0) return;
+    if (countOf(type) + accepted.length > maxPerType) {
+      alert(`หมวด${billLabel(type)} แนบได้สูงสุด ${maxPerType} ไฟล์`);
       return;
     }
-    setPending((prev) => [...prev, ...accepted]);
-    accepted.forEach((a) => void applyOcr(a));
+    bills.add(type as BillType, accepted); // อ่านบิลทีละไฟล์ แล้วแสดงผลให้ตรวจแก้
   }
 
   async function openSaved(b: ExistingBill) {
@@ -134,7 +234,7 @@ export default function FootprintClient({
     let failed = 0;
     const uploaded: ExistingBill[] = [];
 
-    for (const item of pending) {
+    for (const item of bills.items) {
       const ext = item.file.name.includes('.')
         ? item.file.name.split('.').pop()!.toLowerCase()
         : 'bin';
@@ -160,11 +260,20 @@ export default function FootprintClient({
           original_name: item.file.name,
           mime_type: item.file.type,
           file_size: item.file.size,
+          file_hash: item.fileHash ?? null,
+          dedup_key: keyOf(item),
+          bill_month: item.billMonth || null,
+          quantity: Number(item.quantity),
+          ocr_quantity: item.extracted?.quantity ?? null,
+          user_edited: isEdited(item),
+          fuel_type: item.fuelType || null,
+          ocr_source: item.extracted?.source ?? null,
         })
         .select('bill_id, bill_type, file_path, original_name, file_size')
         .single();
 
       if (rowErr || !row) {
+        // 23505 = ชน unique index ของ file_hash (ไฟล์เดียวกันเคยแนบแล้ว เช่น แนบพร้อมกันจากสองแท็บ)
         console.error('Insert bill row error:', rowErr);
         await supabase.storage.from('bills').remove([path]); // ไม่ให้เหลือไฟล์กำพร้า
         failed++;
@@ -174,12 +283,51 @@ export default function FootprintClient({
     }
 
     setSaved((prev) => [...prev, ...uploaded]);
-    setPending([]);
+    bills.clear();
     return failed;
+  }
+
+  // ตรวจรายการที่ซ้อนกับช่วงเวลานี้ คืนข้อความเตือน หรือ null ถ้าไม่ซ้อน
+  async function findOverlap(): Promise<string | null> {
+    const y = Number(periodMonth.slice(0, 4)); // ปี ค.ศ.
+    let q = supabase
+      .from('org_activity_list')
+      .select('orgact_name, period_type, period_month')
+      .eq('org_id', orgId)
+      .gte('period_month', `${y}-01-01`)
+      .lte('period_month', `${y}-12-31`);
+    if (existingLogId) q = q.neq('orgactlist_id', existingLogId);
+    const { data } = await q;
+
+    const hit = (data ?? []).find((r: any) => {
+      const rType: PeriodType = r.period_type === 'year' ? 'year' : 'month';
+      if (periodType === 'year') return true; // รายปี: มีรายการใดในปีนั้นก็ซ้อน
+      return rType === 'year' || r.period_month === periodMonth; // รายเดือน: ซ้ำเดือน หรือมีรายปีครอบอยู่
+    }) as any;
+    if (!hit) return null;
+
+    const hitType: PeriodType = hit.period_type === 'year' ? 'year' : 'month';
+    const hitLabel = periodLabel(hitType, hit.period_month);
+    return periodType === 'year'
+      ? `ปี ${yearBEOf(periodMonth)} มีรายการ "${hit.orgact_name}" (${hitLabel}) อยู่แล้ว\nการบันทึกรายปีเพิ่มอาจทำให้ยอดรวมนับซ้ำ ต้องการบันทึกต่อหรือไม่?`
+      : hitType === 'year'
+      ? `มีรายการรายปี "${hit.orgact_name}" ที่ครอบคลุมช่วงนี้อยู่แล้ว\nการบันทึกรายเดือนเพิ่มอาจทำให้ยอดรวมนับซ้ำ ต้องการบันทึกต่อหรือไม่?`
+      : `${periodLabel('month', periodMonth)} มีรายการ "${hit.orgact_name}" อยู่แล้ว\nต้องการบันทึกรายการนี้เพิ่มหรือไม่?`;
   }
 
   // ---------- คำนวณและบันทึก ----------
   async function handleCalculate() {
+    const cleanName = name.trim();
+    if (!cleanName) return alert('กรุณากรอกชื่อกิจกรรม');
+    if (cleanName.length > NAME_MAX) return alert(`ชื่อกิจกรรมยาวเกิน ${NAME_MAX} ตัวอักษร`);
+    if (!periodMonth) {
+      return alert(periodType === 'year' ? 'กรุณาเลือกปี' : 'กรุณาเลือกเดือนและปี');
+    }
+
+    // บิลที่แนบต้องอ่านเสร็จ เดือนตรงกิจกรรม ไม่ซ้ำ และผู้ใช้รับทราบคำเตือนแล้ว
+    const why = bills.blockReason();
+    if (why) return alert(why);
+
     setLoading(true);
 
     const rows: {
@@ -207,6 +355,12 @@ export default function FootprintClient({
     if (rows.length === 0) {
       setLoading(false);
       alert('กรุณากรอกปริมาณอย่างน้อย 1 รายการ');
+      return;
+    }
+
+    const overlap = await findOverlap();
+    if (overlap && !confirm(overlap)) {
+      setLoading(false);
       return;
     }
 
@@ -249,7 +403,13 @@ export default function FootprintClient({
 
       const { error: updError } = await supabase
         .from('org_activity_list')
-        .update({ total_ghg_emission: total, updated_at: new Date().toISOString() })
+        .update({
+          orgact_name: cleanName,
+          period_type: periodType,
+          period_month: periodMonth,
+          total_ghg_emission: total,
+          updated_at: new Date().toISOString(),
+        })
         .eq('orgactlist_id', logId)
         .eq('org_id', orgId);
       if (updError) {
@@ -262,7 +422,9 @@ export default function FootprintClient({
         .from('org_activity_list')
         .insert({
           org_id: orgId,
-          orgact_name: `บันทึกการปล่อยก๊าซ — ${new Date().toLocaleDateString('th-TH')}`,
+          orgact_name: cleanName,
+          period_type: periodType,
+          period_month: periodMonth,
           total_ghg_emission: total,
           unit: 'tCO2e',
         })
@@ -285,7 +447,7 @@ export default function FootprintClient({
     }
 
     // อัปโหลดบิลที่แนบ (ทำหลังบันทึกรายการสำเร็จ ถ้าบิลล้มเหลวรายการยังอยู่ครบ)
-    if (pending.length > 0) {
+    if (bills.items.length > 0) {
       const failed = await uploadPending(logId);
       if (failed > 0) {
         alert(
@@ -299,6 +461,105 @@ export default function FootprintClient({
     if (!isEdit) setValues({});
     setDone({ id: logId, total });
   }
+
+  // การ์ดแนบบิลของแต่ละหมวด
+  function renderBillCategory(type: string, label: string, hint: string, canAdd: boolean) {
+    const savedOfType = saved.filter((b) => b.bill_type === type);
+    const pendingOfType = bills.items.filter((p) => p.type === type);
+    const used = savedOfType.length + pendingOfType.length;
+    const full = used >= maxPerType;
+
+    return (
+      <div key={type} className="overflow-hidden rounded-[25px] border border-[#BDC9C1] bg-white">
+        <div className="flex items-center justify-between border-b border-[#BDC9C1] bg-[#F2F4F6] px-4 py-2">
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 rounded-full bg-[#6FB898]" />
+            <h3 className="text-base text-[#191C1E]">{label}</h3>
+          </div>
+          <span className="text-xs text-[#6B7280]">
+            {used}/{maxPerType} ไฟล์
+          </span>
+        </div>
+
+        <div className="space-y-3 p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            {canAdd && (
+              <label
+                className={`flex h-11 items-center rounded-[20px] px-5 text-sm font-semibold text-white ${
+                  full ? 'cursor-not-allowed bg-[#94A3B8]' : 'cursor-pointer bg-[#32885F]'
+                }`}
+              >
+                เลือกไฟล์
+                <input
+                  type="file"
+                  multiple
+                  disabled={full}
+                  accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+                  onChange={(e) => handleFiles(type, e)}
+                  className="hidden"
+                />
+              </label>
+            )}
+            <span className="text-xs text-[#6B7280]">{hint}</span>
+          </div>
+
+          {used === 0 && <p className="text-xs text-[#94A3B8]">ยังไม่มีไฟล์ในหมวดนี้</p>}
+
+          {/* บิลที่เคยบันทึกไว้แล้ว */}
+          {savedOfType.length > 0 && (
+            <ul className="space-y-2">
+              {savedOfType.map((b) => (
+                <li
+                  key={b.bill_id}
+                  className="flex items-center justify-between rounded-xl border border-[#E2E8F0] px-4 py-2 text-sm"
+                >
+                  <span>
+                    {b.original_name ?? 'บิล'}{' '}
+                    <span className="text-xs text-[#94A3B8]">{fmtSize(b.file_size)}</span>
+                  </span>
+                  <span className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => openSaved(b)}
+                      className="text-[#32885F] hover:underline"
+                    >
+                      เปิดดู
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteSaved(b)}
+                      className="text-[#94A3B8] hover:text-red-500"
+                    >
+                      ลบ
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* ไฟล์ที่เลือกไว้ รอบันทึก: อ่านบิลอัตโนมัติ แล้วให้ตรวจแก้เดือน/ปริมาณ */}
+          {pendingOfType.length > 0 && (
+            <ul className="space-y-2">
+              {pendingOfType.map((p) => (
+                <BillRow
+                  key={p.uid}
+                  item={p}
+                  checks={bills.checksOf(p)}
+                  period={ocrPeriod}
+                  onEdit={(patch) => void bills.edit(p, patch)}
+                  onRemove={() => bills.remove(p.uid)}
+                  trashIcon={<TrashIcon />}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const hasLegacyOther = saved.some((b) => b.bill_type === 'other');
 
   return (
     <div className="max-w-[1150px] mx-auto px-8 py-8">
@@ -366,118 +627,150 @@ export default function FootprintClient({
         </div>
       )}
 
-      {/* ส่วนแนบบิล */}
+      {/* ข้อมูลกิจกรรม: ชื่อก่อน แล้วค่อยเลือกช่วงเวลา */}
       <div className="mb-6 overflow-hidden rounded-[25px] border border-[#BDC9C1] bg-white">
         <div className="flex items-center gap-2 border-b border-[#BDC9C1] bg-[#F2F4F6] px-4 py-2">
           <span className="h-3 w-3 rounded-full bg-[#6FB898]" />
-          <h2 className="text-base text-[#191C1E]">แนบบิลและเอกสารประกอบ (ไม่บังคับ)</h2>
+          <h2 className="text-base text-[#191C1E]">ข้อมูลกิจกรรม</h2>
         </div>
 
-        <div className="space-y-4 p-4">
-          <p className="text-xs text-[#6B7280]">
-            แนบรูปหรือไฟล์ PDF ของบิลค่าไฟ ค่าน้ำ ค่าน้ำมัน เก็บเป็นหลักฐานประกอบรายการ
-            (JPG, PNG, WEBP, PDF ไม่เกิน 10 MB ต่อไฟล์) ในอนาคตระบบจะอ่านค่าจากบิลให้อัตโนมัติ
-            เป็นอีกทางเลือกแทนการพิมพ์เอง
-          </p>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <select
-              value={billType}
-              onChange={(e) => setBillType(e.target.value)}
-              className="h-11 rounded-[20px] border border-[#BDC9C1] bg-[#F7F9FB] px-4 text-sm"
-            >
-              {BILL_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-
-            <label className="flex h-11 cursor-pointer items-center rounded-[20px] bg-[#32885F] px-5 text-sm font-semibold text-white">
-              เลือกไฟล์
-              <input
-                type="file"
-                multiple
-                accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
-                onChange={handleFiles}
-                className="hidden"
-              />
+        <div className="space-y-5 p-4">
+          {/* 1) ชื่อกิจกรรม */}
+          <div className="space-y-1">
+            <label className="block text-xs tracking-wide text-[#3E4943]">
+              ชื่อกิจกรรม <span className="text-red-500">*</span>
             </label>
-
-            <button
-              type="button"
-              disabled
-              title="เร็วๆ นี้"
-              className="h-11 cursor-not-allowed rounded-[20px] border border-dashed border-[#BDC9C1] px-5 text-sm text-[#94A3B8]"
-            >
-              
-            </button>
+            <input
+              type="text"
+              value={name}
+              maxLength={NAME_MAX}
+              onChange={(e) => {
+                setName(e.target.value);
+                setNameTouched(true);
+              }}
+              placeholder="เช่น คาร์บอนฟุตพรินต์ มี.ค.69"
+              className="h-11 w-full rounded-[20px] border border-[#BDC9C1] bg-[#F7F9FB] px-[18px] text-base text-[#191C1E] outline-none"
+            />
+            {nameTouched && periodMonth && name.trim() !== defaultName(periodType, periodMonth) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setName(defaultName(periodType, periodMonth));
+                  setNameTouched(false);
+                }}
+                className="text-xs text-[#32885F] hover:underline"
+              >
+                ใช้ชื่อที่ระบบแนะนำ: {defaultName(periodType, periodMonth)}
+              </button>
+            )}
           </div>
 
-          {/* บิลที่เคยบันทึกไว้แล้ว */}
-          {saved.length > 0 && (
-            <ul className="space-y-2">
-              {saved.map((b) => (
-                <li
-                  key={b.bill_id}
-                  className="flex items-center justify-between rounded-xl border border-[#E2E8F0] px-4 py-2 text-sm"
+          {/* 2) รูปแบบการคำนวณ */}
+          <div className="space-y-1">
+            <label className="block text-xs tracking-wide text-[#3E4943]">
+              คำนวณแบบ <span className="text-red-500">*</span>
+            </label>
+            <div className="inline-flex rounded-[20px] border border-[#BDC9C1] bg-[#F7F9FB] p-1">
+              {(
+                [
+                  { v: 'month', label: 'รายเดือน' },
+                  { v: 'year', label: 'รายปี' },
+                ] as const
+              ).map((o) => (
+                <button
+                  key={o.v}
+                  type="button"
+                  onClick={() => {
+                    if (o.v === periodType) return;
+                    // สลับแล้วเก็บปีไว้ ส่วนเดือนให้เลือกใหม่เมื่อกลับมารายเดือน
+                    updatePeriod(o.v, 0, selYear);
+                  }}
+                  className={`h-9 rounded-[16px] px-6 text-sm ${
+                    periodType === o.v
+                      ? 'bg-[#32885F] font-semibold text-white'
+                      : 'text-[#64748B]'
+                  }`}
                 >
-                  <span>
-                    <span className="mr-2 rounded bg-[#F0FDF4] px-2 py-0.5 text-xs text-[#16A34A]">
-                      {billLabel(b.bill_type)}
-                    </span>
-                    {b.original_name ?? 'บิล'}{' '}
-                    <span className="text-xs text-[#94A3B8]">{fmtSize(b.file_size)}</span>
-                  </span>
-                  <span className="flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => openSaved(b)}
-                      className="text-[#32885F] hover:underline"
-                    >
-                      เปิดดู
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => deleteSaved(b)}
-                      className="text-[#94A3B8] hover:text-red-500"
-                    >
-                      ลบ
-                    </button>
-                  </span>
-                </li>
+                  {o.label}
+                </button>
               ))}
-            </ul>
-          )}
+            </div>
+          </div>
 
-          {/* ไฟล์ที่เลือกไว้ รอบันทึก */}
-          {pending.length > 0 && (
-            <ul className="space-y-2">
-              {pending.map((p) => (
-                <li
-                  key={p.id}
-                  className="flex items-center justify-between rounded-xl border border-dashed border-[#6FB898] bg-[#F7FDFA] px-4 py-2 text-sm"
+          {/* 3) เดือน/ปี หรือปี */}
+          <div className="space-y-1">
+            <label className="block text-xs tracking-wide text-[#3E4943]">
+              {periodType === 'year' ? 'ปี (พ.ศ.)' : 'เดือน/ปีที่บันทึก'}{' '}
+              <span className="text-red-500">*</span>
+            </label>
+            <div className="flex gap-3">
+              {periodType === 'month' && (
+                <select
+                  value={selMonth || ''}
+                  onChange={(e) => updatePeriod('month', Number(e.target.value), selYear || nowBE)}
+                  className="h-11 w-48 rounded-[20px] border border-[#BDC9C1] bg-[#F7F9FB] px-4 text-sm"
                 >
-                  <span>
-                    <span className="mr-2 rounded bg-white px-2 py-0.5 text-xs text-[#16A34A]">
-                      {billLabel(p.type)}
-                    </span>
-                    {p.file.name}{' '}
-                    <span className="text-xs text-[#94A3B8]">{fmtSize(p.file.size)}</span>
-                    <span className="ml-2 text-xs text-[#92400E]">(จะแนบเมื่อกดบันทึก)</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setPending((prev) => prev.filter((x) => x.id !== p.id))}
-                    className="text-[#94A3B8] hover:text-red-500"
-                  >
-                    เอาออก
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+                  <option value="" disabled>
+                    เดือน
+                  </option>
+                  {TH_MONTHS_FULL.map((m, i) => (
+                    <option key={m} value={i + 1}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <select
+                value={selYear || ''}
+                onChange={(e) => updatePeriod(periodType, selMonth, Number(e.target.value))}
+                className="h-11 w-40 rounded-[20px] border border-[#BDC9C1] bg-[#F7F9FB] px-4 text-sm"
+              >
+                <option value="" disabled>
+                  ปี พ.ศ.
+                </option>
+                {yearOptions.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {periodType === 'year' && (
+              <p className="text-xs text-[#6B7280]">
+                รายปี: กรอกปริมาณรวมตลอดทั้งปีในแต่ละรายการ (เช่น ผลรวมของบิลไฟ 12 เดือน)
+              </p>
+            )}
+          </div>
         </div>
+      </div>
+
+      {/* แนบบิล แยกตามหมวด */}
+      <div className="mb-6">
+        <div className="mb-3">
+          <h2 className="text-base font-medium text-[#191C1E]">แนบบิลและเอกสารประกอบ (ไม่บังคับ)</h2>
+          <p className="text-xs text-[#6B7280]">
+            แนบรูปหรือไฟล์ PDF แยกตามประเภทบิล เก็บเป็นหลักฐานประกอบรายการ
+            (JPG, PNG, WEBP, PDF ไม่เกิน 10 MB ต่อไฟล์ แนบได้สูงสุด {maxPerType} ไฟล์ต่อหมวด)
+            ระบบจะอ่านเดือนและปริมาณจากบิลให้ (อ่านอัตโนมัติได้เมื่อไฟล์ไม่เกิน 4 MB)
+            กรุณาตรวจและแก้ไขให้ถูกต้องก่อนบันทึก
+          </p>
+        </div>
+        <div className="flex flex-col gap-4">
+          {BILL_CATEGORIES.map((c) => renderBillCategory(c.value, c.label, c.hint, true))}
+          {hasLegacyOther &&
+            renderBillCategory('other', 'เอกสารอื่นๆ (ข้อมูลเดิม)', 'หมวดนี้เพิ่มไฟล์ใหม่ไม่ได้', false)}
+        </div>
+      </div>
+
+      {/* หัวข้อคั่นก่อนกรอกข้อมูลแต่ละขอบเขต */}
+      <div className="mb-4 mt-10 border-t border-[#E2E8F0] pt-8">
+        <h2 className="text-base font-medium text-[#191C1E]">
+          กรอกปริมาณกิจกรรมแต่ละขอบเขต (Scope 1, 2 และ 3)
+        </h2>
+        <p className="text-xs text-[#6B7280]">
+          กรอกปริมาณที่ใช้ในช่วงเวลาที่เลือกไว้ด้านบน ช่องที่ไม่มีข้อมูลเว้นว่างไว้ได้
+          ระบบจะคำนวณเฉพาะรายการที่กรอก
+        </p>
       </div>
 
       {/* Scope Sections */}

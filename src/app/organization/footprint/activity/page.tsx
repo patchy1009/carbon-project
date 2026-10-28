@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
-import { supabase } from '@/lib/supabaseClient';
-import { TEMP_ORG_ID } from '@/lib/tempOrg';
+import { createSupabaseServer } from '@/lib/supabaseServer';
+import { requireOrgId } from '@/lib/auth';
 import FootprintClient, { type ExistingBill } from './FootprintClient';
 import type { CarbonScope } from '@/types/activity-management';
 import type { ActivityDetailWithValues, ScopeGroup } from '@/types/footprint';
@@ -11,8 +11,9 @@ export default async function FootprintActivityPage({
 }: {
   searchParams: Promise<{ edit?: string }>;
 }) {
+  const orgId = await requireOrgId(); // org_id = auth.uid() ของบัญชีที่ล็อกอิน
+  const supabase = await createSupabaseServer();
   const { edit } = await searchParams;
-  const orgId = TEMP_ORG_ID; // ตอนผูกบัญชีจริง แก้บรรทัดนี้ที่เดียว
 
   const [scopesRes, detailsRes, officeRes] = await Promise.all([
     supabase.from('carbon_scope').select('*').order('scope_number'),
@@ -33,13 +34,16 @@ export default async function FootprintActivityPage({
 
   // ถ้ามี ?edit=รหัส ให้โหลดค่าที่เคยกรอกและบิลที่เคยแนบ (เฉพาะรายการของตัวเอง)
   let existingLogId: string | null = null;
+  let existingName = '';
+  let existingPeriod = '';
+  let existingPeriodType: 'month' | 'year' = 'month';
   const existingValues: Record<string, string> = {};
   let existingBills: ExistingBill[] = [];
   if (edit) {
     const [logRes, savedRes, billRes] = await Promise.all([
       supabase
         .from('org_activity_list')
-        .select('orgactlist_id')
+        .select('orgactlist_id, orgact_name, period_type, period_month')
         .eq('orgactlist_id', edit)
         .eq('org_id', orgId)
         .maybeSingle(),
@@ -54,7 +58,11 @@ export default async function FootprintActivityPage({
         .order('created_at'),
     ]);
     if (logRes.data) {
+      const log = logRes.data as any;
       existingLogId = edit;
+      existingName = log.orgact_name ?? '';
+      existingPeriod = log.period_month ?? ''; // 'YYYY-MM-DD' หรือ ''
+      existingPeriodType = log.period_type === 'year' ? 'year' : 'month';
       for (const r of (savedRes.data ?? []) as any[]) {
         if (r.scopedetail_id && r.amount != null) {
           existingValues[r.scopedetail_id] = String(parseFloat(Number(r.amount).toPrecision(7)));
@@ -83,6 +91,9 @@ export default async function FootprintActivityPage({
       existingLogId={existingLogId}
       existingValues={existingValues}
       existingBills={existingBills}
+      existingName={existingName}
+      existingPeriod={existingPeriod}
+      existingPeriodType={existingPeriodType}
       hasOfficeInfo={(officeRes.count ?? 0) > 0}
     />
   );

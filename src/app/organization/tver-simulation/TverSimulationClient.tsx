@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
-import { TEMP_ORG_ID } from '@/lib/tempOrg';
 import type { TreeListItem, TverProjectDetail } from '@/types/tver-project';
 import type { OrgTreeProject, OrgTreeProjectDetail } from '@/types/tver-simulation';
 
@@ -16,11 +15,13 @@ const GROWTH_RATE_YEAR_3 = 1.38; // +38%
 type CreditResult = { year1: number; year2: number; year3: number };
 
 export default function TverSimulationClient({
+  orgId,
   trees,
   criteria,
   existingProject = null,
   existingDetails = [],
 }: {
+  orgId: string; // auth.uid() ของบัญชีที่ล็อกอิน
   trees: TreeListItem[];
   criteria: TverProjectDetail[];
   existingProject?: OrgTreeProject | null; // ถ้ามีค่า = โหมดแก้ไขโครงการเดิม
@@ -135,7 +136,7 @@ export default function TverSimulationClient({
       // ยังไม่เคยบันทึก -> สร้างโครงการใหม่
       const { data, error } = await supabase
         .from('org_tree_project')
-        .insert({ org_id: TEMP_ORG_ID, ...projectValues })
+        .insert({ org_id: orgId, ...projectValues })
         .select()
         .single();
       if (error || !data) {

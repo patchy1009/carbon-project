@@ -1,11 +1,14 @@
 export const dynamic = 'force-dynamic';
 
-import { supabase } from '@/lib/supabaseClient';
+import { createSupabaseServer } from '@/lib/supabaseServer';
+import { requireAdminId } from '@/lib/auth';
 import ActivityManagementClient from './ActivityManagementClient';
 import type { CarbonScope, Activity, ActivityDetail } from '@/types/activity-management';
 import type { EmissionFactor, GwpValue } from '@/types/ef-gwp'; 
 
 export default async function ActivityManagementPage() {
+  await requireAdminId(); // ไม่ใช่แอดมิน -> เด้งไปหน้า login
+  const supabase = await createSupabaseServer();
   const [scopesRes, activitiesRes, detailsRes, efRes, gwpRes] = await Promise.all([
     supabase.from('carbon_scope').select('*').order('scope_number'),
     supabase

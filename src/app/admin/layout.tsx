@@ -43,8 +43,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, []);
 
   async function handleLogout() {
-    await supabase.auth.signOut();
-    router.push('/login');
+    await supabase.auth.signOut(); // ลบ session ใน cookie
+    router.replace('/organization/login');
+    router.refresh();
   }
 
   return (
