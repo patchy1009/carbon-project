@@ -9,6 +9,16 @@ import type { ScopeGroup } from '@/types/footprint';
 import BillRow from '@/components/bills/BillRow';
 import { isEdited, keyOf, useBillOcr } from '@/lib/bills/useBillOcr';
 import type { BillType } from '@/lib/bills/types';
+import { validateForm, required, notNumericOnly, maxLength, isDecimal, type formSchema } from '@/lib/validation';
+import { normalizeNumberString, normalizeToArabicNumber } from '@/lib/normalization';
+
+/* [ปรับปรุง] normalize / validate ช่องที่ผู้ใช้กรอกเอง (ไม่รวมส่วน OCR ของบิล)
+ * 1) ชื่อกิจกรรม: normalizeText + ห้ามว่าง + ห้ามเป็นตัวเลขล้วน + ยาวไม่เกิน NAME_MAX
+ * 2) ปริมาณแต่ละรายการ: เดิมใช้ parseFloat ซึ่งรับ "12abc" เป็น 12 และข้ามค่าติดลบแบบเงียบๆ
+ *    ตอนนี้ แปลงเลขไทย/ลบ comma -> ต้องเป็นตัวเลข ไม่ติดลบ ทศนิยมไม่เกิน 4 หลัก แสดง error ใต้ช่อง
+ * 3) ตรวจความสัมพันธ์: รายการที่กรอกต้องมีค่า EF ที่แอดมินผูกไว้ (ไม่งั้นผลคำนวณเป็น 0 โดยไม่รู้ตัว)
+ * 4) ช่องปริมาณเปลี่ยนจาก type="number" เป็น text + inputMode="decimal" เพื่อรับเลขไทย */
+const AMOUNT_MAX_DECIMALS = 4;
 
 export type ExistingBill = {
   bill_id: string;
@@ -114,6 +124,8 @@ export default function FootprintClient({
   const isEdit = existingLogId !== null;
 
   const [values, setValues] = useState<Record<string, string>>(existingValues);
+  // [เพิ่ม] error ใต้ช่อง: key = 'name' หรือ scopedetail_id
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState<{ id: string; total: number } | null>(null);
 
@@ -158,6 +170,24 @@ export default function FootprintClient({
 
   function handleChange(scopedetailId: string, value: string) {
     setValues((prev) => ({ ...prev, [scopedetailId]: value }));
+    // พิมพ์แก้แล้วล้าง error ของช่องนั้น
+    if (fieldErrors[scopedetailId]) setFieldErrors((prev) => ({ ...prev, [scopedetailId]: '' }));
+  }
+
+  // [เพิ่ม] schema ของทั้งหน้า: ชื่อกิจกรรม + ปริมาณทุกรายการ (key = scopedetail_id)
+  function buildSchema(): formSchema<string> {
+    const schema: formSchema<string> = {
+      name: { rules: [required('ชื่อกิจกรรม'), notNumericOnly('ชื่อกิจกรรม'), maxLength('ชื่อกิจกรรม', NAME_MAX)] },
+    };
+    for (const group of scopeGroups) {
+      for (const d of group.details) {
+        schema[d.scopedetail_id] = {
+          normalize: normalizeNumberString,
+          rules: [isDecimal(d.detail_name ?? 'ปริมาณ', { allowNegative: false, maxDecimals: AMOUNT_MAX_DECIMALS })],
+        };
+      }
+    }
+    return schema;
   }
 
   // ---------- แนบไฟล์บิล (แยกตามหมวด) ----------
@@ -317,9 +347,26 @@ export default function FootprintClient({
 
   // ---------- คำนวณและบันทึก ----------
   async function handleCalculate() {
-    const cleanName = name.trim();
-    if (!cleanName) return alert('กรุณากรอกชื่อกิจกรรม');
-    if (cleanName.length > NAME_MAX) return alert(`ชื่อกิจกรรมยาวเกิน ${NAME_MAX} ตัวอักษร`);
+    // [แก้ไข] normalize + validate ชื่อและปริมาณทุกช่องพร้อมกัน แสดง error ใต้ช่อง
+    const result = validateForm({ ...values, name }, buildSchema());
+    const errs: Record<string, string> = result.ok ? {} : { ...(result.errors as Record<string, string>) };
+
+    // [เพิ่ม] ตรวจความสัมพันธ์: รายการที่กรอก > 0 ต้องมีค่า EF ผูกอยู่
+    for (const group of scopeGroups) {
+      for (const d of group.details) {
+        const qty = normalizeToArabicNumber(result.clean[d.scopedetail_id]);
+        if (!errs[d.scopedetail_id] && qty && qty > 0 && d.emission_factor?.ef_value == null) {
+          errs[d.scopedetail_id] = 'รายการนี้ยังไม่มีค่า EF ในระบบ กรุณาติดต่อผู้ดูแลระบบ';
+        }
+      }
+    }
+
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      return alert('กรุณาตรวจสอบข้อมูลที่กรอก (ช่องที่มีข้อความสีแดง)');
+    }
+    const cleanName = result.clean.name; // ชื่อที่ normalize แล้ว (ยุบช่องว่าง/ตัดหัวท้าย)
+
     if (!periodMonth) {
       return alert(periodType === 'year' ? 'กรุณาเลือกปี' : 'กรุณาเลือกเดือนและปี');
     }
@@ -339,8 +386,9 @@ export default function FootprintClient({
 
     for (const group of scopeGroups) {
       for (const detail of group.details) {
-        const qty = parseFloat(values[detail.scopedetail_id] ?? '0') || 0;
-        if (qty <= 0) continue;
+        // [แก้ไข] เดิม parseFloat(ค่าดิบ) -> ใช้ค่าที่ normalize + validate แล้ว
+        const qty = normalizeToArabicNumber(result.clean[detail.scopedetail_id]) ?? 0;
+        if (qty <= 0) continue; // ว่าง หรือ 0 = ไม่ได้ใช้รายการนี้
         const ef = detail.emission_factor?.ef_value ?? 0;
         const gwp = detail.global_warming_potential?.gwp_value ?? 1;
         rows.push({
@@ -647,10 +695,14 @@ export default function FootprintClient({
               onChange={(e) => {
                 setName(e.target.value);
                 setNameTouched(true);
+                if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: '' }));
               }}
               placeholder="เช่น คาร์บอนฟุตพรินต์ มี.ค.69"
-              className="h-11 w-full rounded-[20px] border border-[#BDC9C1] bg-[#F7F9FB] px-[18px] text-base text-[#191C1E] outline-none"
+              className={`h-11 w-full rounded-[20px] border bg-[#F7F9FB] px-[18px] text-base text-[#191C1E] outline-none ${
+                fieldErrors.name ? 'border-red-500' : 'border-[#BDC9C1]'
+              }`}
             />
+            {fieldErrors.name && <p className="text-xs text-red-600">{fieldErrors.name}</p>}
             {nameTouched && periodMonth && name.trim() !== defaultName(periodType, periodMonth) && (
               <button
                 type="button"
@@ -798,11 +850,14 @@ export default function FootprintClient({
                   <label className="block text-xs tracking-wide text-[#3E4943]">
                     {detail.detail_name} {detail.unit ? `(${detail.unit})` : ''}
                   </label>
-                  <div className="flex h-11 items-center justify-between rounded-[20px] border border-[#BDC9C1] bg-[#F7F9FB] px-[18px]">
+                  <div
+                    className={`flex h-11 items-center justify-between rounded-[20px] border bg-[#F7F9FB] px-[18px] ${
+                      fieldErrors[detail.scopedetail_id] ? 'border-red-500' : 'border-[#BDC9C1]'
+                    }`}
+                  >
                     <input
-                      type="number"
-                      step="any"
-                      min="0"
+                      type="text"
+                      inputMode="decimal"
                       value={values[detail.scopedetail_id] ?? ''}
                       onChange={(e) => handleChange(detail.scopedetail_id, e.target.value)}
                       placeholder="0.00"
@@ -812,6 +867,9 @@ export default function FootprintClient({
                       {detail.unit}
                     </span>
                   </div>
+                  {fieldErrors[detail.scopedetail_id] && (
+                    <p className="text-xs text-red-600">{fieldErrors[detail.scopedetail_id]}</p>
+                  )}
                 </div>
               ))}
             </div>

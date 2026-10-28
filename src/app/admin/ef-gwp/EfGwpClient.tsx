@@ -1,15 +1,21 @@
 'use client';
 
 import { useState } from 'react';
-//import { supabase } from '@/lib/supabaseClient';
 import type { EfType, EmissionFactor, GwpValue } from '@/types/ef-gwp';
-import { ModalActions, ModalShell} from '@/components/Modal'
-import { deleteRecord, insertRecord } from '@/lib/supabaseCrud';
-import { validateForm, type formError } from '@/lib/validation'; 
-import { normalizeNumberString, normalizeToArabicNumber } from '@/lib/normalization';
+import { ModalActions, ModalShell } from '@/components/Modal';
+import { deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
+import { validateForm, extendSchema, notDuplicate, existsIn, type formError } from '@/lib/validation';
+import { normalizeToArabicNumber } from '@/lib/normalization';
 import { fieldError as FieldError } from '@/components/FieldError';
-import { efTypeSchema, efSchema,gwpSchema, type EfTypeField, type EfField, type GwpField } from './schema';
+import { efTypeSchema, efSchema, gwpSchema, type EfTypeField, type EfField, type GwpField } from './schema';
 
+/* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
+ * 1) ลบ modal "เพิ่มค่า EF" และ "เพิ่มค่า GWP" ชุดเก่าที่ซ้อนอยู่ (เดิม render 2 ชุดพร้อมกันเวลาเปิด)
+ * 2) ประเภท EF: เดิมไม่ได้ validate เลย และปิด modal ผิดตัว (setShowEfModal) -> แก้ให้ validate + ปิดถูกตัว
+ * 3) ทุกฟอร์มตรวจ "ข้อมูลซ้ำ" (notDuplicate) และ "ประเภทที่เลือกต้องมีอยู่จริง" (existsIn) ก่อนบันทึก
+ * 4) เพิ่มการ "แก้ไข" ทุกตาราง โดยใช้ modal เดียวกับการเพิ่ม (editXxxId = null คือโหมดเพิ่ม)
+ * 5) เอา required / type="number" ของ HTML ออก (ใส่ noValidate) ให้ทุกช่องผ่าน normalize + validate ของเรา
+ *    เพราะ type="number" รับเลขไทยไม่ได้ และ browser จะเด้งข้อความของมันเองก่อนถึงโค้ดเรา */
 
 const inputCls = (hasError: boolean) =>
   `w-full border rounded-lg px-3 py-2 text-sm ${hasError ? 'border-red-500' : ''}`;
@@ -24,6 +30,9 @@ function colorFor(typeId: string, types: EfType[]) {
   const idx = types.findIndex((t) => t.eftype_id === typeId);
   return palette[idx % palette.length] ?? palette[0];
 }
+
+const emptyEfForm = { eftype_id: '', ef_name: '', ef_value: '', real_unit: '' };
+const emptyGwpForm = { gas_name: '', gwp_value: '' };
 
 export default function EfGwpClient({
   initialEfTypes,
@@ -46,54 +55,86 @@ export default function EfGwpClient({
   const [showEfModal, setShowEfModal] = useState(false);
   const [showGwpModal, setShowGwpModal] = useState(false);
 
+  // [เพิ่ม] id ของแถวที่กำลังแก้ไข (null = กำลังเพิ่มใหม่)
+  const [editTypeId, setEditTypeId] = useState<string | null>(null);
+  const [editEfId, setEditEfId] = useState<string | null>(null);
+  const [editGwpId, setEditGwpId] = useState<string | null>(null);
+
   const [typeForm, setTypeForm] = useState({ type_name: '' });
-  const [efForm, setEfForm] = useState({
-    eftype_id: '',
-    ef_name: '',
-    ef_value: '',
-    real_unit: '',
-  });
-  const [gwpForm, setGwpForm] = useState({ gas_name: '', gwp_value: '' });
+  const [efForm, setEfForm] = useState(emptyEfForm);
+  const [gwpForm, setGwpForm] = useState(emptyGwpForm);
 
   function closeTypeModal() { setShowTypeModal(false); setTypeErrors({}); }
   function closeEfModal() { setShowEfModal(false); setEfError({}); }
   function closeGwpModal() { setShowGwpModal(false); setGwpErrors({}); }
-  
-  // --- ประเภท EF ---
-  /*async function handleAddType(e: React.FormEvent) {
-    e.preventDefault();
-    const { data, error } = await supabase
-      .from('ef_type')
-      .insert({ type_name: typeForm.type_name })
-      .select()
-      .single();
-    if (error) return alert('เพิ่มประเภทไม่สำเร็จ: ' + error.message);
-    setEfTypes((prev) => [...prev, data as EfType]);
-    setShowTypeModal(false);
-    setTypeForm({ type_name: '' });
-  }*/
-  async function handleAddType(e : React.FormEvent) {
-    e.preventDefault();
-    const created = await insertRecord<EfType>(
-      'ef_type',
-      { type_name : typeForm.type_name },
-      '*',
-      'เพิ่มประเภท'
+
+  // [เพิ่ม] เปิด modal: ไม่ส่ง row = เพิ่มใหม่ (ฟอร์มว่าง) / ส่ง row = แก้ไข (เติมค่าเดิม)
+  function openTypeModal(row?: EfType) {
+    setEditTypeId(row?.eftype_id ?? null);
+    setTypeForm({ type_name: row?.type_name ?? '' });
+    setTypeErrors({});
+    setShowTypeModal(true);
+  }
+  function openEfModal(row?: EmissionFactor) {
+    setEditEfId(row?.ef_id ?? null);
+    setEfForm(
+      row
+        ? {
+            eftype_id: row.eftype_id ?? '',
+            ef_name: row.ef_name ?? '',
+            ef_value: row.ef_value == null ? '' : String(row.ef_value),
+            real_unit: row.real_unit ?? '',
+          }
+        : emptyEfForm
     );
-    if (!created) return;
-    setEfTypes((prev) => [...prev, created]);
-    setShowEfModal(false);
-    setTypeForm({ type_name : '' });
-    
+    setEfError({});
+    setShowEfModal(true);
+  }
+  function openGwpModal(row?: GwpValue) {
+    setEditGwpId(row?.gwp_id ?? null);
+    setGwpForm(
+      row
+        ? { gas_name: row.gas_name ?? '', gwp_value: row.gwp_value == null ? '' : String(row.gwp_value) }
+        : emptyGwpForm
+    );
+    setGwpErrors({});
+    setShowGwpModal(true);
   }
 
-  /*async function handleDeleteType(id: string) {
-    if (!confirm('ลบประเภทนี้? (emission_factor ที่ผูกอยู่จะถูก unlink)')) return;
-    const { error } = await supabase.from('ef_type').delete().eq('eftype_id', id);
-    if (error) return alert('ลบไม่สำเร็จ: ' + error.message);
-    setEfTypes((prev) => prev.filter((t) => t.eftype_id !== id));
-  }*/
-  async function handleDeleteType( id : string ){
+  // --- ประเภท EF ---
+  async function handleSaveType(e: React.FormEvent) {
+    e.preventDefault();
+    // [แก้ไข] เดิมบันทึก typeForm.type_name ตรงๆ ไม่ผ่าน normalize/validate
+    // ห้ามซ้ำกับประเภทอื่น (ไม่นับแถวที่กำลังแก้ไข)
+    const others = efTypes.filter((t) => t.eftype_id !== editTypeId).map((t) => t.type_name);
+    const result = validateForm(
+      typeForm,
+      extendSchema(efTypeSchema, { type_name: [notDuplicate('ประเภท EF', others)] })
+    );
+    if (!result.ok) { setTypeErrors(result.errors); return; }
+    setTypeErrors({});
+
+    const values = { type_name: result.clean.type_name };
+    if (editTypeId) {
+      const updated = await updateRecord<EfType>(
+        'ef_type', 'eftype_id', editTypeId,
+        { ...values, updated_date: new Date().toISOString() }, '*', 'แก้ไขประเภท'
+      );
+      if (!updated) return;
+      setEfTypes((prev) => prev.map((t) => (t.eftype_id === editTypeId ? updated : t)));
+      // ชื่อประเภทที่ join มากับแถว EF ต้องเปลี่ยนตามด้วย
+      setEfList((prev) =>
+        prev.map((r) => (r.eftype_id === editTypeId ? { ...r, ef_type: updated } : r))
+      );
+    } else {
+      const created = await insertRecord<EfType>('ef_type', values, '*', 'เพิ่มประเภท');
+      if (!created) return;
+      setEfTypes((prev) => [...prev, created]);
+    }
+    closeTypeModal(); // [แก้ไข] เดิมเรียก setShowEfModal(false) ทำให้ modal ประเภทไม่ปิด
+  }
+
+  async function handleDeleteType(id: string) {
     const ok = await deleteRecord(
       'ef_type',
       'eftype_id',
@@ -101,117 +142,92 @@ export default function EfGwpClient({
       'ลบประเภทนี้? (emission_factor ที่ผูกอยู่จะ unlink)'
     );
     if (!ok) return;
-    setEfTypes((prev) => prev.filter((t) => t.eftype_id != id));
+    setEfTypes((prev) => prev.filter((t) => t.eftype_id !== id));
     setEfList((prev) =>
       prev.map((r) => (r.eftype_id === id ? { ...r, eftype_id: null, ef_type: null } : r))
     );
   }
 
   // --- ค่า EF ---
-  /*async function handleAddEf(e: React.FormEvent) {
+  async function handleSaveEf(e: React.FormEvent) {
     e.preventDefault();
-    const { data, error } = await supabase
-      .from('emission_factor')
-      .insert({
-        eftype_id: efForm.eftype_id || null,
-        ef_name: efForm.ef_name,
-        ef_value: Number(efForm.ef_value),
-        real_unit: efForm.real_unit,
-      })
-      .select('*, ef_type(eftype_id, type_name)')
-      .single();
-    if (error) return alert('เพิ่มค่า EF ไม่สำเร็จ: ' + error.message);
-    setEfList((prev) => [...prev, data as EmissionFactor]);
-    setShowEfModal(false);
-    setEfForm({ eftype_id: '', ef_name: '', ef_value: '', real_unit: '' });
-  }*/
-  async function handleAddEf(e : React.FormEvent) {
-    e.preventDefault();
+    // [เพิ่ม] ห้ามชื่อ EF ซ้ำ "ภายในประเภทเดียวกัน" (ต่างประเภทชื่อเดียวกันได้ เช่น Diesel ของ Stationary / Mobile)
+    const sameTypeNames = efList
+      .filter((r) => r.ef_id !== editEfId && r.eftype_id === efForm.eftype_id)
+      .map((r) => r.ef_name);
     // normalize + validate
-    const result = validateForm(efForm, efSchema);
+    const result = validateForm(
+      efForm,
+      extendSchema(efSchema, {
+        eftype_id: [existsIn('ประเภท EF', efTypes.map((t) => t.eftype_id))], // ตรวจความสัมพันธ์ระหว่างตาราง
+        ef_name: [notDuplicate('ชื่อ EF ในประเภทนี้', sameTypeNames)],
+      })
+    );
     if (!result.ok) {
       setEfError(result.errors); // โชว์ error ใต้ช่อง
       return;
-    } 
+    }
     setEfError({});
 
-    // นำค่า clean มาบันทึกลง funcกลาง
-    const created = await insertRecord<EmissionFactor>(
-      'emission_factor',
-      {
-        ef_name : result.clean.ef_name,
-        ef_value : normalizeToArabicNumber(result.clean.ef_value),
-        real_unit : result.clean.real_unit,
-        eftype_id : efForm.eftype_id || null,
-      },
-      '*, ef_type(eftype_id, type_name)',
-      'เพิ่ม EF'
-    );
-    if (!created) return;
+    // นำค่า clean มาบันทึกลง func กลาง
+    const values = {
+      ef_name: result.clean.ef_name,
+      ef_value: normalizeToArabicNumber(result.clean.ef_value),
+      real_unit: result.clean.real_unit,
+      eftype_id: result.clean.eftype_id, // [แก้ไข] ใช้ค่า clean แทน efForm ดิบ
+    };
+    const select = '*, ef_type(eftype_id, type_name)';
 
-    setEfList((prev) => [...prev, created]);
-    setShowEfModal(false);
-    setEfForm({ef_name: '', ef_value: '', real_unit: '', eftype_id: ''});
+    if (editEfId) {
+      const updated = await updateRecord<EmissionFactor>(
+        'emission_factor', 'ef_id', editEfId,
+        { ...values, updated_date: new Date().toISOString() }, select, 'แก้ไขค่า EF'
+      );
+      if (!updated) return;
+      setEfList((prev) => prev.map((r) => (r.ef_id === editEfId ? updated : r)));
+    } else {
+      const created = await insertRecord<EmissionFactor>('emission_factor', values, select, 'เพิ่ม EF');
+      if (!created) return;
+      setEfList((prev) => [...prev, created]);
+    }
+    closeEfModal();
   }
 
-  /*async function handleDeleteEf(id: string) {
-    if (!confirm('ลบค่า EF นี้?')) return;
-    const { error } = await supabase.from('emission_factor').delete().eq('ef_id', id);
-    if (error) return alert('ลบไม่สำเร็จ: ' + error.message);
-    setEfList((prev) => prev.filter((r) => r.ef_id !== id));
-  }*/
-  async function handleDeleteEf(id: string){
+  async function handleDeleteEf(id: string) {
     const ok = await deleteRecord('emission_factor', 'ef_id', id, 'ลบค่า EF?');
     if (!ok) return;
     setEfList((prev) => prev.filter((r) => r.ef_id !== id));
   }
 
   // --- ค่า GWP ---
-  /*async function handleAddGwp(e: React.FormEvent) {
+  async function handleSaveGwp(e: React.FormEvent) {
     e.preventDefault();
-    const { data, error } = await supabase
-      .from('global_warming_potential')
-      .insert({
-        gas_name: gwpForm.gas_name,
-        gwp_value: Number(gwpForm.gwp_value),
-      })
-      .select()
-      .single();
-    if (error) return alert('เพิ่มค่า GWP ไม่สำเร็จ: ' + error.message);
-    setGwpList((prev) => [...prev, data as GwpValue]);
-    setShowGwpModal(false);
-    setGwpForm({ gas_name: '', gwp_value: '' });
-  }*/
-  async function handleAddGwp(e: React.FormEvent) {
-    e.preventDefault();
-    const result = validateForm(gwpForm, gwpSchema);
+    const others = gwpList.filter((r) => r.gwp_id !== editGwpId).map((r) => r.gas_name);
+    const result = validateForm(
+      gwpForm,
+      extendSchema(gwpSchema, { gas_name: [notDuplicate('ชื่อก๊าซ', others)] })
+    );
     if (!result.ok) { setGwpErrors(result.errors); return; }
     setGwpErrors({});
 
-    const created = await insertRecord<GwpValue>(
-      'global_warming_potential',
-      {
-        gas_name: result.clean.gas_name,
-        gwp_value: normalizeToArabicNumber(result.clean.gwp_value),
-      },
-      '*',
-      'เพิ่มค่า GWP'
-    );
-    if (!created) return;
-    setGwpList((prev) => [...prev, created]);
+    const values = {
+      gas_name: result.clean.gas_name,
+      gwp_value: normalizeToArabicNumber(result.clean.gwp_value),
+    };
+    if (editGwpId) {
+      const updated = await updateRecord<GwpValue>(
+        'global_warming_potential', 'gwp_id', editGwpId, values, '*', 'แก้ไขค่า GWP'
+      );
+      if (!updated) return;
+      setGwpList((prev) => prev.map((r) => (r.gwp_id === editGwpId ? updated : r)));
+    } else {
+      const created = await insertRecord<GwpValue>('global_warming_potential', values, '*', 'เพิ่มค่า GWP');
+      if (!created) return;
+      setGwpList((prev) => [...prev, created]);
+    }
     closeGwpModal();
-    setGwpForm({ gas_name: '', gwp_value: '' });
   }
 
-  /*async function handleDeleteGwp(id: string) {
-    if (!confirm('ลบค่า GWP นี้?')) return;
-    const { error } = await supabase
-      .from('global_warming_potential')
-      .delete()
-      .eq('gwp_id', id);
-    if (error) return alert('ลบไม่สำเร็จ: ' + error.message);
-    setGwpList((prev) => prev.filter((r) => r.gwp_id !== id));
-  }*/
   async function handleDeleteGwp(id: string) {
     const ok = await deleteRecord('global_warming_potential', 'gwp_id', id, 'ลบค่า GWP นี้?');
     if (!ok) return;
@@ -231,7 +247,7 @@ export default function EfGwpClient({
             ประเภท EF (EF Categories)
           </h2>
           <button
-            onClick={() => setShowTypeModal(true)}
+            onClick={() => openTypeModal()}
             className="flex items-center gap-1 rounded-lg border border-dashed border-[#6EE7B7] bg-[#266955] px-3 py-1.5 text-xs text-white"
           >
             + เพิ่มประเภท EF ใหม่
@@ -243,7 +259,10 @@ export default function EfGwpClient({
               key={t.eftype_id}
               className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F1F5F9] text-xs font-sans"
             >
-              {t.type_name}
+              {/* [เพิ่ม] กดที่ชื่อเพื่อแก้ไข */}
+              <button onClick={() => openTypeModal(t)} className="hover:underline" title="แก้ไข">
+                {t.type_name}
+              </button>
               <button
                 onClick={() => handleDeleteType(t.eftype_id)}
                 className="text-[#94A3B8] hover:text-red-500"
@@ -262,7 +281,7 @@ export default function EfGwpClient({
             ตารางค่า EF (Emission Factor)
           </h2>
           <button
-            onClick={() => setShowEfModal(true)}
+            onClick={() => openEfModal()}
             className="flex items-center gap-1 rounded-lg bg-[#266955] px-3 py-1.5 text-xs text-white shadow-sm"
           >
             + เพิ่มค่า EF
@@ -297,10 +316,14 @@ export default function EfGwpClient({
                       {row.ef_value}
                     </td>
                     <td className="px-5 py-4 text-[#64748B]">{row.real_unit}</td>
-                    <td className="px-5 py-4 text-center">
+                    <td className="px-5 py-4 text-center space-x-2">
+                      <button onClick={() => openEfModal(row)} className="text-[#94A3B8] hover:text-[#266955]" title="แก้ไข">
+                        ✏️
+                      </button>
                       <button
                         onClick={() => handleDeleteEf(row.ef_id)}
                         className="text-[#94A3B8] hover:text-red-500"
+                        title="ลบ"
                       >
                         🗑️
                       </button>
@@ -320,7 +343,7 @@ export default function EfGwpClient({
             ตารางค่า GWP (Global Warming Potential)
           </h2>
           <button
-            onClick={() => setShowGwpModal(true)}
+            onClick={() => openGwpModal()}
             className="flex items-center gap-1 rounded-lg bg-[#266955] px-3 py-1.5 text-xs text-white shadow-sm"
           >
             + เพิ่มค่า GWP
@@ -341,10 +364,14 @@ export default function EfGwpClient({
                 <td className="px-5 py-4 text-right font-semibold text-[#047857]">
                   {row.gwp_value}
                 </td>
-                <td className="px-5 py-4 text-center">
+                <td className="px-5 py-4 text-center space-x-2">
+                  <button onClick={() => openGwpModal(row)} className="text-[#94A3B8] hover:text-[#266955]" title="แก้ไข">
+                    ✏️
+                  </button>
                   <button
                     onClick={() => handleDeleteGwp(row.gwp_id)}
                     className="text-[#94A3B8] hover:text-red-500"
+                    title="ลบ"
                   >
                     🗑️
                   </button>
@@ -355,107 +382,32 @@ export default function EfGwpClient({
         </table>
       </div>
 
-      {/* --- Modal: เพิ่มประเภท EF --- */}
+      {/* --- Modal: เพิ่ม/แก้ไขประเภท EF --- */}
       {showTypeModal && (
-        <ModalShell onClose={() => setShowTypeModal(false)}>
-          <form onSubmit={handleAddType} className="space-y-4">
-            <h3 className="text-lg font-bold">เพิ่มประเภท EF ใหม่</h3>
+        <ModalShell onClose={closeTypeModal}>
+          <form onSubmit={handleSaveType} className="space-y-4" noValidate>
+            <h3 className="text-lg font-bold">{editTypeId ? 'แก้ไขประเภท EF' : 'เพิ่มประเภท EF ใหม่'}</h3>
             <div>
               <input
-                className={`w-full border rounded-lg px-3 py-2 text-sm ${typeErrors.type_name ? 'border-red-500' : ''}`}
+                className={inputCls(!!typeErrors.type_name)}
                 placeholder="ชื่อประเภท เช่น Stationary Source"
-                type='text'
+                type="text"
+                maxLength={100}
                 value={typeForm.type_name}
                 onChange={(e) => setTypeForm({ type_name: e.target.value })}
-                required
               />
-              < FieldError message={typeErrors.type_name} />
+              <FieldError message={typeErrors.type_name} />
             </div>
-            <ModalActions onCancel={() => setShowTypeModal(false)} />
+            <ModalActions onCancel={closeTypeModal} />
           </form>
         </ModalShell>
       )}
 
-      {/* --- Modal: เพิ่มค่า EF --- */}
-      {showEfModal && (
-        <ModalShell onClose={() => setShowEfModal(false)}>
-          <form onSubmit={handleAddEf} className="space-y-4">
-            <h3 className="text-lg font-bold">เพิ่มค่า EF ใหม่</h3>
-            <select
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-              value={efForm.eftype_id}
-              onChange={(e) => setEfForm({ ...efForm, eftype_id: e.target.value })}
-              required
-            >
-              <option value="">เลือกประเภท EF</option>
-              {efTypes.map((t) => (
-                <option key={t.eftype_id} value={t.eftype_id}>
-                  {t.type_name}
-                </option>
-              ))}
-            </select>
-            <input
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-              placeholder="ชื่อกิจกรรม/เชื้อเพลิง"
-              value={efForm.ef_name}
-              onChange={(e) => setEfForm({ ...efForm, ef_name: e.target.value })}
-              required
-            />
-            <div>
-              <input
-                className={`w-full border rounded-lg px-3 py-2 text-sm ${efError.ef_value ? 'border-red-500' : ''}`}
-                placeholder="ค่า EF"
-                type="text"
-                inputMode='decimal'
-                value={efForm.ef_value}
-                onChange={(e) => setEfForm({ ...efForm, ef_value: e.target.value })}
-                required
-              />
-              < FieldError message = {efError.ef_value} />
-            </div>
-            <input
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-              placeholder="หน่วย เช่น kWh, Litre, kg"
-              value={efForm.real_unit}
-              onChange={(e) => setEfForm({ ...efForm, real_unit: e.target.value })}
-              required
-            />
-            <ModalActions onCancel={() => setShowEfModal(false)} />
-          </form>
-        </ModalShell>
-      )}
-
-      {/* --- Modal: เพิ่มค่า GWP --- */}
-      {showGwpModal && (
-        <ModalShell onClose={() => setShowGwpModal(false)}>
-          <form onSubmit={handleAddGwp} className="space-y-4">
-            <h3 className="text-lg font-bold">เพิ่มค่า GWP ใหม่</h3>
-            <input
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-              placeholder="ชื่อก๊าซ เช่น คาร์บอนไดออกไซด์ (CO2)"
-              value={gwpForm.gas_name}
-              onChange={(e) => setGwpForm({ ...gwpForm, gas_name: e.target.value })}
-              required
-            />
-            <input
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-              placeholder="ค่า GWP"
-              type="number"
-              step="any"
-              value={gwpForm.gwp_value}
-              onChange={(e) => setGwpForm({ ...gwpForm, gwp_value: e.target.value })}
-              required
-            />
-            <ModalActions onCancel={() => setShowGwpModal(false)} />
-          </form>
-        </ModalShell>
-      )}
-
-      {/* --- Modal: เพิ่มค่า EF --- */}
+      {/* --- Modal: เพิ่ม/แก้ไขค่า EF --- */}
       {showEfModal && (
         <ModalShell onClose={closeEfModal}>
-          <form onSubmit={handleAddEf} className="space-y-4" noValidate>
-            <h3 className="text-lg font-bold">เพิ่มค่า EF ใหม่</h3>
+          <form onSubmit={handleSaveEf} className="space-y-4" noValidate>
+            <h3 className="text-lg font-bold">{editEfId ? 'แก้ไขค่า EF' : 'เพิ่มค่า EF ใหม่'}</h3>
 
             <div>
               <select
@@ -477,6 +429,7 @@ export default function EfGwpClient({
               <input
                 className={inputCls(!!efError.ef_name)}
                 placeholder="ชื่อกิจกรรม/เชื้อเพลิง"
+                maxLength={150}
                 value={efForm.ef_name}
                 onChange={(e) => setEfForm({ ...efForm, ef_name: e.target.value })}
               />
@@ -486,7 +439,7 @@ export default function EfGwpClient({
             <div>
               <input
                 className={inputCls(!!efError.ef_value)}
-                placeholder="ค่า EF"
+                placeholder="ค่า EF (ทศนิยมไม่เกิน 6 หลัก)"
                 type="text"
                 inputMode="decimal"
                 value={efForm.ef_value}
@@ -499,6 +452,7 @@ export default function EfGwpClient({
               <input
                 className={inputCls(!!efError.real_unit)}
                 placeholder="หน่วย เช่น kWh, Litre, kg"
+                maxLength={50}
                 value={efForm.real_unit}
                 onChange={(e) => setEfForm({ ...efForm, real_unit: e.target.value })}
               />
@@ -510,16 +464,17 @@ export default function EfGwpClient({
         </ModalShell>
       )}
 
-      {/* --- Modal: เพิ่มค่า GWP --- */}
+      {/* --- Modal: เพิ่ม/แก้ไขค่า GWP --- */}
       {showGwpModal && (
         <ModalShell onClose={closeGwpModal}>
-          <form onSubmit={handleAddGwp} className="space-y-4" noValidate>
-            <h3 className="text-lg font-bold">เพิ่มค่า GWP ใหม่</h3>
+          <form onSubmit={handleSaveGwp} className="space-y-4" noValidate>
+            <h3 className="text-lg font-bold">{editGwpId ? 'แก้ไขค่า GWP' : 'เพิ่มค่า GWP ใหม่'}</h3>
 
             <div>
               <input
                 className={inputCls(!!gwpErrors.gas_name)}
                 placeholder="ชื่อก๊าซ เช่น คาร์บอนไดออกไซด์ (CO2)"
+                maxLength={100}
                 value={gwpForm.gas_name}
                 onChange={(e) => setGwpForm({ ...gwpForm, gas_name: e.target.value })}
               />
@@ -545,5 +500,3 @@ export default function EfGwpClient({
     </div>
   );
 }
-
-

@@ -2,7 +2,18 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { deleteRecord, insertRecord } from '@/lib/supabaseCrud';
+import { dbErrorMessage, deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
+import { validateForm, extendSchema, notDuplicate, existsIn, type formError } from '@/lib/validation';
+import { normalizeToArabicNumber } from '@/lib/normalization';
+import { infoSchema, recSchema, condValueSchema, type InfoField, type RecField } from './schema';
+
+/* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
+ * 1) ลบตัวช่วยตรวจที่เขียนซ้ำในไฟล์ (cleanText/cleanNumber/isNumeric/isNumberOnlyText)
+ *    แล้วใช้ schema.ts + validation.ts / normalization.ts กลางแทน
+ * 2) หัวข้อข้อมูลสำนักงาน: เดิมตรวจแค่ชื่อ ตอนนี้ตรวจหน่วย (ไทย/อังกฤษได้) และคำอธิบายด้วย + ห้ามชื่อซ้ำ
+ * 3) แนวทาง: ห้ามชื่อซ้ำ, % ทศนิยมไม่เกิน 2 หลัก, กิจกรรมที่ผูกต้องมีอยู่จริง
+ * 4) เงื่อนไข: ค่าที่เทียบทศนิยมไม่เกิน 4 หลัก และกิจกรรม/หัวข้อที่เลือกต้องมีอยู่จริง (ตรวจความสัมพันธ์)
+ * 5) เพิ่มการแก้ไขหัวข้อข้อมูลสำนักงาน และแก้ไขแนวทาง (พร้อมเงื่อนไข) */
 
 // ---------- ชนิดข้อมูล ----------
 type InfoType = {
@@ -94,18 +105,32 @@ const newCond = (): CondForm => ({
   value: '',
 });
 
-// ---------- ตัวช่วยตรวจข้อมูล (อยู่ในไฟล์นี้ ไม่พึ่งไฟล์อื่น) ----------
-const THAI_DIGITS = '๐๑๒๓๔๕๖๗๘๙';
-const cleanText = (s: string) => s.replace(/\s+/g, ' ').trim();
-const cleanNumber = (v: string) =>
-  v
-    .trim()
-    .replace(/[๐-๙]/g, (d) => String(THAI_DIGITS.indexOf(d)))
-    .replace(/,/g, '')
-    .replace(/\s/g, '');
-const isNumeric = (s: string) => /^\d+(\.\d+)?$/.test(s);
-const isNumberOnlyText = (s: string) => /^[\d\s.,-]+$/.test(s);
+// [แก้ไข] ตัวช่วยตรวจที่เคยอยู่ตรงนี้ย้ายไปใช้ไฟล์กลางแล้ว (ดู schema.ts)
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+// [เพิ่ม] แปลงเงื่อนไขที่บันทึกแล้ว (CondRow) กลับเป็นค่าในฟอร์ม เพื่อใช้ตอนแก้ไขแนวทาง
+const rowToOperand = (
+  source_type: SourceType,
+  scopedetail_id: string | null,
+  info_id: string | null,
+  scope_number: number | null,
+  metric: Metric | null
+): OperandForm => ({
+  source_type,
+  scopedetail_id: scopedetail_id ?? '',
+  info_id: info_id ?? '',
+  scope_number: String(scope_number ?? 1),
+  metric: metric ?? 'amount',
+});
+const rowToCond = (c: CondRow): CondForm => ({
+  mode: c.den_source_type ? 'ratio' : 'single',
+  num: rowToOperand(c.source_type, c.scopedetail_id, c.info_id, c.scope_number, c.metric),
+  den: c.den_source_type
+    ? rowToOperand(c.den_source_type, c.den_scopedetail_id, c.den_info_id, c.den_scope_number, c.den_metric)
+    : { ...emptyOperand, source_type: 'office_info' },
+  operator: c.operator,
+  value: String(c.value),
+});
 
 // ---------- component ย่อย ----------
 function Dialog({
@@ -242,11 +267,14 @@ export default function OfficeRecommendationClient({
   const [showRecModal, setShowRecModal] = useState(false);
 
   const [infoForm, setInfoForm] = useState({ info_name: '', unit: '', info_detail: '' });
-  const [infoErrors, setInfoErrors] = useState<Record<string, string>>({});
+  const [infoErrors, setInfoErrors] = useState<formError<InfoField>>({});
+  const [editInfoId, setEditInfoId] = useState<string | null>(null); // [เพิ่ม] null = เพิ่มใหม่
 
   const [recForm, setRecForm] = useState<RecForm>(emptyRec);
   const [conds, setConds] = useState<CondForm[]>([]);
-  const [recErrors, setRecErrors] = useState<Record<string, string>>({});
+  // conds = ข้อความ error รวมของเงื่อนไข (ไม่ใช่ช่องในตาราง จึงเพิ่มเป็น key พิเศษ)
+  const [recErrors, setRecErrors] = useState<formError<RecField | 'conds'>>({});
+  const [editRecId, setEditRecId] = useState<string | null>(null); // [เพิ่ม] null = เพิ่มใหม่
   const [saving, setSaving] = useState(false);
 
   // ---------- ตัวช่วยแสดงผล ----------
@@ -315,28 +343,54 @@ export default function OfficeRecommendationClient({
   };
 
   // ================= หัวข้อข้อมูลสำนักงาน =================
-  async function handleAddInfo(e: React.FormEvent) {
+  // [เพิ่ม] เปิด popup หัวข้อ: ไม่ส่ง row = เพิ่ม / ส่ง row = แก้ไข
+  function openInfoModal(row?: InfoType) {
+    setEditInfoId(row?.info_id ?? null);
+    setInfoForm({
+      info_name: row?.info_name ?? '',
+      unit: row?.unit ?? '',
+      info_detail: row?.info_detail ?? '',
+    });
+    setInfoErrors({});
+    setShowInfoModal(true);
+  }
+
+  async function handleSaveInfo(e: React.FormEvent) {
     e.preventDefault();
 
-    const name = cleanText(infoForm.info_name);
-    const unit = cleanText(infoForm.unit);
-    const detail = infoForm.info_detail.trim();
-
-    const errs: Record<string, string> = {};
-    if (!name) errs.info_name = 'กรุณากรอกชื่อหัวข้อ';
-    else if (isNumberOnlyText(name)) errs.info_name = 'ชื่อหัวข้อต้องไม่เป็นตัวเลขอย่างเดียว';
-    setInfoErrors(errs);
-    if (Object.keys(errs).length > 0) return;
-
-    const created = await insertRecord<InfoType>(
-      'office_info_type',
-      { info_name: name, unit: unit || null, info_detail: detail || null },
-      '*',
-      'เพิ่มหัวข้อข้อมูลสำนักงาน'
+    // [แก้ไข] ใช้ schema กลาง + ห้ามชื่อหัวข้อซ้ำ (ไม่นับหัวข้อที่กำลังแก้ไข)
+    const others = infoTypes.filter((i) => i.info_id !== editInfoId).map((i) => i.info_name);
+    const result = validateForm(
+      infoForm,
+      extendSchema(infoSchema, { info_name: [notDuplicate('ชื่อหัวข้อ', others)] })
     );
-    if (!created) return;
+    setInfoErrors(result.ok ? {} : result.errors);
+    if (!result.ok) return;
 
-    setInfoTypes((prev) => [...prev, created]);
+    const { info_name, unit, info_detail } = result.clean;
+    const values = { info_name, unit: unit || null, info_detail: info_detail || null };
+
+    if (editInfoId) {
+      // ⚠️ เปลี่ยนหน่วยของหัวข้อที่บริษัทกรอกไว้แล้ว ค่าเดิมของบริษัทจะถูกตีความด้วยหน่วยใหม่
+      const old = infoTypes.find((i) => i.info_id === editInfoId);
+      if (old && (old.unit ?? '') !== (values.unit ?? '') &&
+          !confirm('เปลี่ยนหน่วยของหัวข้อนี้? ค่าที่บริษัทเคยกรอกไว้จะถูกตีความด้วยหน่วยใหม่')) {
+        return;
+      }
+      const updated = await updateRecord<InfoType>(
+        'office_info_type', 'info_id', editInfoId,
+        { ...values, updated_at: new Date().toISOString() }, '*', 'แก้ไขหัวข้อข้อมูลสำนักงาน'
+      );
+      if (!updated) return;
+      setInfoTypes((prev) => prev.map((i) => (i.info_id === editInfoId ? updated : i)));
+    } else {
+      const created = await insertRecord<InfoType>(
+        'office_info_type', values, '*', 'เพิ่มหัวข้อข้อมูลสำนักงาน'
+      );
+      if (!created) return;
+      setInfoTypes((prev) => [...prev, created]);
+    }
+
     setShowInfoModal(false);
     setInfoForm({ info_name: '', unit: '', info_detail: '' });
   }
@@ -369,53 +423,65 @@ export default function OfficeRecommendationClient({
   }
 
   // ================= แนวทางลดคาร์บอน =================
-  function openRecModal() {
-    setRecForm(emptyRec);
-    setConds([]);
+  // [แก้ไข] รับ row ได้ เพื่อเปิดในโหมดแก้ไข (เติมค่าเดิม + เงื่อนไขเดิม)
+  function openRecModal(row?: RecRow) {
+    setEditRecId(row?.rec_uid ?? null);
+    setRecForm(
+      row
+        ? {
+            recommendation: row.recommendation ?? '',
+            percent_min: row.percent_min == null ? '' : String(row.percent_min),
+            // บันทึกค่าเดียวจะเก็บ max = min ไว้ จึงแสดงช่องสูงสุดว่างถ้าเท่ากัน
+            percent_max:
+              row.percent_max == null || row.percent_max === row.percent_min ? '' : String(row.percent_max),
+            scopedetail_id: row.scopedetail_id ?? '',
+          }
+        : emptyRec
+    );
+    setConds((row?.recommendation_condition ?? []).map(rowToCond));
     setRecErrors({});
     setShowRecModal(true);
   }
 
   // ตรวจ 1 ค่าในเงื่อนไข คืนข้อความ error หรือ null
+  // [แก้ไข] เพิ่มการตรวจว่ากิจกรรม/หัวข้อที่เลือก "ยังมีอยู่จริง" (อาจถูกลบไปแล้วตอนแก้ไขแนวทางเก่า)
   function operandError(o: OperandForm): string | null {
-    if (o.source_type === 'activity' && !o.scopedetail_id) return 'กรุณาเลือกกิจกรรม';
-    if (o.source_type === 'office_info' && !o.info_id) return 'กรุณาเลือกข้อมูลสำนักงาน';
+    if (o.source_type === 'activity') {
+      if (!o.scopedetail_id) return 'กรุณาเลือกกิจกรรม';
+      if (!activityOptions.some((a) => a.scopedetail_id === o.scopedetail_id)) return 'กิจกรรมที่เลือกไม่มีอยู่ในระบบแล้ว';
+    }
+    if (o.source_type === 'office_info') {
+      if (!o.info_id) return 'กรุณาเลือกข้อมูลสำนักงาน';
+      if (!infoTypes.some((i) => i.info_id === o.info_id)) return 'หัวข้อที่เลือกไม่มีอยู่ในระบบแล้ว';
+    }
+    if (o.source_type === 'scope' && !['1', '2', '3'].includes(o.scope_number)) return 'Scope ไม่ถูกต้อง';
     return null;
   }
 
   function validateRec() {
-    const errs: Record<string, string> = {};
+    // ---- ช่องหลักของแนวทาง: ใช้ schema กลาง + ห้ามชื่อซ้ำ + กิจกรรมที่ผูกต้องมีอยู่จริง ----
+    const others = recs.filter((r) => r.rec_uid !== editRecId).map((r) => r.recommendation);
+    const result = validateForm(
+      recForm,
+      extendSchema(recSchema, {
+        recommendation: [notDuplicate('ชื่อแนวทาง', others)],
+        scopedetail_id: [existsIn('กิจกรรมที่เกี่ยวข้อง', activityOptions.map((a) => a.scopedetail_id))],
+      })
+    );
+    const errs: formError<RecField | 'conds'> = result.ok ? {} : { ...result.errors };
 
-    const name = cleanText(recForm.recommendation);
-    if (!name) errs.recommendation = 'กรุณากรอกชื่อแนวทาง';
-    else if (isNumberOnlyText(name)) errs.recommendation = 'ชื่อแนวทางต้องไม่เป็นตัวเลขอย่างเดียว';
-
-    const minS = cleanNumber(recForm.percent_min);
-    const maxS = cleanNumber(recForm.percent_max);
-    let min = 0;
-    let max: number | null = null;
-
-    if (!minS) errs.percent_min = 'กรุณากรอกเปอร์เซ็นต์ที่ลดได้';
-    else if (!isNumeric(minS)) errs.percent_min = 'ต้องเป็นตัวเลขที่ไม่ติดลบ';
-    else {
-      min = Number(minS);
-      if (min <= 0 || min > 100) errs.percent_min = 'ต้องมากกว่า 0 และไม่เกิน 100';
+    const min = normalizeToArabicNumber(result.clean.percent_min) ?? 0;
+    const max = normalizeToArabicNumber(result.clean.percent_max); // null = กรอกค่าเดียว
+    // ตรวจข้ามช่อง: ค่าสูงสุดต้องไม่น้อยกว่าค่าต่ำสุด (ทำหลังจากทั้ง 2 ช่องผ่านกฎของตัวเองแล้ว)
+    if (!errs.percent_min && !errs.percent_max && max !== null && max < min) {
+      errs.percent_max = 'ต้องไม่น้อยกว่าค่าต่ำสุด';
     }
 
-    if (maxS) {
-      if (!isNumeric(maxS)) errs.percent_max = 'ต้องเป็นตัวเลขที่ไม่ติดลบ';
-      else {
-        max = Number(maxS);
-        if (max <= 0 || max > 100) errs.percent_max = 'ต้องมากกว่า 0 และไม่เกิน 100';
-        else if (!errs.percent_min && max < min) errs.percent_max = 'ต้องไม่น้อยกว่าค่าต่ำสุด';
-      }
-    }
-
-    // เงื่อนไข
+    // ---- เงื่อนไข: หยุดที่ข้อแรกที่ผิด ----
+    const condValues: number[] = []; // ค่าที่ normalize แล้ว ใช้ตอนบันทึก
     for (let i = 0; i < conds.length; i++) {
       const c = conds[i];
       const label = `เงื่อนไขข้อ ${i + 1}`;
-      const v = cleanNumber(c.value);
 
       const e1 = operandError(c.num);
       if (e1) {
@@ -435,13 +501,26 @@ export default function OfficeRecommendationClient({
           break;
         }
       }
-      if (!v || !isNumeric(v)) {
-        errs.conds = `${label}: ค่าที่ใช้เทียบต้องเป็นตัวเลขที่ไม่ติดลบ`;
+
+      // [แก้ไข] ค่าที่เทียบใช้ schema กลาง: ไม่ติดลบ ทศนิยมไม่เกิน 4 หลัก รับเลขไทย/comma ได้
+      const v = validateForm({ value: c.value }, condValueSchema);
+      if (!v.ok) {
+        errs.conds = `${label}: ${v.errors.value}`;
         break;
       }
+      condValues.push(normalizeToArabicNumber(v.clean.value) ?? 0);
     }
 
-    return { errs, name, min, max };
+    // [เพิ่ม] เงื่อนไขซ้ำกันทุกส่วน (ค่า/ตัวดำเนินการ/ตัวเลขเหมือนกัน) ไม่มีประโยชน์
+    if (!errs.conds) {
+      const keys = conds.map((c, i) =>
+        JSON.stringify([c.mode, c.num, c.mode === 'ratio' ? c.den : null, c.operator, condValues[i]])
+      );
+      const dup = keys.findIndex((k, i) => keys.indexOf(k) !== i);
+      if (dup !== -1) errs.conds = `เงื่อนไขข้อ ${dup + 1} ซ้ำกับข้อก่อนหน้า`;
+    }
+
+    return { errs, name: result.clean.recommendation, scopedetailId: result.clean.scopedetail_id, min, max, condValues };
   }
 
   // แปลงค่า 1 ค่าเป็นคอลัมน์ในตาราง
@@ -460,10 +539,10 @@ export default function OfficeRecommendationClient({
     den_metric: o && o.source_type === 'activity' ? o.metric : null,
   });
 
-  async function handleAddRec(e: React.FormEvent) {
+  async function handleSaveRec(e: React.FormEvent) {
     e.preventDefault();
 
-    const { errs, name, min, max } = validateRec();
+    const { errs, name, scopedetailId, min, max, condValues } = validateRec();
     setRecErrors(errs);
     if (Object.keys(errs).length > 0) return;
 
@@ -473,18 +552,69 @@ export default function OfficeRecommendationClient({
     const high = max ?? min;
     const mid = round2((min + high) / 2);
 
+    const recValues = {
+      recommendation: name, // ค่าที่ normalize แล้ว
+      carbon_reduction_amount: mid,
+      percent_min: min,
+      percent_max: high,
+      scopedetail_id: scopedetailId || null,
+      calc_method: 'percent',
+    };
+    // แถวเงื่อนไขที่จะบันทึก (ค่าที่เทียบใช้ค่าที่ normalize แล้วจาก validateRec)
+    const condRows = (recUid: string) =>
+      conds.map((c, i) => ({
+        rec_uid: recUid,
+        ...numCols(c.num),
+        ...denCols(c.mode === 'ratio' ? c.den : null),
+        operator: c.operator,
+        value: condValues[i], // [แก้ไข] เดิม Number(cleanNumber(c.value)) ซ้ำงานกับตอนตรวจ
+      }));
+
+    // ===== [เพิ่ม] โหมดแก้ไข =====
+    if (editRecId) {
+      const old = recs.find((r) => r.rec_uid === editRecId);
+      // 1) แก้แนวทาง (สถานะเดิมคงไว้)
+      const updated = await updateRecord<RecRow>(
+        'carbon_reduction_recommendation', 'rec_uid', editRecId, recValues, '*', 'แก้ไขแนวทาง'
+      );
+      if (!updated) {
+        setSaving(false);
+        return;
+      }
+      // 2) เพิ่มเงื่อนไขชุดใหม่ "ก่อน" แล้วค่อยลบชุดเดิม ถ้าเพิ่มล้มเหลว เงื่อนไขเดิมยังอยู่ครบ
+      let savedConds: CondRow[] = [];
+      if (conds.length > 0) {
+        const { data, error } = await supabase
+          .from('recommendation_condition')
+          .insert(condRows(editRecId))
+          .select('*');
+        if (error) {
+          setSaving(false);
+          return alert('บันทึกเงื่อนไขไม่สำเร็จ: ' + dbErrorMessage(error));
+        }
+        savedConds = (data ?? []) as CondRow[];
+      }
+      const oldIds = (old?.recommendation_condition ?? []).map((c) => c.condition_id);
+      if (oldIds.length > 0) {
+        const { error } = await supabase.from('recommendation_condition').delete().in('condition_id', oldIds);
+        if (error) {
+          setSaving(false);
+          return alert('ลบเงื่อนไขเดิมไม่สำเร็จ: ' + dbErrorMessage(error));
+        }
+      }
+      setRecs((prev) =>
+        prev.map((r) => (r.rec_uid === editRecId ? { ...updated, recommendation_condition: savedConds } : r))
+      );
+      setSaving(false);
+      setShowRecModal(false);
+      return;
+    }
+
+    // ===== โหมดเพิ่มใหม่ =====
     // 1) บันทึกแนวทาง (เริ่มเป็นร่าง ต้องกด "เผยแพร่" ก่อนองค์กรจะเห็น)
     const created = await insertRecord<RecRow>(
       'carbon_reduction_recommendation',
-      {
-        recommendation: name,
-        carbon_reduction_amount: mid,
-        percent_min: min,
-        percent_max: high,
-        scopedetail_id: recForm.scopedetail_id || null,
-        calc_method: 'percent',
-        status: 'draft',
-      },
+      { ...recValues, status: 'draft' },
       '*',
       'เพิ่มแนวทาง'
     );
@@ -498,15 +628,7 @@ export default function OfficeRecommendationClient({
     if (conds.length > 0) {
       const { data, error } = await supabase
         .from('recommendation_condition')
-        .insert(
-          conds.map((c) => ({
-            rec_uid: created.rec_uid,
-            ...numCols(c.num),
-            ...denCols(c.mode === 'ratio' ? c.den : null),
-            operator: c.operator,
-            value: Number(cleanNumber(c.value)),
-          }))
-        )
+        .insert(condRows(created.rec_uid))
         .select('*');
 
       if (error) {
@@ -515,7 +637,7 @@ export default function OfficeRecommendationClient({
           .delete()
           .eq('rec_uid', created.rec_uid);
         setSaving(false);
-        return alert('บันทึกเงื่อนไขไม่สำเร็จ: ' + error.message);
+        return alert('บันทึกเงื่อนไขไม่สำเร็จ: ' + dbErrorMessage(error));
       }
       savedConds = (data ?? []) as CondRow[];
     }
@@ -590,10 +712,7 @@ export default function OfficeRecommendationClient({
             หัวข้อข้อมูลสำนักงาน (ช่องที่บริษัทต้องกรอก)
           </h2>
           <button
-            onClick={() => {
-              setInfoErrors({});
-              setShowInfoModal(true);
-            }}
+            onClick={() => openInfoModal()}
             className="rounded-lg bg-[#266955] px-3 py-1.5 text-xs text-white shadow-sm"
           >
             + เพิ่มหัวข้อ
@@ -622,11 +741,19 @@ export default function OfficeRecommendationClient({
                 <tr key={i.info_id} className="border-t border-[#F1F5F9]">
                   <td className="px-5 py-4 text-[#0F172A]">{i.info_name}</td>
                   <td className="px-5 py-4 text-[#64748B]">{i.unit ?? '-'}</td>
-                  <td className="px-5 py-4 text-[#64748B]">{i.info_detail ?? '-'}</td>
-                  <td className="px-5 py-4 text-center">
+                  <td className="px-5 py-4 text-[#64748B] whitespace-pre-line">{i.info_detail ?? '-'}</td>
+                  <td className="px-5 py-4 text-center space-x-2 whitespace-nowrap">
+                    <button
+                      onClick={() => openInfoModal(i)}
+                      className="text-[#94A3B8] hover:text-[#266955]"
+                      title="แก้ไข"
+                    >
+                      ✏️
+                    </button>
                     <button
                       onClick={() => handleDeleteInfo(i.info_id)}
                       className="text-[#94A3B8] hover:text-red-500"
+                      title="ลบ"
                     >
                       🗑️
                     </button>
@@ -649,7 +776,7 @@ export default function OfficeRecommendationClient({
             </p>
           </div>
           <button
-            onClick={openRecModal}
+            onClick={() => openRecModal()}
             className="rounded-lg bg-[#266955] px-3 py-1.5 text-xs text-white shadow-sm"
           >
             + เพิ่มแนวทาง
@@ -712,10 +839,18 @@ export default function OfficeRecommendationClient({
                         {published ? 'เผยแพร่แล้ว' : 'ร่าง'}
                       </button>
                     </td>
-                    <td className="px-5 py-4 text-center">
+                    <td className="px-5 py-4 text-center space-x-2 whitespace-nowrap">
+                      <button
+                        onClick={() => openRecModal(r)}
+                        className="text-[#94A3B8] hover:text-[#266955]"
+                        title="แก้ไข"
+                      >
+                        ✏️
+                      </button>
                       <button
                         onClick={() => handleDeleteRec(r.rec_uid)}
                         className="text-[#94A3B8] hover:text-red-500"
+                        title="ลบ"
                       >
                         🗑️
                       </button>
@@ -730,30 +865,43 @@ export default function OfficeRecommendationClient({
 
       {/* ============ Popup: เพิ่มหัวข้อข้อมูลสำนักงาน ============ */}
       {showInfoModal && (
-        <Dialog title="เพิ่มหัวข้อข้อมูลสำนักงาน" onClose={() => setShowInfoModal(false)}>
-          <form onSubmit={handleAddInfo} noValidate className="space-y-4">
+        <Dialog
+          title={editInfoId ? 'แก้ไขหัวข้อข้อมูลสำนักงาน' : 'เพิ่มหัวข้อข้อมูลสำนักงาน'}
+          onClose={() => setShowInfoModal(false)}
+        >
+          <form onSubmit={handleSaveInfo} noValidate className="space-y-4">
             <div>
               <input
                 className={inputCls(!!infoErrors.info_name)}
                 placeholder="ชื่อหัวข้อ เช่น จำนวนพนักงาน"
+                maxLength={150}
                 value={infoForm.info_name}
                 onChange={(e) => setInfoForm({ ...infoForm, info_name: e.target.value })}
               />
               <Err m={infoErrors.info_name} />
             </div>
-            <input
-              className={inputCls()}
-              placeholder="หน่วย เช่น คน, ตร.ม., kWh/ปี, % (เว้นว่างได้ = ช่องข้อความ)"
-              value={infoForm.unit}
-              onChange={(e) => setInfoForm({ ...infoForm, unit: e.target.value })}
-            />
-            <textarea
-              className={inputCls()}
-              rows={3}
-              placeholder="คำอธิบายที่จะแสดงให้บริษัทเห็น (ไม่บังคับ) เช่น ให้กรอกค่าเฉลี่ยของทั้งอาคาร"
-              value={infoForm.info_detail}
-              onChange={(e) => setInfoForm({ ...infoForm, info_detail: e.target.value })}
-            />
+            {/* [แก้ไข] เดิมหน่วยและคำอธิบายไม่มีการตรวจ/ไม่แสดง error */}
+            <div>
+              <input
+                className={inputCls(!!infoErrors.unit)}
+                placeholder="หน่วย เช่น คน, ตร.ม., kWh/ปี, % (เว้นว่างได้ = ช่องข้อความ)"
+                maxLength={50}
+                value={infoForm.unit}
+                onChange={(e) => setInfoForm({ ...infoForm, unit: e.target.value })}
+              />
+              <Err m={infoErrors.unit} />
+            </div>
+            <div>
+              <textarea
+                className={inputCls(!!infoErrors.info_detail)}
+                rows={3}
+                maxLength={1000}
+                placeholder="คำอธิบายที่จะแสดงให้บริษัทเห็น (ไม่บังคับ) เช่น ให้กรอกค่าเฉลี่ยของทั้งอาคาร"
+                value={infoForm.info_detail}
+                onChange={(e) => setInfoForm({ ...infoForm, info_detail: e.target.value })}
+              />
+              <Err m={infoErrors.info_detail} />
+            </div>
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
@@ -775,13 +923,18 @@ export default function OfficeRecommendationClient({
 
       {/* ============ Popup: เพิ่มแนวทางลดคาร์บอน ============ */}
       {showRecModal && (
-        <Dialog title="เพิ่มแนวทางลดคาร์บอน" onClose={() => setShowRecModal(false)} wide>
-          <form onSubmit={handleAddRec} noValidate className="space-y-5">
+        <Dialog
+          title={editRecId ? 'แก้ไขแนวทางลดคาร์บอน' : 'เพิ่มแนวทางลดคาร์บอน'}
+          onClose={() => setShowRecModal(false)}
+          wide
+        >
+          <form onSubmit={handleSaveRec} noValidate className="space-y-5">
             <div>
               <label className="mb-1 block text-xs font-semibold text-[#374151]">ชื่อแนวทาง</label>
               <input
                 className={inputCls(!!recErrors.recommendation)}
                 placeholder="เช่น เปลี่ยนมาใช้เครื่องปรับอากาศระบบ Inverter"
+                maxLength={255}
                 value={recForm.recommendation}
                 onChange={(e) => setRecForm({ ...recForm, recommendation: e.target.value })}
               />
@@ -793,7 +946,7 @@ export default function OfficeRecommendationClient({
                 กิจกรรมที่เกี่ยวข้อง (ฐานที่ใช้คำนวณ %)
               </label>
               <select
-                className={inputCls()}
+                className={inputCls(!!recErrors.scopedetail_id)}
                 value={recForm.scopedetail_id}
                 onChange={(e) => setRecForm({ ...recForm, scopedetail_id: e.target.value })}
               >
@@ -804,6 +957,7 @@ export default function OfficeRecommendationClient({
                   </option>
                 ))}
               </select>
+              <Err m={recErrors.scopedetail_id} />
               <p className="mt-1 text-xs text-[#94A3B8]">
                 % ที่กรอกด้านล่างต้องนิยามเทียบกับกิจกรรมนี้เท่านั้น (เช่น % ของก๊าซจากไฟฟ้า)
               </p>
@@ -961,7 +1115,7 @@ export default function OfficeRecommendationClient({
                 disabled={saving}
                 className="rounded-lg bg-[#059669] px-4 py-2 text-sm text-white disabled:opacity-60"
               >
-                {saving ? 'กำลังบันทึก...' : 'บันทึกเป็นร่าง'}
+                {saving ? 'กำลังบันทึก...' : editRecId ? 'บันทึกการแก้ไข' : 'บันทึกเป็นร่าง'}
               </button>
             </div>
           </form>

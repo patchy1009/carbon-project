@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import FootprintStepper from '@/components/FootprintStepper';
+import { validateForm, isDecimal, maxLength, type formSchema } from '@/lib/validation';
+import { normalizeNumberString, normalizeText } from '@/lib/normalization';
+import { dbErrorMessage } from '@/lib/supabaseCrud';
 
 export type OfficeInfoType = {
   info_id: string;
@@ -24,41 +27,35 @@ type Kind = 'text' | 'number' | 'percent';
 const kindOf = (t: OfficeInfoType): Kind =>
   !t.unit?.trim() ? 'text' : t.unit.includes('%') ? 'percent' : 'number';
 
-// แปลงเลขไทย ลบ comma และช่องว่าง
-const THAI_DIGITS = '๐๑๒๓๔๕๖๗๘๙';
-const cleanNumber = (v: string) =>
-  v
-    .trim()
-    .replace(/[๐-๙]/g, (d) => String(THAI_DIGITS.indexOf(d)))
-    .replace(/,/g, '')
-    .replace(/\s/g, '');
-
-function validate(types: OfficeInfoType[], form: Record<string, string>) {
-  const errors: Record<string, string> = {};
-  const clean: Record<string, string> = {};
-
+/* [แก้ไข] เดิมไฟล์นี้มี cleanNumber และ validate ของตัวเอง (ซ้ำกับไฟล์กลาง)
+ * ตอนนี้สร้าง schema ตามหัวข้อที่แอดมินตั้งไว้ แล้วใช้ validateForm กลาง
+ * ทุกช่องไม่บังคับกรอก (ไม่ใส่ required) เพราะบริษัทอาจยังไม่มีข้อมูลบางหัวข้อ
+ *   - ข้อความ  : normalizeText + ยาวไม่เกิน 255 ตัวอักษร
+ *   - ตัวเลข   : แปลงเลขไทย/ลบ comma + ไม่ติดลบ + ทศนิยมไม่เกิน 4 หลัก   [เพิ่ม] จำกัดทศนิยม
+ *   - เปอร์เซ็นต์: เหมือนตัวเลข + ไม่เกิน 100 + ทศนิยมไม่เกิน 2 หลัก */
+function buildSchema(types: OfficeInfoType[]): formSchema<string> {
+  const schema: formSchema<string> = {};
   for (const t of types) {
     const label = t.info_name ?? 'ข้อมูลนี้';
     const kind = kindOf(t);
-    const raw = form[t.info_id] ?? '';
-
-    if (kind === 'text') {
-      const v = raw.replace(/\s+/g, ' ').trim();
-      if (v.length > 255) errors[t.info_id] = `${label}ยาวเกิน 255 ตัวอักษร`;
-      clean[t.info_id] = v;
-      continue;
-    }
-
-    const v = cleanNumber(raw);
-    clean[t.info_id] = v;
-    if (v === '') continue; // ไม่บังคับกรอก
-    if (!/^\d+(\.\d+)?$/.test(v)) {
-      errors[t.info_id] = `${label}ต้องเป็นตัวเลขที่ไม่ติดลบ`;
-    } else if (kind === 'percent' && Number(v) > 100) {
-      errors[t.info_id] = `${label}ต้องอยู่ระหว่าง 0-100`;
-    }
+    schema[t.info_id] =
+      kind === 'text'
+        ? { normalize: normalizeText, rules: [maxLength(label, 255)] }
+        : {
+            normalize: normalizeNumberString,
+            rules: [
+              kind === 'percent'
+                ? isDecimal(label, { allowNegative: false, max: 100, maxDecimals: 2 })
+                : isDecimal(label, { allowNegative: false, maxDecimals: 4 }),
+            ],
+          };
   }
-  return { errors, clean };
+  return schema;
+}
+
+function validate(types: OfficeInfoType[], form: Record<string, string>) {
+  const result = validateForm(form, buildSchema(types));
+  return { errors: (result.ok ? {} : result.errors) as Record<string, string>, clean: result.clean };
 }
 
 export default function OfficeInfoClient({
@@ -163,7 +160,9 @@ export default function OfficeInfoClient({
         for (const d of toDelete) delete next[d.info_id];
       }
     } catch (err) {
-      failMessage = (err as { message?: string }).message ?? 'ไม่ทราบสาเหตุ';
+      // [แก้ไข] แปลง error ของ DB เป็นข้อความที่อ่านเข้าใจ
+      const e = err as { code?: string; message?: string };
+      failMessage = e.message ? dbErrorMessage({ code: e.code, message: e.message }) : 'ไม่ทราบสาเหตุ';
     } finally {
       setSaved(next);
       setSaving(false);

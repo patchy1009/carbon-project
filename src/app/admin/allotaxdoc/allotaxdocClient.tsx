@@ -3,6 +3,21 @@
 import { useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import type { AlloTaxDoc } from '@/types/allotaxdoc';
+import { ModalActions, ModalShell } from '@/components/Modal';
+import { dbErrorMessage, deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
+import { validateForm, extendSchema, notDuplicate, validateFile, type formError } from '@/lib/validation';
+import { normalizeToArabicNumber, safeStorageName, fileBaseName, fileExtension } from '@/lib/normalization';
+import { fieldError as FieldError } from '@/components/FieldError';
+import { docSchema, costSchema, DOC_FILE_RULE, type DocField, type CostField } from './schema';
+
+/* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
+ * 1) เอกสาร: ชื่อผ่าน normalize + validate (ห้ามว่าง/ตัวเลขล้วน/ซ้ำ/ยาวเกิน) แสดง error ใต้ช่องแทน alert
+ * 2) ไฟล์: ตรวจนามสกุล (PDF, DOCX, XLSX) และขนาด (ไม่เกิน 25MB) ตามที่หน้าเว็บบอกไว้ (เดิมไม่ได้ตรวจจริง)
+ * 3) ชื่อไฟล์ใน Storage เปลี่ยนเป็น เวลา-สุ่ม.นามสกุล (safeStorageName)
+ *    เดิมใช้ชื่อไฟล์จริง ถ้าเป็นภาษาไทยหรือมีอักขระพิเศษ Supabase จะปฏิเสธ (Invalid key)
+ * 4) บันทึก/ลบแถวในตาราง documents ผ่านฟังก์ชันกลาง insertRecord / deleteRecord
+ * 5) เพิ่มการแก้ไขชื่อเอกสาร
+ * 6) ต้นทุนโครงการ: ตรวจชื่อและราคา (ไม่ติดลบ ทศนิยม 2 หลัก รับเลขไทย/comma) ก่อนเพิ่ม */
 
 /**
  * Storage bucket that uploaded project documents are stored in.
@@ -109,10 +124,8 @@ function formatFileSize(bytes: number) {
   return `${Math.max(1, Math.round(kb))} KB`;
 }
 
-function extOf(name: string) {
-  const parts = name.split('.');
-  return parts.length > 1 ? parts.pop()!.toUpperCase() : '';
-}
+// [แก้ไข] ใช้ fileExtension กลาง (ไฟล์ไม่มีนามสกุล / ขึ้นต้นด้วยจุด จะได้ค่าว่าง)
+const extOf = (name: string) => fileExtension(name).toUpperCase();
 
 /* -------------------------------------------------------------------------- */
 /*  Static section data (Project Targets / Project Cost are not backed by a  */
@@ -165,22 +178,29 @@ export default function AlloTaxDocClient({
   const [costName, setCostName] = useState('');
   const [costPrice, setCostPrice] = useState('');
   const [costVat, setCostVat] = useState<number>(7);
+  const [costErrors, setCostErrors] = useState<formError<CostField>>({});
 
-  const netPreview =
-    costPrice && !Number.isNaN(Number(costPrice))
-      ? Number(costPrice) * (1 + costVat / 100)
-      : 0;
+  // [แก้ไข] เดิมใช้ Number(costPrice) ซึ่งรับเลขไทย/comma ไม่ได้ -> ใช้ normalizeToArabicNumber
+  const previewBase = normalizeToArabicNumber(costPrice);
+  const netPreview = previewBase !== null && previewBase >= 0 ? previewBase * (1 + costVat / 100) : 0;
 
   function handleAddCost(e: React.FormEvent) {
     e.preventDefault();
-    if (!costName.trim() || !costPrice) return;
-    const base = Number(costPrice);
+    // [แก้ไข] เดิมเช็กแค่ว่าง และไม่บอกผู้ใช้ว่าผิดตรงไหน -> ใช้ schema + ห้ามชื่อซ้ำ
+    const result = validateForm(
+      { name: costName, price: costPrice },
+      extendSchema(costSchema, { name: [notDuplicate('ชื่อรายการต้นทุน', costs.map((c) => c.name))] })
+    );
+    if (!result.ok) { setCostErrors(result.errors); return; }
+    setCostErrors({});
+    if (!vatOptions.includes(costVat)) return; // VAT ต้องเป็นค่าที่มีในตัวเลือกเท่านั้น
+
     setCosts((prev) => [
       ...prev,
       {
         id: crypto.randomUUID(),
-        name: costName.trim(),
-        basePrice: base,
+        name: result.clean.name,
+        basePrice: normalizeToArabicNumber(result.clean.price) ?? 0,
         vatPct: costVat,
       },
     ]);
@@ -205,29 +225,57 @@ export default function AlloTaxDocClient({
     fileInputRef.current?.click();
   }
 
+  // [เพิ่ม] error ใต้ช่องชื่อเอกสาร และของไฟล์ที่เลือก
+  const [docErrors, setDocErrors] = useState<formError<DocField | 'file'>>({});
+  // [เพิ่ม] แก้ไขชื่อเอกสาร
+  const [editDoc, setEditDoc] = useState<AlloTaxDoc | null>(null);
+  const [editDocName, setEditDocName] = useState('');
+  const [editDocErrors, setEditDocErrors] = useState<formError<DocField>>({});
+
+  // ชื่อเอกสารห้ามซ้ำกับเอกสารอื่น (ไม่นับตัวที่กำลังแก้ไข)
+  const docNameSchema = (exceptId: string | null) =>
+    extendSchema(docSchema, {
+      document_name: [
+        notDuplicate('ชื่อเอกสาร', documents.filter((d) => d.document_id !== exceptId).map((d) => d.document_name)),
+      ],
+    });
+
   function onFileChosen(f: File | undefined | null) {
     if (!f) return;
+    // [เพิ่ม] ตรวจนามสกุลและขนาดทันทีที่เลือก ไม่ต้องรอกดเพิ่มเอกสาร
+    const check = validateFile(f, DOC_FILE_RULE);
+    if (!check.ok) {
+      setDocErrors((prev) => ({ ...prev, file: check.message }));
+      setPendingFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+    setDocErrors((prev) => ({ ...prev, file: undefined }));
     setPendingFile(f);
-    if (!docName.trim()) setDocName(f.name.replace(/\.[^/.]+$/, ''));
+    if (!docName.trim()) setDocName(fileBaseName(f.name));
   }
 
   async function handleAddDocument() {
-    if (!pendingFile) {
-      alert('กรุณาเลือกไฟล์ก่อน');
-      return;
+    // [แก้ไข] เดิม alert ทีละข้อ -> ตรวจทั้งชื่อและไฟล์พร้อมกัน แล้วแสดงใต้ช่อง
+    const errs: formError<DocField | 'file'> = {};
+    const result = validateForm({ document_name: docName }, docNameSchema(null));
+    if (!result.ok) errs.document_name = result.errors.document_name;
+    if (!pendingFile) errs.file = 'กรุณาเลือกไฟล์ก่อน';
+    else {
+      const check = validateFile(pendingFile, DOC_FILE_RULE); // ตรวจซ้ำก่อนอัปโหลดจริง
+      if (!check.ok) errs.file = check.message;
     }
-    if (!docName.trim()) {
-      alert('กรุณาระบุชื่อเอกสาร');
-      return;
-    }
+    setDocErrors(errs);
+    if (Object.keys(errs).length > 0 || !pendingFile) return;
 
     setUploading(true);
 
-    const filePath = `${Date.now()}-${pendingFile.name}`;
+    // [แก้ไข] เดิมใช้ `${Date.now()}-${ชื่อไฟล์จริง}` ชื่อภาษาไทยทำให้อัปโหลดไม่ผ่าน
+    const filePath = safeStorageName(pendingFile.name);
 
     const { error: uploadError } = await supabase.storage
       .from(BUCKET)
-      .upload(filePath, pendingFile);
+      .upload(filePath, pendingFile, { contentType: pendingFile.type || undefined });
 
     if (uploadError) {
       alert('อัปโหลดไฟล์ไม่สำเร็จ: ' + uploadError.message);
@@ -235,50 +283,69 @@ export default function AlloTaxDocClient({
       return;
     }
 
-    const { data, error } = await supabase
-      .from('documents')
-      .insert({
-        document_name: docName.trim(),
-        file_path: filePath,
-      })
-      .select()
-      .single();
+    // [แก้ไข] บันทึกผ่านฟังก์ชันกลาง (แปลง error ของ DB เป็นข้อความที่อ่านเข้าใจ)
+    const created = await insertRecord<AlloTaxDoc>(
+      'documents',
+      { document_name: result.clean.document_name, file_path: filePath },
+      '*',
+      'บันทึกเอกสาร'
+    );
 
-    if (error) {
+    if (!created) {
       // roll back the uploaded object if the DB insert failed
       await supabase.storage.from(BUCKET).remove([filePath]);
-      alert('บันทึกเอกสารไม่สำเร็จ: ' + error.message);
       setUploading(false);
       return;
     }
 
-    setDocuments((prev) => [...prev, data as AlloTaxDoc]);
+    setDocuments((prev) => [...prev, created]);
     setDocName('');
     setPendingFile(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
     setUploading(false);
   }
 
+  // [เพิ่ม] แก้ไขชื่อเอกสาร (ไฟล์เดิมคงไว้)
+  function openEditDoc(doc: AlloTaxDoc) {
+    setEditDoc(doc);
+    setEditDocName(doc.document_name ?? '');
+    setEditDocErrors({});
+  }
+
+  async function handleSaveDocName(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editDoc) return;
+    const result = validateForm({ document_name: editDocName }, docNameSchema(editDoc.document_id));
+    if (!result.ok) { setEditDocErrors(result.errors); return; }
+
+    const updated = await updateRecord<AlloTaxDoc>(
+      'documents', 'document_id', editDoc.document_id,
+      { document_name: result.clean.document_name }, '*', 'แก้ไขชื่อเอกสาร'
+    );
+    if (!updated) return;
+    setDocuments((prev) => prev.map((d) => (d.document_id === editDoc.document_id ? updated : d)));
+    setEditDoc(null);
+  }
+
   async function handleDeleteDocument(doc: AlloTaxDoc) {
-    if (!confirm(`ลบเอกสาร "${doc.document_name ?? 'ไม่มีชื่อ'}"?`)) return;
+    // [แก้ไข] ลบแถวใน DB ก่อน (ถามยืนยันใน deleteRecord) แล้วค่อยลบไฟล์
+    // เดิมลบไฟล์ก่อน ถ้าลบแถวไม่ผ่าน (เช่น ไม่มีสิทธิ์) จะเหลือแถวที่ชี้ไปยังไฟล์ที่หายไปแล้ว
+    const ok = await deleteRecord(
+      'documents',
+      'document_id',
+      doc.document_id,
+      `ลบเอกสาร "${doc.document_name ?? 'ไม่มีชื่อ'}"?`
+    );
+    if (!ok) return;
 
     if (doc.file_path && !/^https?:\/\//i.test(doc.file_path)) {
       const { error: storageError } = await supabase.storage
         .from(BUCKET)
         .remove([doc.file_path]);
       if (storageError) {
-        alert('ลบไฟล์ไม่สำเร็จ: ' + storageError.message);
-        return;
+        // แถวถูกลบแล้ว ไฟล์ที่ค้างใน Storage ไม่กระทบการใช้งาน แค่แจ้งให้ทราบ
+        alert('ลบเอกสารแล้ว แต่ลบไฟล์ใน Storage ไม่สำเร็จ: ' + dbErrorMessage(storageError));
       }
-    }
-
-    const { error } = await supabase
-      .from('documents')
-      .delete()
-      .eq('document_id', doc.document_id);
-    if (error) {
-      alert('ลบเอกสารไม่สำเร็จ: ' + error.message);
-      return;
     }
 
     setDocuments((prev) => prev.filter((d) => d.document_id !== doc.document_id));
@@ -400,27 +467,30 @@ export default function AlloTaxDocClient({
         </h2>
 
         <div className="flex flex-col gap-5 rounded-xl border border-slate-200/70 bg-white p-5 shadow-sm">
-          <form onSubmit={handleAddCost} className="flex items-end gap-4">
+          <form onSubmit={handleAddCost} className="flex items-start gap-4" noValidate>
             <div className="flex flex-1 flex-col gap-1">
               <label className="text-xs text-[#475569]">ชื่อรายการต้นทุน</label>
               <input
                 value={costName}
+                maxLength={150}
                 onChange={(e) => setCostName(e.target.value)}
                 placeholder="เช่น ค่าตรวจประเมิน VVB, ค่ากล้าไม้"
-                className="rounded-lg border border-[#E2E8F0] px-3 py-2 text-xs text-[#334155] placeholder:text-[#94A3B8] focus:outline-none focus:ring-1 focus:ring-[#266955]"
+                className={`rounded-lg border px-3 py-2 text-xs text-[#334155] placeholder:text-[#94A3B8] focus:outline-none focus:ring-1 focus:ring-[#266955] ${costErrors.name ? 'border-red-500' : 'border-[#E2E8F0]'}`}
               />
+              <FieldError message={costErrors.name} />
             </div>
             <div className="flex w-[180px] flex-col gap-1">
               <label className="text-xs text-[#475569]">ราคา (บาท)</label>
+              {/* [แก้ไข] type="number" -> text + inputMode เพื่อให้พิมพ์เลขไทย/comma ได้ แล้ว normalize เอง */}
               <input
-                type="number"
-                min={0}
-                step="any"
+                type="text"
+                inputMode="decimal"
                 value={costPrice}
                 onChange={(e) => setCostPrice(e.target.value)}
                 placeholder="0.00"
-                className="rounded-lg border border-[#E2E8F0] px-3 py-2 text-xs text-[#334155] placeholder:text-[#94A3B8] focus:outline-none focus:ring-1 focus:ring-[#266955]"
+                className={`rounded-lg border px-3 py-2 text-xs text-[#334155] placeholder:text-[#94A3B8] focus:outline-none focus:ring-1 focus:ring-[#266955] ${costErrors.price ? 'border-red-500' : 'border-[#E2E8F0]'}`}
               />
+              <FieldError message={costErrors.price} />
             </div>
             <div className="flex w-[120px] flex-col gap-1">
               <label className="text-xs text-[#475569]">VAT (%)</label>
@@ -447,7 +517,7 @@ export default function AlloTaxDocClient({
             </div>
             <button
               type="submit"
-              className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg bg-[#266955] text-white shadow-sm hover:bg-[#1f5747]"
+              className="mt-5 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg bg-[#266955] text-white shadow-sm hover:bg-[#1f5747]"
               aria-label="เพิ่มรายการต้นทุน"
             >
               <PlusIcon className="h-3 w-3" />
@@ -521,10 +591,12 @@ export default function AlloTaxDocClient({
               <label className="text-xs text-[#475569]">ชื่อเอกสาร</label>
               <input
                 value={docName}
+                maxLength={255}
                 onChange={(e) => setDocName(e.target.value)}
                 placeholder="เช่น รายงานการตรวจสอบความใช้ได้"
-                className="rounded-lg border border-[#E2E8F0] px-3 py-2 text-xs text-[#334155] placeholder:text-[#94A3B8] focus:outline-none focus:ring-1 focus:ring-[#266955]"
+                className={`rounded-lg border px-3 py-2 text-xs text-[#334155] placeholder:text-[#94A3B8] focus:outline-none focus:ring-1 focus:ring-[#266955] ${docErrors.document_name ? 'border-red-500' : 'border-[#E2E8F0]'}`}
               />
+              <FieldError message={docErrors.document_name} />
             </div>
 
             <div
@@ -546,6 +618,7 @@ export default function AlloTaxDocClient({
               <input
                 ref={fileInputRef}
                 type="file"
+                accept=".pdf,.docx,.xlsx"
                 className="hidden"
                 onChange={(e) => onFileChosen(e.target.files?.[0])}
               />
@@ -559,6 +632,7 @@ export default function AlloTaxDocClient({
                 {pendingFile ? pendingFile.name : 'รองรับ PDF, DOCX, XLSX (สูงสุด 25MB)'}
               </span>
             </div>
+            <FieldError message={docErrors.file} />
 
             <button
               type="button"
@@ -602,6 +676,14 @@ export default function AlloTaxDocClient({
                 <div className="flex shrink-0 items-center gap-1">
                   <button
                     type="button"
+                    onClick={() => openEditDoc(doc)}
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+                    aria-label="แก้ไขชื่อ"
+                  >
+                    <PencilIcon className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleDownloadDocument(doc)}
                     className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-50 hover:text-slate-600"
                     aria-label="ดาวน์โหลด"
@@ -622,6 +704,25 @@ export default function AlloTaxDocClient({
           </div>
         </div>
       </section>
+
+      {/* [เพิ่ม] Modal แก้ไขชื่อเอกสาร */}
+      {editDoc && (
+        <ModalShell onClose={() => setEditDoc(null)}>
+          <form onSubmit={handleSaveDocName} className="space-y-4" noValidate>
+            <h3 className="text-lg font-bold">แก้ไขชื่อเอกสาร</h3>
+            <div>
+              <input
+                className={`w-full border rounded-lg px-3 py-2 text-sm ${editDocErrors.document_name ? 'border-red-500' : ''}`}
+                maxLength={255}
+                value={editDocName}
+                onChange={(e) => setEditDocName(e.target.value)}
+              />
+              <FieldError message={editDocErrors.document_name} />
+            </div>
+            <ModalActions onCancel={() => setEditDoc(null)} />
+          </form>
+        </ModalShell>
+      )}
     </div>
   );
 }

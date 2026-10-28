@@ -5,6 +5,25 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import type { TreeListItem, TverProjectDetail } from '@/types/tver-project';
 import type { OrgTreeProject, OrgTreeProjectDetail } from '@/types/tver-simulation';
+import {
+  validateForm, required, requiredSelect, notNumericOnly, maxLength, isDecimal, isDate, existsIn,
+  meetsCondition, type formSchema,
+} from '@/lib/validation';
+import { normalizeNumberString, normalizeToArabicNumber, formatCondition } from '@/lib/normalization';
+import { dbErrorMessage } from '@/lib/supabaseCrud';
+
+/* [ปรับปรุง] normalize / validate ฟอร์มจำลองโครงการ T-VER
+ * 1) ชื่อโครงการ: ห้ามว่าง / ตัวเลขล้วน / ยาวเกิน 150 ตัวอักษร
+ * 2) พันธุ์ไม้: ต้องเลือก และต้องมีอยู่จริงใน tree_list (ตรวจความสัมพันธ์)
+ * 3) ค่าของแต่ละเงื่อนไข: แปลงเลขไทย/ลบ comma, ไม่ติดลบ (เดิม parseFloat รับ "12abc" และค่าติดลบได้)
+ * 4) [เพิ่ม] เทียบค่าที่กรอกกับเงื่อนไขที่แอดมินตั้ง เช่น พื้นที่ "<= 1000" ไร่ กรอก 1200 -> แจ้งว่าไม่ผ่าน
+ * 5) วันที่เริ่มโครงการ: ต้องเป็นวันที่ที่มีอยู่จริง และอยู่ในช่วงปีที่สมเหตุสมผล
+ * 6) error แสดงใต้ช่อง แทนการพึ่ง required ของ browser */
+
+// ปีที่ยอมให้เลือกเป็นวันเริ่มโครงการ (ค.ศ.)
+const MIN_START_YEAR = 2000;
+const MAX_START_YEAR = new Date().getFullYear() + 10;
+
 
 // ⚠️ PLACEHOLDER: ยังไม่มีค่าอัตรากักเก็บคาร์บอนจริงต่อต้นในระบบ (tree_list ไม่มีคอลัมน์นี้)
 // ต้องแทนที่ด้วยค่าจริงจาก DB เมื่อเพิ่มคอลัมน์ carbon_rate_kg_per_tree_per_year แล้ว
@@ -64,9 +83,34 @@ export default function TverSimulationClient({
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // [เพิ่ม] error ใต้ช่อง: key = projectName / treeId / startDate / tverdetail_id
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const clearError = (key: string) => {
+    if (errors[key]) setErrors((prev) => ({ ...prev, [key]: '' }));
+  };
 
   function handleAmountChange(tverdetailId: string, value: string) {
     setAmounts((prev) => ({ ...prev, [tverdetailId]: value }));
+    clearError(tverdetailId);
+  }
+
+  // [เพิ่ม] schema ของทั้งฟอร์ม (ช่องค่าของ criteria สร้างตามที่แอดมินตั้งไว้)
+  function buildSchema(): formSchema<string> {
+    const schema: formSchema<string> = {
+      projectName: { rules: [required('ชื่อโครงการ'), notNumericOnly('ชื่อโครงการ'), maxLength('ชื่อโครงการ', 150)] },
+      treeId: { rules: [requiredSelect('พันธุ์ไม้'), existsIn('พันธุ์ไม้', trees.map((t) => t.tree_id))] },
+      startDate: {
+        rules: [required('วันที่เริ่มโครงการ'), isDate('วันที่เริ่มโครงการ', { minYear: MIN_START_YEAR, maxYear: MAX_START_YEAR })],
+      },
+    };
+    for (const c of criteria) {
+      const label = c.detail_name ?? 'ค่านี้';
+      schema[c.tverdetail_id] = {
+        normalize: normalizeNumberString,
+        rules: [required(label), isDecimal(label, { allowNegative: false })],
+      };
+    }
+    return schema;
   }
 
   // จับคู่ช่องกรอกกับชื่อ criteria ที่แอดมินตั้งไว้
@@ -77,8 +121,9 @@ export default function TverSimulationClient({
   );
   const densityDetail = criteria.find((c) => c.detail_name?.includes('ต้นไม้ต่อไร่'));
 
+  // [แก้ไข] เดิม parseFloat (ไม่รู้จักเลขไทย/comma) -> normalizeToArabicNumber
   function valueOf(d?: TverProjectDetail): number {
-    return d ? parseFloat(amounts[d.tverdetail_id] ?? '') || 0 : 0;
+    return d ? normalizeToArabicNumber(amounts[d.tverdetail_id]) ?? 0 : 0;
   }
 
   function calculateCredits(): CreditResult {
@@ -94,13 +139,33 @@ export default function TverSimulationClient({
   // กดปุ่ม "คำนวณและดูรายงาน": คำนวณ + บันทึกลงรายการโครงการในระบบ พร้อมกัน
   async function handleCalculate(e: React.FormEvent) {
     e.preventDefault();
+
+    // [เพิ่ม] normalize + validate ทั้งฟอร์มก่อนคำนวณ/บันทึก
+    const result = validateForm({ ...amounts, projectName, treeId, startDate }, buildSchema());
+    const errs: Record<string, string> = result.ok ? {} : { ...(result.errors as Record<string, string>) };
+
+    // [เพิ่ม] เทียบค่าที่กรอกกับเงื่อนไขของแอดมิน (ตรวจข้อมูลอ้างอิงที่เกี่ยวข้อง)
+    // [แก้ไข] อ่านจาก condition_operator / condition_number ตรงๆ ไม่ต้องแกะข้อความแล้ว
+    for (const c of criteria) {
+      if (errs[c.tverdetail_id] || !c.condition_operator || c.condition_number == null) continue;
+      const v = normalizeToArabicNumber(result.clean[c.tverdetail_id]);
+      if (v !== null && !meetsCondition(v, c.condition_operator, Number(c.condition_number))) {
+        errs[c.tverdetail_id] =
+          `ไม่ผ่านเงื่อนไขโครงการ: ต้อง ${formatCondition(c.condition_operator, c.condition_number, c.unit)}`;
+      }
+    }
+
+    setErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+
     setSaving(true);
     setNotice(null);
 
     const credits = calculateCredits();
+    const cleanName = result.clean.projectName; // ชื่อที่ normalize แล้ว
 
     const projectValues = {
-      project_name: projectName,
+      project_name: cleanName,
       // ตัดปีจากข้อความวันที่โดยตรง (YYYY-MM-DD) ไม่ผ่าน Date เพื่อกันเขตเวลาทำให้ปีเพี้ยน
       join_year: startDate ? parseInt(startDate.slice(0, 4), 10) : null,
       credit_year_1: credits.year1,
@@ -120,7 +185,7 @@ export default function TverSimulationClient({
         .eq('orgtreeproject_id', projectId);
       if (error) {
         setSaving(false);
-        return alert('อัปเดตโครงการไม่สำเร็จ: ' + error.message);
+        return alert('อัปเดตโครงการไม่สำเร็จ: ' + dbErrorMessage(error));
       }
 
       // ลบรายละเอียดเดิมก่อน แล้วค่อยบันทึกชุดใหม่ด้านล่าง
@@ -130,7 +195,7 @@ export default function TverSimulationClient({
         .eq('orgtreeproject_id', projectId);
       if (deleteError) {
         setSaving(false);
-        return alert('อัปเดตรายละเอียดไม่สำเร็จ: ' + deleteError.message);
+        return alert('อัปเดตรายละเอียดไม่สำเร็จ: ' + dbErrorMessage(deleteError));
       }
     } else {
       // ยังไม่เคยบันทึก -> สร้างโครงการใหม่
@@ -141,20 +206,21 @@ export default function TverSimulationClient({
         .single();
       if (error || !data) {
         setSaving(false);
-        return alert('บันทึกโครงการไม่สำเร็จ: ' + error?.message);
+        return alert('บันทึกโครงการไม่สำเร็จ: ' + (error ? dbErrorMessage(error) : 'ไม่ทราบสาเหตุ'));
       }
       projectId = data.orgtreeproject_id as string;
       setSavedProjectId(projectId); // จำไว้ เพื่อให้การกดครั้งต่อไปเป็นการอัปเดต
     }
 
     // บันทึกรายละเอียดแต่ละ criteria ที่กรอกไว้ (พร้อมพันธุ์ไม้ที่เลือก)
+    // [แก้ไข] ใช้ค่าที่ normalize แล้วจาก result.clean แทน parseFloat(ค่าดิบ)
     const detailRows = criteria
-      .filter((c) => (amounts[c.tverdetail_id] ?? '') !== '')
+      .filter((c) => result.clean[c.tverdetail_id] !== '')
       .map((c) => ({
         orgtreeproject_id: projectId,
         tverdetail_id: c.tverdetail_id,
-        tree_id: treeId || null,
-        amount: parseFloat(amounts[c.tverdetail_id]) || 0,
+        tree_id: result.clean.treeId || null,
+        amount: normalizeToArabicNumber(result.clean[c.tverdetail_id]) ?? 0,
         unit: c.unit,
       }));
 
@@ -164,7 +230,7 @@ export default function TverSimulationClient({
         .insert(detailRows);
       if (detailError) {
         setSaving(false);
-        return alert('บันทึกรายละเอียดโครงการไม่สำเร็จ: ' + detailError.message);
+        return alert('บันทึกรายละเอียดโครงการไม่สำเร็จ: ' + dbErrorMessage(detailError));
       }
     }
 
@@ -172,8 +238,8 @@ export default function TverSimulationClient({
     setSaving(false);
     setNotice(
       isUpdate
-        ? `อัปเดตโครงการ "${projectName}" ในรายการโครงการปลูกป่า T-VER เรียบร้อยแล้ว`
-        : `โครงการ "${projectName}" ถูกบันทึกลงรายการโครงการปลูกป่า T-VER เรียบร้อยแล้ว`
+        ? `อัปเดตโครงการ "${cleanName}" ในรายการโครงการปลูกป่า T-VER เรียบร้อยแล้ว`
+        : `โครงการ "${cleanName}" ถูกบันทึกลงรายการโครงการปลูกป่า T-VER เรียบร้อยแล้ว`
     );
   }
 
@@ -228,8 +294,10 @@ export default function TverSimulationClient({
 
       <div className="grid grid-cols-[488px_1fr] gap-8 items-start">
         {/* ซ้าย: ฟอร์มตั้งค่าโครงการ */}
+        {/* [แก้ไข] ใส่ noValidate และเอา required ของ browser ออก ให้ใช้ validate ของเราแทน */}
         <form
           onSubmit={handleCalculate}
+          noValidate
           className="bg-white border border-[#F3F4F6] shadow-sm rounded-2xl p-8 space-y-5"
         >
           <h2 className="text-xl font-bold text-[#1F2937]">ตั้งค่าโครงการปลูกป่า</h2>
@@ -238,20 +306,26 @@ export default function TverSimulationClient({
             <label className="block text-sm font-semibold text-[#374151]">ชื่อโครงการ</label>
             <input
               value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
+              maxLength={150}
+              onChange={(e) => {
+                setProjectName(e.target.value);
+                clearError('projectName');
+              }}
               placeholder="เช่น โครงการปลูกป่าสัก ที่ราบสูงตอนเหนือ"
-              className="w-full border border-[#E5E7EB] rounded-xl px-3 py-3 text-base"
-              required
+              className={`w-full border rounded-xl px-3 py-3 text-base ${errors.projectName ? 'border-red-500' : 'border-[#E5E7EB]'}`}
             />
+            {errors.projectName && <p className="text-xs text-red-600">{errors.projectName}</p>}
           </div>
 
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-[#374151]">พันธุ์ไม้</label>
             <select
               value={treeId}
-              onChange={(e) => setTreeId(e.target.value)}
-              className="w-full border border-[#E5E7EB] rounded-xl px-3 py-3 text-base"
-              required
+              onChange={(e) => {
+                setTreeId(e.target.value);
+                clearError('treeId');
+              }}
+              className={`w-full border rounded-xl px-3 py-3 text-base ${errors.treeId ? 'border-red-500' : 'border-[#E5E7EB]'}`}
             >
               <option value="">เลือกพันธุ์ไม้</option>
               {trees.map((t) => (
@@ -260,6 +334,7 @@ export default function TverSimulationClient({
                 </option>
               ))}
             </select>
+            {errors.treeId && <p className="text-xs text-red-600">{errors.treeId}</p>}
           </div>
 
           {/* ช่องกรอกแบบไดนามิกตามเงื่อนไขที่แอดมินตั้งไว้ */}
@@ -270,16 +345,20 @@ export default function TverSimulationClient({
                   {c.detail_name} {c.unit ? `(${c.unit})` : ''}
                 </label>
                 <input
-                  type="number"
-                  step="any"
+                  type="text"
+                  inputMode="decimal"
                   value={amounts[c.tverdetail_id] ?? ''}
                   onChange={(e) => handleAmountChange(c.tverdetail_id, e.target.value)}
-                  className="w-full border border-[#E5E7EB] rounded-xl px-3 py-3 text-base"
-                  required
+                  className={`w-full border rounded-xl px-3 py-3 text-base ${
+                    errors[c.tverdetail_id] ? 'border-red-500' : 'border-[#E5E7EB]'
+                  }`}
                 />
-                {c.condition_value && (
-                  <p className="text-xs text-[#9CA3AF]">เงื่อนไข: {c.condition_value}</p>
+                {c.condition_operator && (
+                  <p className="text-xs text-[#9CA3AF]">
+                    เงื่อนไข: {formatCondition(c.condition_operator, c.condition_number, c.unit)}
+                  </p>
                 )}
+                {errors[c.tverdetail_id] && <p className="text-xs text-red-600">{errors[c.tverdetail_id]}</p>}
               </div>
             ))}
           </div>
@@ -288,11 +367,16 @@ export default function TverSimulationClient({
             <label className="block text-sm font-semibold text-[#374151]">วันที่เริ่มโครงการ</label>
             <input
               type="date"
+              min={`${MIN_START_YEAR}-01-01`}
+              max={`${MAX_START_YEAR}-12-31`}
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="w-full border border-[#E5E7EB] rounded-xl px-3 py-3 text-base"
-              required
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                clearError('startDate');
+              }}
+              className={`w-full border rounded-xl px-3 py-3 text-base ${errors.startDate ? 'border-red-500' : 'border-[#E5E7EB]'}`}
             />
+            {errors.startDate && <p className="text-xs text-red-600">{errors.startDate}</p>}
           </div>
 
           <button
