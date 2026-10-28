@@ -25,13 +25,19 @@ export default function OrganizationLayout({
   const [email, setEmail] = useState<string | null>(null);
   const router = useRouter();
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setEmail(session?.user.email ?? null);
-    });
-    return () => sub.subscription.unsubscribe();
-  }, []);
+useEffect(() => {
+  // 1. ดึงอีเมลของผู้ใช้ปัจจุบัน
+  supabase.auth.getUser().then(({ data }: { data: any }) => {
+    setEmail(data?.user?.email ?? null);
+  });
+
+  // 2. ติดตามการเปลี่ยนแปลงสถานะ Auth
+  const { data: sub } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
+    setEmail(session?.user?.email ?? null);
+  });
+
+  return () => sub.subscription.unsubscribe();
+}, []);
 
   async function handleLogout() {
     await supabase.auth.signOut(); // ลบ session ใน cookie

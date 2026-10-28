@@ -1,11 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { ReactNode, MouseEvent } from "react";
 
 type ModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  title: string;
+  title?: string;
   children: ReactNode;
 };
 
@@ -17,33 +17,37 @@ export default function Modal({
 }: ModalProps) {
   if (!isOpen) return null;
 
+  // ปิด Modal เมื่อคลิกพื้นหลังด้านนอกเท่านั้น
+  const handleBackdropClick = (
+    event: MouseEvent<HTMLDivElement>
+  ) => {
+    if (event.target === event.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm transition-opacity"
+      onClick={handleBackdropClick}
     >
       <div
-        className="w-full max-w-lg rounded-xl bg-white shadow-xl"
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title || "Dialog"}
+        className="relative w-full max-w-lg rounded-3xl bg-white shadow-2xl border border-slate-100 overflow-hidden transition-all transform scale-100"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">
-            {title}
-          </h2>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-2xl leading-none text-gray-400 hover:text-gray-600"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
+        {/* Header: แสดงเฉพาะเมื่อมี title */}
+        {title && (
+          <div className="border-b border-slate-100 px-6 py-4">
+            <h2 className="text-lg font-bold text-slate-900">
+              {title}
+            </h2>
+          </div>
+        )}
 
         {/* Content */}
-        <div className="px-6 py-5">
+        <div className="px-6 py-6 lg:px-8 lg:py-8">
           {children}
         </div>
       </div>
