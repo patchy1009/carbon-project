@@ -10,7 +10,7 @@ const navItems = [
   { label: 'หน้าหลัก', href: '/organization/dashboard' },
   { label: 'คาร์บอนฟุตพรินท์', href: '/organization/footprint' },
   { label: 'จำลองโครงการ T-VER', href: '/organization/tver-simulation' },
-  { label: 'คำนวณภาษี', href: '/organization/tax-calculator' },
+  { label: 'คำนวณภาษี', href: '/organization/tax_calculator' },
   { label: 'เอกสาร', href: '/organization/documents' },
 ];
 

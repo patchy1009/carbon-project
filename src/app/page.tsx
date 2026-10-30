@@ -27,5 +27,5 @@ import { redirect } from "next/navigation";
 
 export default function Home() {
   //redirect("/admin/ef-gwp");
-  redirect("/organization/login");
+  redirect("/organization/homepage");
 }

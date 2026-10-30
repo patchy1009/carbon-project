@@ -112,7 +112,7 @@ export default function RegisterPage() {
       .padStart(2, "0")}`;
   };
 
-  // STEP 1: ตรวจสอบข้อมูลและส่ง OTP
+  // STEP 1: ตรวจสอบข้อมูลและเรียก API สมัครสมาชิก
   const handleSendOtp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMessage("");
@@ -147,63 +147,23 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      // ตรวจสอบ Username ซ้ำในฐานข้อมูล
-      const { data: existingUsername, error: checkUsernameError } = await supabase
-        .from("user")
-        .select("username")
-        .eq("username", cleanUsername)
-        .maybeSingle();
-
-      if (checkUsernameError) {
-        console.warn("Username lookup warning:", checkUsernameError.message);
-      }
-
-      if (existingUsername) {
-        setErrorMessage("ชื่อผู้ใช้งาน (Username) นี้ถูกใช้งานไปแล้ว กรุณาใช้ชื่ออื่น");
-        setLoading(false);
-        return;
-      }
-
-      // ตรวจสอบ Email ซ้ำในฐานข้อมูล
-      const { data: existingUser, error: checkError } = await supabase
-        .from("user")
-        .select("email")
-        .eq("email", cleanEmail)
-        .maybeSingle();
-
-      if (checkError) {
-        console.warn("Email lookup warning:", checkError.message);
-      }
-
-      if (existingUser) {
-        setErrorMessage("อีเมลนี้ถูกลงทะเบียนใช้งานไปแล้ว กรุณาเข้าสู่ระบบ");
-        setLoading(false);
-        return;
-      }
-
-      const { data: signUpData, error: signUpError } =
-        await supabase.auth.signUp({
+      // ส่งข้อมูลไปยัง API Route ที่สร้างไว้ฝั่ง Backend
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: cleanUsername,
           email: cleanEmail,
           password,
-          options: {
-            data: {
-              username: cleanUsername,
-              company_name: cleanCompanyName,
-              industry,
-            },
-          },
-        });
+          companyName: cleanCompanyName,
+          industry,
+        }),
+      });
 
-      if (signUpError) throw signUpError;
+      const data = await response.json();
 
-      if (
-        signUpData.user &&
-        signUpData.user.identities &&
-        signUpData.user.identities.length === 0
-      ) {
-        setErrorMessage("อีเมลนี้ถูกลงทะเบียนใช้งานไปแล้ว กรุณาเข้าสู่ระบบ");
-        setLoading(false);
-        return;
+      if (!response.ok) {
+        throw new Error(data.error || "ไม่สามารถสมัครสมาชิกได้");
       }
 
       setUsername(cleanUsername);
@@ -218,16 +178,7 @@ export default function RegisterPage() {
       );
     } catch (error: unknown) {
       console.error("Register error:", error);
-      const message = getErrorMessage(error);
-
-      if (
-        message.toLowerCase().includes("already registered") ||
-        message.toLowerCase().includes("user already registered")
-      ) {
-        setErrorMessage("อีเมลนี้ถูกลงทะเบียนใช้งานไปแล้ว กรุณาเข้าสู่ระบบ");
-      } else {
-        setErrorMessage(`ไม่สามารถสมัครสมาชิกได้: ${message}`);
-      }
+      setErrorMessage(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -251,51 +202,13 @@ export default function RegisterPage() {
     try {
       const cleanEmail = email.trim().toLowerCase();
 
-      const { data, error } = await supabase.auth.verifyOtp({
+      const { error } = await supabase.auth.verifyOtp({
         email: cleanEmail,
         token,
         type: "signup",
       });
 
       if (error) throw error;
-
-      const authUser = data.user;
-      if (!authUser || !data.session) {
-        throw new Error(
-          "ยืนยัน OTP ไม่สำเร็จหรือไม่มี session ที่ยืนยันตัวตนแล้ว จึงยังไม่บันทึกข้อมูล"
-        );
-      }
-
-      const metadata = authUser.user_metadata ?? {};
-      const finalUsername = metadata.username || username.trim();
-      const company = metadata.company_name || companyName.trim();
-      const bizType = metadata.industry || industry;
-
-      const { error: userError } = await supabase.from("user").insert({
-        acc_id: authUser.id,
-        email: cleanEmail,
-        username: finalUsername,
-        role: "organization",
-        status: "active",
-      });
-
-      if (userError) {
-        throw new Error(`บันทึกข้อมูลผู้ใช้ไม่สำเร็จ: ${userError.message}`);
-      }
-
-      const { error: organizationError } = await supabase
-        .from("organization")
-        .insert({
-          acc_id: authUser.id,
-          org_name: company,
-          business_type: bizType,
-        });
-
-      if (organizationError) {
-        throw new Error(
-          `ยืนยันอีเมลสำเร็จ แต่บันทึกข้อมูลองค์กรไม่สำเร็จ: ${organizationError.message}`
-        );
-      }
 
       setStep("success");
       setSuccessMessage("ยืนยันอีเมลและบันทึกข้อมูลองค์กรเรียบร้อยแล้ว");

@@ -1,7 +1,20 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import {
+  Building2,
+  Mail,
+  Lock,
+  ChevronDown,
+  CheckCircle2,
+  ShieldCheck,
+  ArrowRight,
+  UserCheck,
+  RefreshCw,
+  User,
+} from "lucide-react";
 import Modal from "./Modal";
+import { supabase } from "@/lib/supabaseClient";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -9,340 +22,550 @@ interface AuthModalProps {
   initialMode?: "login" | "register";
 }
 
+const industries = [
+  "สำนักงานและบริการทั่วไป",
+  "การผลิต อุตสาหกรรม และแปรรูป",
+  "การขนส่ง โลจิสติกส์ และคลังสินค้า",
+  "โรงแรม การท่องเที่ยว งานบริการ",
+  "ค้าปลีก ค้าส่ง และการจัดการสินค้า",
+  "ก่อสร้าง อสังหาริมทรัพย์ และโครงสร้างพื้นฐาน",
+];
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
+const USERNAME_REGEX = /^[a-zA-Z0-9_-]{3,20}$/;
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ กรุณาลองใหม่อีกครั้ง";
+}
+
 export default function AuthModal({
   isOpen,
   onClose,
   initialMode = "login",
 }: AuthModalProps) {
-  // state จัดการขั้นตอนปัจจุบัน: 'login' | 'register' | 'otp'
-  const [step, setStep] = useState<"login" | "register" | "otp">(initialMode);
+  // ควบคุมสเตปภายใน Modal ("login" | "register" | "otp" | "success")
+  const [step, setStep] = useState<"login" | "register" | "otp" | "success">(initialMode);
 
-  // state ฟอร์ม Login
+  // State ฝั่ง Login
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
-  const [loginError, setLoginError] = useState(false);
+  const [loginErrorMessage, setLoginErrorMessage] = useState("");
 
-  // state ฟอร์ม Register
-  const [regEmail, setRegEmail] = useState("");
-  const [regPassword, setRegPassword] = useState("");
-  const [regOrgName, setRegOrgName] = useState("");
-  const [regIndustry, setRegIndustry] = useState("");
+  // State ฝั่ง Register
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [industry, setIndustry] = useState(industries[0]);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [otpInput, setOtpInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [resendTimer, setResendTimer] = useState(300);
+  const [canResend, setCanResend] = useState(false);
 
-  // state ช่องกรอก OTP 6 ช่อง
-  const [otp, setOtp] = useState<string[]>(["", "", "", "", "", ""]);
-  const [otpError, setOtpError] = useState(false);
+  // รีเซ็ตค่าเมื่อเปิด/ปิด Modal
+  useEffect(() => {
+    if (isOpen) {
+      setStep(initialMode);
+      setLoginErrorMessage("");
+      setErrorMessage("");
+      setSuccessMessage("");
+    }
+  }, [isOpen, initialMode]);
 
-  // ฟังก์ชันสลับช่อง OTP อัตโนมัติเมื่อพิมพ์
-  const handleOtpChange = (value: string, index: number) => {
-    if (value.length > 1) return;
-    const newOtp = [...otp];
-    newOtp[index] = value;
-    setOtp(newOtp);
-    setOtpError(false);
+  // ตัวนับเวลาถอยหลัง OTP
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | undefined;
+    if (step === "otp" && resendTimer > 0) {
+      setCanResend(false);
+      timer = setInterval(() => {
+        setResendTimer((prev) => prev - 1);
+      }, 1000);
+    } else if (resendTimer === 0) {
+      setCanResend(true);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [step, resendTimer]);
 
-    if (value && index < 5) {
-      const nextInput = document.getElementById(`otp-input-${index + 1}`);
-      nextInput?.focus();
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  // 1. ฟังก์ชันจัดการ Login
+  const handleLoginSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setLoginErrorMessage("");
+    if (!loginEmail.trim() || !loginPassword) {
+      setLoginErrorMessage("กรุณากรอกอีเมลและรหัสผ่านให้ครบถ้วน");
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: loginEmail.trim().toLowerCase(),
+        password: loginPassword,
+      });
+      if (error) throw error;
+      if (!data.user) throw new Error("ไม่พบข้อมูลผู้ใช้งาน");
+
+      const { data: userData, error: userError } = await supabase
+        .from("user")
+        .select("role")
+        .eq("acc_id", data.user.id)
+        .single();
+
+      if (userError || !userData) throw new Error("ไม่พบข้อมูลสิทธิ์การใช้งานในระบบ");
+
+      onClose();
+      if (userData.role === "admin") {
+        window.location.assign("/admin/recommendation");
+      } else {
+        window.location.assign("/organization/dashboard");
+      }
+    } catch (err: unknown) {
+      setLoginErrorMessage(getErrorMessage(err));
+    } finally {
+      setLoading(false);
     }
   };
 
-  const [isLoading, setIsLoading] = useState(false);
-
-  
-  const handleLoginSubmit = async (e: React.FormEvent) => {
+  // 2. ฟังก์ชันส่ง OTP (สมัครสมาชิกผ่าน API)
+  const handleSendOtp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setErrorMessage("");
+    setSuccessMessage("");
 
-    if (!loginEmail.trim() || !loginPassword) {
-      setLoginError(true);
+    const cleanUsername = username.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanCompanyName = companyName.trim();
+
+    if (!cleanUsername || !cleanEmail || !password || !cleanCompanyName) {
+      setErrorMessage("กรุณากรอกข้อมูลให้ครบถ้วน");
+      return;
+    }
+    if (!USERNAME_REGEX.test(cleanUsername)) {
+      setErrorMessage("Username ต้องมีความยาว 3-20 ตัวอักษร และใช้ได้เฉพาะภาษาอังกฤษ ตัวเลข _ และ -");
+      return;
+    }
+    if (!EMAIL_REGEX.test(cleanEmail)) {
+      setErrorMessage("กรุณากรอกอีเมลให้ถูกต้อง เช่น name@company.co.th");
+      return;
+    }
+    if (!PASSWORD_REGEX.test(password)) {
+      setErrorMessage("รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร มีตัวอักษรภาษาอังกฤษและตัวเลข");
       return;
     }
 
-    setLoginError(false);
-    setIsLoading(true);
-
+    setLoading(true);
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await fetch("/api/auth/register", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: loginEmail,
-          password: loginPassword,
+          username: cleanUsername,
+          email: cleanEmail,
+          password,
+          companyName: cleanCompanyName,
+          industry,
         }),
       });
 
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "ไม่สามารถสมัครสมาชิกได้");
 
-      // API แจ้งว่า Login ไม่สำเร็จ
-      if (!response.ok) {
-        setLoginError(true);
-        alert(data.error || "ไม่สามารถเข้าสู่ระบบได้");
-        return;
-      }
-
-      // ตรวจสอบ Role และเส้นทางที่ API อนุญาต
-      const allowedRoutes: Record<string, string> = {
-        admin: "/admin/ef-gwp",
-        organization: "/organization/dashboard",
-      };
-
-      const expectedRoute = allowedRoutes[data.role];
-
-      if (!expectedRoute || data.redirectTo !== expectedRoute) {
-        setLoginError(true);
-        alert("ไม่สามารถตรวจสอบสิทธิ์ผู้ใช้ได้");
-        return;
-      }
-
-      // เปลี่ยนหน้าโดยไม่เรียก onClose
-      // เพราะ onClose เดิมอาจพาไป Dashboard องค์กรเสมอ
-      window.location.assign(expectedRoute);
-    } catch (error) {
-      console.error("Login error:", error);
-      setLoginError(true);
-      alert("ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่");
+      setUsername(cleanUsername);
+      setEmail(cleanEmail);
+      setCompanyName(cleanCompanyName);
+      setOtpInput("");
+      setResendTimer(300);
+      setCanResend(false);
+      setStep("otp");
+      setSuccessMessage("ส่งรหัส OTP ไปยังอีเมลของคุณแล้ว กรุณาตรวจสอบ Inbox และ Spam");
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error));
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  // 3. ฟังก์ชันยืนยัน OTP และบันทึกข้อมูลลงตาราง user & organization
+  const handleVerifyOtp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setStep("otp");
-  };
+    setErrorMessage("");
+    setSuccessMessage("");
+    const token = otpInput.trim();
 
-  const handleOtpSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (otp.join("").length < 6) {
-      setOtpError(true);
+    if (!/^\d{6}$/.test(token)) {
+      setErrorMessage("กรุณากรอกรหัส OTP ให้ครบ 6 หลัก");
       return;
     }
-    alert("ยืนยันการลงทะเบียนสำเร็จ!");
-    onClose();
+
+    setLoading(true);
+    try {
+      // ก. ยืนยัน OTP กับ Supabase Auth
+      const { data: authData, error: verifyError } = await supabase.auth.verifyOtp({
+        email: email.trim().toLowerCase(),
+        token,
+        type: "signup",
+      });
+      if (verifyError) throw verifyError;
+
+      // ข. เมื่อยืนยันสำเร็จ บันทึกข้อมูลเข้า Database
+      if (authData.user) {
+        const userId = authData.user.id;
+        const cleanUsername = username.trim();
+        const cleanEmail = email.trim().toLowerCase();
+        const cleanCompanyName = companyName.trim();
+
+        // บันทึกตาราง user
+        const { error: userInsertError } = await supabase.from("user").insert({
+          acc_id: userId,
+          email: cleanEmail,
+          username: cleanUsername,
+          role: "organization",
+          status: "active",
+        });
+        if (userInsertError) throw userInsertError;
+
+        // บันทึกตาราง organization
+        const { error: orgInsertError } = await supabase.from("organization").insert({
+          acc_id: userId,
+          org_name: cleanCompanyName,
+          business_type: industry,
+        });
+        if (orgInsertError) throw orgInsertError;
+      }
+
+      setStep("success");
+      setSuccessMessage("ยืนยันอีเมลและบันทึกข้อมูลองค์กรเรียบร้อยแล้ว");
+    } catch (error: unknown) {
+      setErrorMessage(`ยืนยัน OTP ไม่สำเร็จ: ${getErrorMessage(error)}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const handleResendOtp = async () => {
+    if (!canResend || loading) return;
+    setErrorMessage("");
+    setSuccessMessage("");
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: email.trim().toLowerCase(),
+      });
+      if (error) throw error;
+      setOtpInput("");
+      setResendTimer(300);
+      setCanResend(false);
+      setSuccessMessage("ส่งรหัส OTP ใหม่ไปยังอีเมลของคุณแล้ว");
+    } catch (error: unknown) {
+      setErrorMessage(`ไม่สามารถส่ง OTP ใหม่ได้: ${getErrorMessage(error)}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const inputClass =
+    "w-full px-4 py-3 pl-10 rounded-2xl border text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800 placeholder:text-slate-400 border-slate-200";
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="">
-      <div className="px-2 py-1 text-center font-sans">
+    <Modal isOpen={isOpen} onClose={onClose}>
+      <div className="w-full max-w-lg rounded-3xl bg-white p-6 lg:p-8 text-left shadow-2xl">
         
-        {/* ================= 1. หน้าเข้าสู่ระบบ (LOGIN) ================= */}
+        {/* ================= STEP 1: LOGIN ================= */}
         {step === "login" && (
-          <div className="space-y-5">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-1">เข้าสู่ระบบ</h2>
-              <p className="text-[12px] text-gray-400 leading-snug">
-                เข้าสู่ระบบเพื่อดำเนินการยื่นขอหรือคำนวณคาร์บอนอนุมัติ <br />
-                ขององค์กรท่านได้ทันที
-              </p>
-            </div>
+          <div>
+            <h2 className="mb-4 text-center text-2xl font-bold text-slate-800">
+              เข้าสู่ระบบองค์กร
+            </h2>
 
-            <form onSubmit={handleLoginSubmit} className="space-y-4 text-left">
-              <div>
-                <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                  อีเมล (email)
-                </label>
-                <input
-                  type="email"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="name@company.co.th"
-                  className={`w-full px-4 py-2 text-xs rounded-full border transition focus:outline-none ${
-                    loginError ? "border-red-500 bg-red-50/20" : "border-gray-300 focus:border-[#1c5d41]"
-                  }`}
-                />
+            {loginErrorMessage && (
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                {loginErrorMessage}
               </div>
+            )}
 
+            <form onSubmit={handleLoginSubmit} className="space-y-4">
               <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="block text-[11px] font-medium text-gray-600">
-                    รหัสผ่าน (password)
-                  </label>
-                  <button type="button" className="text-[10px] text-[#1c5d41] hover:underline">
-                    ลืมรหัสผ่าน?
-                  </button>
+                <label className="mb-1 block text-xs font-semibold text-slate-600">อีเมล</label>
+                <div className="relative">
+                  <input
+                    type="email"
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    className={inputClass}
+                    placeholder="name@company.com"
+                    required
+                  />
+                  <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
                 </div>
-                <input
-                  type="password"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className={`w-full px-4 py-2 text-xs rounded-full border transition focus:outline-none ${
-                    loginError ? "border-red-500 bg-red-50/20" : "border-gray-300 focus:border-[#1c5d41]"
-                  }`}
-                />
               </div>
 
-              {loginError && (
-                <p className="text-[11px] text-red-500 text-center font-medium">
-                  *รหัสผ่านหรืออีเมลไม่ถูกต้อง
-                </p>
-              )}
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-600">รหัสผ่าน</label>
+                <div className="relative">
+                  <input
+                    type="password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    className={inputClass}
+                    placeholder="••••••••"
+                    required
+                  />
+                  <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+                </div>
+              </div>
 
               <button
                 type="submit"
-                className="w-full py-2.5 bg-[#1c5d41] hover:bg-[#144530] text-white font-medium rounded-full text-xs transition shadow-sm mt-2"
+                disabled={loading}
+                className="w-full rounded-2xl bg-[#2C7A59] px-4 py-3.5 text-sm font-semibold text-white shadow-md transition hover:bg-[#1f5a41] disabled:opacity-60"
               >
-                เข้าสู่ระบบ
+                {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
               </button>
             </form>
 
-            <p className="text-[11px] text-gray-400 pt-1">
-              ยังไม่มีบัญชีผู้ใช้ใช่ไหม?{" "}
+            <p className="mt-5 text-center text-xs text-slate-600">
+              ยังไม่มีบัญชีองค์กร?{" "}
               <button
                 type="button"
-                onClick={() => { setStep("register"); setLoginError(false); }}
-                className="text-[#1c5d41] font-semibold hover:underline ml-1"
+                onClick={() => setStep("register")}
+                className="font-semibold text-[#2C7A59] hover:underline"
               >
-                ลงทะเบียนองค์กร
+                สมัครสมาชิก
               </button>
             </p>
           </div>
         )}
 
-        {/* ================= 2. หน้าลงทะเบียน (REGISTER) ================= */}
+        {/* ================= STEP 2: REGISTER FORM ================= */}
         {step === "register" && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-1">ลงทะเบียนองค์กร</h2>
-              <p className="text-[11px] text-gray-400">
-                สร้างบัญชีองค์กรเพื่อเริ่มต้นบริหารจัดการคาร์บอนฟุตพริ้นท์และคำนวณภาษี
-              </p>
+          <form onSubmit={handleSendOtp} className="space-y-4" noValidate>
+            <div className="text-center space-y-1 mb-2">
+              <h2 className="text-2xl font-extrabold text-[#11221C]">ลงทะเบียนองค์กร</h2>
+              <p className="text-xs text-slate-500">สร้างบัญชีองค์กรเพื่อเริ่มบริหารจัดการคาร์บอน</p>
             </div>
 
-            <form onSubmit={handleRegisterSubmit} className="space-y-3 text-left">
-              <div>
-                <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                  อีเมล (email)
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={regEmail}
-                  onChange={(e) => setRegEmail(e.target.value)}
-                  placeholder="name@company.co.th"
-                  className="w-full px-4 py-2 text-xs rounded-full border border-gray-300 focus:outline-none focus:border-[#1c5d41]"
-                />
+            {errorMessage && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl text-center">
+                {errorMessage}
               </div>
+            )}
 
-              <div>
-                <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                  รหัสผ่าน (password)
-                </label>
-                <input
-                  type="password"
-                  required
-                  value={regPassword}
-                  onChange={(e) => setRegPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-4 py-2 text-xs rounded-full border border-gray-300 focus:outline-none focus:border-[#1c5d41]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                  ชื่อองค์กร / บริษัท
-                </label>
+            <div>
+              <label className="text-xs font-bold text-slate-700">ชื่อผู้ใช้งาน (Username)</label>
+              <div className="relative mt-1">
                 <input
                   type="text"
                   required
-                  value={regOrgName}
-                  onChange={(e) => setRegOrgName(e.target.value)}
-                  placeholder="บริษัท ตัวอย่าง จำกัด"
-                  className="w-full px-4 py-2 text-xs rounded-full border border-gray-300 focus:outline-none focus:border-[#1c5d41]"
+                  placeholder="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className={inputClass}
                 />
+                <User className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
               </div>
+            </div>
 
-              <div>
-                <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                  ประเภทอุตสาหกรรม
-                </label>
-                <select
+            <div>
+              <label className="text-xs font-bold text-slate-700">อีเมล (email)</label>
+              <div className="relative mt-1">
+                <input
+                  type="email"
                   required
-                  value={regIndustry}
-                  onChange={(e) => setRegIndustry(e.target.value)}
-                  className="w-full px-4 py-2 text-xs rounded-full border border-gray-300 focus:outline-none focus:border-[#1c5d41] text-gray-600 bg-white"
-                >
-                  <option value="">เลือกประเภทอุตสาหกรรม</option>
-                  <option value="energy">พลังงานและสาธารณูปโภค</option>
-                  <option value="manufacturing">การผลิตและอุตสาหกรรม</option>
-                  <option value="services">บริการและการพาณิชย์</option>
-                </select>
+                  placeholder="name@company.co.th"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className={inputClass}
+                />
+                <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
               </div>
+            </div>
 
+            <div>
+              <label className="text-xs font-bold text-slate-700">รหัสผ่าน (password)</label>
+              <div className="relative mt-1">
+                <input
+                  type="password"
+                  required
+                  placeholder="อย่างน้อย 8 ตัวอักษร มีตัวอักษรและตัวเลข"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={inputClass}
+                />
+                <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700">ชื่อองค์กร / บริษัท</label>
+              <div className="relative mt-1">
+                <input
+                  type="text"
+                  required
+                  placeholder="บริษัท ตัวอย่าง จำกัด"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  className={inputClass}
+                />
+                <Building2 className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+              </div>
+            </div>
+
+            <div className="relative">
+              <label className="text-xs font-bold text-slate-700">ประเภทอุตสาหกรรม</label>
               <button
-                type="submit"
-                className="w-full py-2.5 bg-[#1c5d41] hover:bg-[#144530] text-white font-medium rounded-full text-xs transition shadow-sm mt-3"
+                type="button"
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className="w-full mt-1 px-4 py-3 rounded-2xl border border-slate-200 text-sm bg-slate-50/50 flex items-center justify-between text-slate-800 font-medium"
               >
-                ลงทะเบียนองค์กร
+                <span>{industry}</span>
+                <ChevronDown className="w-4 h-4 text-slate-400" />
               </button>
-            </form>
+              
+              {/* ดรอปดาวน์แก้ปัญหาจม/ล้นขอบด้วย max-h-48 overflow-y-auto */}
+              {isDropdownOpen && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-lg z-30 py-1 max-h-48 overflow-y-auto">
+                  {industries.map((item) => (
+                    <button
+                      type="button"
+                      key={item}
+                      onClick={() => {
+                        setIndustry(item);
+                        setIsDropdownOpen(false);
+                      }}
+                      className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
-            <p className="text-[11px] text-gray-400">
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 bg-[#2C7A59] hover:bg-[#1f5a41] disabled:opacity-60 text-white font-semibold rounded-2xl text-sm transition shadow-md flex items-center justify-center space-x-2 mt-2"
+            >
+              <span>{loading ? "กำลังตรวจสอบข้อมูล..." : "ถัดไป: ยืนยันอีเมล"}</span>
+              {!loading && <ArrowRight className="w-4 h-4" />}
+            </button>
+
+            <p className="mt-3 text-center text-xs text-slate-600">
               มีบัญชีผู้ใช้อยู่แล้ว?{" "}
               <button
                 type="button"
                 onClick={() => setStep("login")}
-                className="text-[#1c5d41] font-semibold hover:underline ml-1"
+                className="font-semibold text-[#2C7A59] hover:underline"
               >
                 เข้าสู่ระบบ
               </button>
             </p>
-          </div>
+          </form>
         )}
 
-        {/* ================= 3. หน้ากรอก OTP (CONFIRMation) ================= */}
+        {/* ================= STEP 3: OTP ================= */}
         {step === "otp" && (
-          <div className="space-y-5">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900 mb-2">ยืนยันการลงทะเบียน</h2>
-              <p className="text-[11px] text-gray-400 leading-relaxed">
-                ระบบได้ส่งรหัสยืนยันไปที่อีเมลของคุณแล้ว <br />
-                กรุณากรอกรหัสตามที่ปรากฏเพื่อยืนยันการลงทะเบียนองค์กร
+          <form onSubmit={handleVerifyOtp} className="space-y-5 text-center">
+            <div className="w-14 h-14 bg-emerald-50 text-emerald-700 rounded-2xl mx-auto flex items-center justify-center">
+              <ShieldCheck className="w-7 h-7" />
+            </div>
+
+            <div className="space-y-1">
+              <h2 className="text-xl font-bold text-slate-900">ตรวจสอบอีเมลของคุณ</h2>
+              <p className="text-xs text-slate-500">
+                รหัส 6 หลักถูกส่งไปที่ <strong className="text-slate-800">{email}</strong>
               </p>
             </div>
 
-            <form onSubmit={handleOtpSubmit} className="space-y-5">
-              {/* ช่องกรอกตัวเลข OTP 6 ช่องสีเทาอ่อนตาม Figma */}
-              <div className="flex justify-center gap-2 my-2">
-                {otp.map((digit, index) => (
-                  <input
-                    key={index}
-                    id={`otp-input-${index}`}
-                    type="text"
-                    maxLength={1}
-                    value={digit}
-                    onChange={(e) => handleOtpChange(e.target.value, index)}
-                    className="w-10 h-10 text-center text-sm font-semibold rounded-lg border border-gray-200 bg-[#f4f6f5] focus:bg-white focus:border-[#1c5d41] focus:outline-none transition shadow-inner"
-                  />
-                ))}
+            {errorMessage && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl">
+                {errorMessage}
               </div>
+            )}
+            {successMessage && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs rounded-xl">
+                {successMessage}
+              </div>
+            )}
 
-              {otpError && (
-                <p className="text-[11px] text-red-500 font-medium">
-                  *กรุณากรอกรหัส OTP ให้ครบถ้วน 6 หลัก
-                </p>
-              )}
+            <div className="max-w-xs mx-auto">
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                required
+                placeholder="000000"
+                value={otpInput}
+                onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ""))}
+                className="w-full text-center tracking-[0.6em] text-lg font-bold py-3 rounded-2xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50 text-slate-900"
+              />
+            </div>
 
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-[#1c5d41] hover:bg-[#144530] text-white font-medium rounded-full text-xs transition shadow-sm"
-              >
-                ยืนยันการลงทะเบียน
-              </button>
-            </form>
+            <button
+              type="button"
+              disabled={!canResend || loading}
+              onClick={handleResendOtp}
+              className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 hover:underline disabled:text-slate-400"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+              {canResend ? "ส่งรหัส OTP อีกครั้ง" : `ส่งรหัสอีกครั้งใน ${formatTime(resendTimer)}`}
+            </button>
 
-            <p className="text-[11px] text-gray-400">
-              ไม่ได้รับข้อความความยืนยัน?{" "}
-              <button
-                type="button"
-                onClick={() => alert("ส่งรหัส OTP ใหม่แล้ว")}
-                className="text-[#1c5d41] font-semibold hover:underline ml-1"
-              >
-                ส่งใหม่อีกครั้ง
-              </button>
-            </p>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 bg-[#2C7A59] hover:bg-[#1f5a41] text-white font-semibold rounded-2xl text-sm transition shadow-md"
+            >
+              {loading ? "กำลังตรวจสอบ..." : "ยืนยันและสมัครสมาชิก"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStep("register")}
+              className="block mx-auto text-xs text-slate-400 hover:text-slate-600"
+            >
+              ← กลับไปแก้ไขข้อมูล
+            </button>
+          </form>
+        )}
+
+        {/* ================= STEP 4: SUCCESS ================= */}
+        {step === "success" && (
+          <div className="text-center space-y-5 py-4">
+            <div className="w-14 h-14 bg-emerald-100 text-emerald-700 rounded-full mx-auto flex items-center justify-center">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+            <div className="space-y-1">
+              <h2 className="text-xl font-bold text-slate-900">ลงทะเบียนสำเร็จ!</h2>
+              <p className="text-xs text-slate-500">บัญชีองค์กรของคุณได้รับการยืนยันเรียบร้อยแล้ว</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                window.location.assign("/organization/dashboard");
+              }}
+              className="w-full py-3.5 bg-[#2C7A59] hover:bg-[#1f5a41] text-white font-semibold rounded-2xl text-sm transition shadow-md flex items-center justify-center space-x-2"
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>เข้าสู่หน้า Dashboard</span>
+            </button>
           </div>
         )}
 
