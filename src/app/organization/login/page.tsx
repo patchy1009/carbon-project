@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState } from "react";
@@ -9,7 +8,7 @@ export default function LoginPage() {
   const [isOpen, setIsOpen] = useState(true);
   const router = useRouter();
 
-  // ปิด Modal แล้วกลับหน้าแรก ไม่ใช่หน้า Dashboard
+  // จัดการเมื่อปิด Modal ปกติให้กลับหน้าแรก
   const handleClose = () => {
     setIsOpen(false);
     router.push("/");
@@ -22,10 +21,6 @@ export default function LoginPage() {
         onClose={handleClose}
         initialMode="login"
       />
-
-      <div className="text-center text-gray-400 text-sm">
-        กำลังโหลดหน้าเข้าสู่ระบบ...
-      </div>
     </div>
   );
 }

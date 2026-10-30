@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Building2,
   Mail,
@@ -49,6 +50,7 @@ export default function AuthModal({
   onClose,
   initialMode = "login",
 }: AuthModalProps) {
+  const router = useRouter();
   // ควบคุมสเตปภายใน Modal ("login" | "register" | "otp" | "success")
   const [step, setStep] = useState<"login" | "register" | "otp" | "success">(initialMode);
 
@@ -63,6 +65,14 @@ export default function AuthModal({
   const [password, setPassword] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [industry, setIndustry] = useState(industries[0]);
+  
+  const [fieldErrors, setFieldErrors] = useState({
+    username: "",
+    email: "",
+    password: "",
+    companyName: "",
+  });
+
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [otpInput, setOtpInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -78,6 +88,7 @@ export default function AuthModal({
       setLoginErrorMessage("");
       setErrorMessage("");
       setSuccessMessage("");
+      setFieldErrors({ username: "", email: "", password: "", companyName: "" });
     }
   }, [isOpen, initialMode]);
 
@@ -130,9 +141,9 @@ export default function AuthModal({
 
       onClose();
       if (userData.role === "admin") {
-        window.location.assign("/admin/recommendation");
+        router.push("/admin/recommendation");
       } else {
-        window.location.assign("/organization/dashboard");
+        router.push("/organization/dashboard");
       }
     } catch (err: unknown) {
       setLoginErrorMessage(getErrorMessage(err));
@@ -151,20 +162,48 @@ export default function AuthModal({
     const cleanEmail = email.trim().toLowerCase();
     const cleanCompanyName = companyName.trim();
 
-    if (!cleanUsername || !cleanEmail || !password || !cleanCompanyName) {
-      setErrorMessage("กรุณากรอกข้อมูลให้ครบถ้วน");
-      return;
+    let errors = {
+      username: "",
+      email: "",
+      password: "",
+      companyName: "",
+    };
+
+    let hasError = false;
+
+    if (!cleanUsername) {
+      errors.username = "กรุณากรอกชื่อผู้ใช้งาน";
+      hasError = true;
+    } else if (!USERNAME_REGEX.test(cleanUsername)) {
+      errors.username = "Username ต้องมีความยาว 3-20 ตัวอักษรภาษาอังกฤษ, ตัวเลข, _ , -";
+      hasError = true;
     }
-    if (!USERNAME_REGEX.test(cleanUsername)) {
-      setErrorMessage("Username ต้องมีความยาว 3-20 ตัวอักษร และใช้ได้เฉพาะภาษาอังกฤษ ตัวเลข _ และ -");
-      return;
+
+    if (!cleanEmail) {
+      errors.email = "กรุณากรอกอีเมล";
+      hasError = true;
+    } else if (!EMAIL_REGEX.test(cleanEmail)) {
+      errors.email = "รูปแบบอีเมลไม่ถูกต้อง เช่น name@company.co.th";
+      hasError = true;
     }
-    if (!EMAIL_REGEX.test(cleanEmail)) {
-      setErrorMessage("กรุณากรอกอีเมลให้ถูกต้อง เช่น name@company.co.th");
-      return;
+
+    if (!password) {
+      errors.password = "กรุณากรอกรหัสผ่าน";
+      hasError = true;
+    } else if (!PASSWORD_REGEX.test(password)) {
+      errors.password = "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร และมีตัวอักษรกับตัวเลขผสมกัน";
+      hasError = true;
     }
-    if (!PASSWORD_REGEX.test(password)) {
-      setErrorMessage("รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร มีตัวอักษรภาษาอังกฤษและตัวเลข");
+
+    if (!cleanCompanyName) {
+      errors.companyName = "กรุณากรอกชื่อองค์กรหรือบริษัท";
+      hasError = true;
+    }
+
+    setFieldErrors(errors);
+
+    if (hasError) {
+      setErrorMessage("กรุณาตรวจสอบข้อมูลช่องที่มีกรอบสีแดงให้ถูกต้องครบถ้วน");
       return;
     }
 
@@ -192,7 +231,7 @@ export default function AuthModal({
       setResendTimer(300);
       setCanResend(false);
       setStep("otp");
-      setSuccessMessage("ส่งรหัส OTP ไปยังอีเมลของคุณแล้ว กรุณาตรวจสอบ Inbox และ Spam");
+      setSuccessMessage("ส่งรหัส OTP ไปยังอีเมลของคุณแล้ว กรุณาตรวจสอบอีเมลและกรอกรหัส OTP 6 หลักเพื่อยืนยัน");
     } catch (error: unknown) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -271,7 +310,7 @@ export default function AuthModal({
       setOtpInput("");
       setResendTimer(300);
       setCanResend(false);
-      setSuccessMessage("ส่งรหัส OTP ใหม่ไปยังอีเมลของคุณแล้ว");
+      setSuccessMessage("ส่งรหัส OTP ใหม่ไปยังอีเมลของคุณแล้ว กรุณาตรวจสอบอีเมลและกรอกรหัส OTP 6 หลักเพื่อยืนยัน");
     } catch (error: unknown) {
       setErrorMessage(`ไม่สามารถส่ง OTP ใหม่ได้: ${getErrorMessage(error)}`);
     } finally {
@@ -279,8 +318,12 @@ export default function AuthModal({
     }
   };
 
-  const inputClass =
-    "w-full px-4 py-3 pl-10 rounded-2xl border text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800 placeholder:text-slate-400 border-slate-200";
+  const getInputClass = (hasError: boolean) =>
+    `w-full px-4 py-3 pl-10 rounded-2xl border text-sm focus:outline-none focus:ring-2 bg-slate-50/50 text-slate-800 placeholder:text-slate-400 ${
+      hasError
+        ? "border-red-500 focus:ring-red-500 bg-red-50/20"
+        : "border-slate-200 focus:ring-emerald-700"
+    }`;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
@@ -289,7 +332,7 @@ export default function AuthModal({
         {/* ================= STEP 1: LOGIN ================= */}
         {step === "login" && (
           <div>
-            <h2 className="mb-4 text-center text-2xl font-bold text-slate-800">
+            <h2 className="mb-6 text-center text-2xl font-bold text-slate-800">
               เข้าสู่ระบบองค์กร
             </h2>
 
@@ -307,7 +350,7 @@ export default function AuthModal({
                     type="email"
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
-                    className={inputClass}
+                    className="w-full px-4 py-3 pl-10 rounded-2xl border text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800 placeholder:text-slate-400 border-slate-200"
                     placeholder="name@company.com"
                     required
                   />
@@ -322,18 +365,31 @@ export default function AuthModal({
                     type="password"
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
-                    className={inputClass}
+                    className="w-full px-4 py-3 pl-10 rounded-2xl border text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800 placeholder:text-slate-400 border-slate-200"
                     placeholder="••••••••"
                     required
                   />
                   <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+                </div>
+                {/* ปุ่มลืมรหัสผ่าน สีเขียวตามตีมแอป ชิดขวาล่างใต้ช่องกรอกรหัสผ่าน */}
+                <div className="mt-1.5 text-right">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      router.push("/organization/forgot_password");
+                    }}
+                    className="text-xs text-[#2C7A59] hover:underline font-semibold transition"
+                  >
+                    ลืมรหัสผ่าน?
+                  </button>
                 </div>
               </div>
 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-2xl bg-[#2C7A59] px-4 py-3.5 text-sm font-semibold text-white shadow-md transition hover:bg-[#1f5a41] disabled:opacity-60"
+                className="w-full rounded-2xl bg-[#2C7A59] px-4 py-3.5 text-sm font-semibold text-white shadow-md transition hover:bg-[#1f5a41] disabled:opacity-60 mt-2"
               >
                 {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
               </button>
@@ -361,7 +417,7 @@ export default function AuthModal({
             </div>
 
             {errorMessage && (
-              <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl text-center">
+              <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl text-center font-medium">
                 {errorMessage}
               </div>
             )}
@@ -371,14 +427,22 @@ export default function AuthModal({
               <div className="relative mt-1">
                 <input
                   type="text"
-                  required
                   placeholder="username"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className={inputClass}
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                    if (fieldErrors.username) setFieldErrors({ ...fieldErrors, username: "" });
+                  }}
+                  className={getInputClass(!!fieldErrors.username)}
                 />
                 <User className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
               </div>
+              {!fieldErrors.username && (
+                <p className="mt-1 text-[11px] text-slate-400">ความยาว 3-20 ตัวอักษร โดยเป็นภาษาอังกฤษ, ตัวเลข, _ , - ได้</p>
+              )}
+              {fieldErrors.username && (
+                <p className="mt-1 text-xs text-red-500 font-medium">{fieldErrors.username}</p>
+              )}
             </div>
 
             <div>
@@ -386,14 +450,22 @@ export default function AuthModal({
               <div className="relative mt-1">
                 <input
                   type="email"
-                  required
                   placeholder="name@company.co.th"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className={inputClass}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (fieldErrors.email) setFieldErrors({ ...fieldErrors, email: "" });
+                  }}
+                  className={getInputClass(!!fieldErrors.email)}
                 />
                 <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
               </div>
+              {!fieldErrors.email && (
+                <p className="mt-1 text-[11px] text-slate-400">ใช้อีเมลองค์กรที่สามารถรับรหัส OTP ได้</p>
+              )}
+              {fieldErrors.email && (
+                <p className="mt-1 text-xs text-red-500 font-medium">{fieldErrors.email}</p>
+              )}
             </div>
 
             <div>
@@ -401,14 +473,22 @@ export default function AuthModal({
               <div className="relative mt-1">
                 <input
                   type="password"
-                  required
                   placeholder="อย่างน้อย 8 ตัวอักษร มีตัวอักษรและตัวเลข"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className={inputClass}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (fieldErrors.password) setFieldErrors({ ...fieldErrors, password: "" });
+                  }}
+                  className={getInputClass(!!fieldErrors.password)}
                 />
                 <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
               </div>
+              {!fieldErrors.password && (
+                <p className="mt-1 text-[11px] text-slate-400">ต้องมีอย่างน้อย 8 ตัวอักษร โดยมีตัวอักษรภาษาอังกฤษและตัวเลขผสมกัน</p>
+              )}
+              {fieldErrors.password && (
+                <p className="mt-1 text-xs text-red-500 font-medium">{fieldErrors.password}</p>
+              )}
             </div>
 
             <div>
@@ -416,14 +496,22 @@ export default function AuthModal({
               <div className="relative mt-1">
                 <input
                   type="text"
-                  required
                   placeholder="บริษัท ตัวอย่าง จำกัด"
                   value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                  className={inputClass}
+                  onChange={(e) => {
+                    setCompanyName(e.target.value);
+                    if (fieldErrors.companyName) setFieldErrors({ ...fieldErrors, companyName: "" });
+                  }}
+                  className={getInputClass(!!fieldErrors.companyName)}
                 />
                 <Building2 className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
               </div>
+              {!fieldErrors.companyName && (
+                <p className="mt-1 text-[11px] text-slate-400">ระบุชื่อบริษัทหรือองค์กรของคุณ</p>
+              )}
+              {fieldErrors.companyName && (
+                <p className="mt-1 text-xs text-red-500 font-medium">{fieldErrors.companyName}</p>
+              )}
             </div>
 
             <div className="relative">
@@ -559,7 +647,7 @@ export default function AuthModal({
               type="button"
               onClick={() => {
                 onClose();
-                window.location.assign("/organization/dashboard");
+                router.push("/organization/dashboard");
               }}
               className="w-full py-3.5 bg-[#2C7A59] hover:bg-[#1f5a41] text-white font-semibold rounded-2xl text-sm transition shadow-md flex items-center justify-center space-x-2"
             >
