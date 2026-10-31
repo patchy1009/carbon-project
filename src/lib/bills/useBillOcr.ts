@@ -38,13 +38,15 @@ async function sha256(file: File) {
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/* แปลง JSON จาก Python -> ค่าเริ่มต้นของฟอร์มตรวจบิล (ค่าที่ผิดรูปแบบถือว่าอ่านไม่ได้) */
-function fromOcr(ocr: OcrResult): BillEdit {
+/* แปลง JSON จาก Python -> ค่าเริ่มต้นของฟอร์มตรวจบิล (ค่าที่ผิดรูปแบบถือว่าอ่านไม่ได้)
+ * [แก้ไข] หน้าตรวจบิลไม่มีช่องเลือกประเภทบิลแล้ว: OCR ระบุประเภทไม่ได้ -> ใช้ประเภทของหมวดที่แนบ (slot)
+ *   ถ้า OCR อ่านได้ว่าเป็นบิลอีกประเภท ยังคงค่านั้นไว้ เพื่อให้ checks.ts เตือนว่าแนบผิดหมวด */
+function fromOcr(ocr: OcrResult, slot: BillType): BillEdit {
   const month = Number.isInteger(ocr.month) && ocr.month! >= 1 && ocr.month! <= 12 ? ocr.month! : 0;
   const year = Number.isInteger(ocr.year) && ocr.year! >= 2000 && ocr.year! <= 2100 ? ocr.year! : 0;
   const qty = typeof ocr.quantity === 'number' && Number.isFinite(ocr.quantity) && ocr.quantity >= 0 ? ocr.quantity : null;
   return {
-    billType: ocr.bill_type === 'unknown' ? '' : ocr.bill_type,
+    billType: ocr.bill_type === 'unknown' || !ocr.bill_type ? slot : ocr.bill_type,
     billNumber: ocr.bill_number?.trim() ?? '',
     month,
     year,
@@ -73,7 +75,7 @@ export function useBillOcr() {
 
         if (res.ok) {
           const ocr = json as OcrResult;
-          patch(it.uid, { status: 'ready', fileHash, ocr, ...fromOcr(ocr) });
+          patch(it.uid, { status: 'ready', fileHash, ocr, ...fromOcr(ocr, it.slot) });
           return;
         }
         if (res.status === 401) {

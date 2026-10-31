@@ -1,7 +1,8 @@
 // components/bills/BillRow.tsx
 'use client';
 /* [ปรับปรุง] แถวตรวจบิล 1 ใบ: แสดงค่าที่ OCR อ่านได้ ให้ผู้ใช้แก้ แล้วกด "ยืนยันข้อมูล"
- * - แก้ได้: ประเภทบิล, เลขที่บิล, เดือน/ปี, ชนิดน้ำมัน, ปริมาณ
+ * - แก้ได้: เลขที่บิล, เดือน/ปี, ชนิดน้ำมัน, ปริมาณ
+ *   [ลบ] ช่องประเภทบิล: บิลอยู่ในหมวดที่แนบอยู่แล้ว (ถ้าแนบผิดหมวด ระบบเตือนให้ย้าย)
  * - แสดงคำเตือนจาก OCR (warnings) และผลตรวจของระบบ (checks.ts)
  * - แสดงว่าจะเติมลงช่องกิจกรรมไหน เป็นปริมาณเท่าไรหลังแปลงหน่วย
  * - ยืนยันแล้วช่องจะล็อก ต้องกด "แก้ไข" ก่อน (ยกเลิกการยืนยัน) */
@@ -10,8 +11,8 @@ import { normalizeNumberString, normalizeToArabicNumber } from '@/lib/normalizat
 import { canConfirm, hasFail, hasWarn, type BillTarget } from '@/lib/bills/checks';
 import { unitFactor, round4 } from '@/lib/bills/units';
 import {
-  BILL_TYPE_LABEL, BILL_UNIT, BILL_UNIT_LABEL, FUEL_TYPES,
-  type ActivityPeriod, type BillType, type Check, type FuelType,
+  BILL_UNIT, BILL_UNIT_LABEL, FUEL_TYPES,
+  type ActivityPeriod, type Check, type FuelType,
 } from '@/lib/bills/types';
 import type { BillEdit, PendingBill } from '@/lib/bills/useBillOcr';
 
@@ -64,21 +65,6 @@ export default function BillRow(props: {
           {item.note && <p className="mt-2 text-amber-700">⚠ {item.note}</p>}
 
           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-            <label className="block">
-              <span className="text-xs text-slate-500">ประเภทบิล</span>
-              <select
-                disabled={locked}
-                value={item.billType}
-                onChange={(e) => onEdit({ billType: e.target.value as BillType | '' })}
-                className={field}
-              >
-                <option value="">ไม่ทราบ</option>
-                {(Object.keys(BILL_TYPE_LABEL) as BillType[]).map((t) => (
-                  <option key={t} value={t}>{BILL_TYPE_LABEL[t]}</option>
-                ))}
-              </select>
-            </label>
-
             <label className="block">
               <span className="text-xs text-slate-500">เลขที่บิล</span>
               <input

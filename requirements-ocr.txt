@@ -1,0 +1,10 @@
+
+paddlepaddle==3.2.0
+paddleocr==3.7.0
+fastapi==0.162.0
+uvicorn==0.54.0
+python-multipart
+numpy==2.3.5
+pandas==3.1.0
+opencv-contrib-python
+Pillow

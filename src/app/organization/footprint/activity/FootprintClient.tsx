@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import Modal from '@/components/Modal';
 import FootprintStepper from '@/components/FootprintStepper';
+import YearPicker from '@/components/YearPicker';
 import type { ScopeGroup } from '@/types/footprint';
 import BillRow from '@/components/bills/BillRow';
 import YearlySummary from '@/components/bills/YearlySummary';
@@ -231,12 +232,9 @@ export default function FootprintClient({
     });
   }
 
-  const yearOptions = (() => {
-    const set = new Set<number>();
-    for (let y = nowBE + 1; y >= nowBE - 5; y--) set.add(y);
-    if (selYear) set.add(selYear);
-    return Array.from(set).sort((a, b) => b - a);
-  })();
+  // [แก้ไข] เดิมเลือกได้แค่ปีปัจจุบัน +1 ย้อนหลัง 5 ปี -> ย้อนหลังได้ 30 ปี และพิมพ์ค้นหาปีได้ (YearPicker)
+  const YEAR_MIN_BE = nowBE - 30;
+  const YEAR_MAX_BE = nowBE + 1;
 
   function updatePeriod(type: PeriodType, m: number, y: number) {
     setPeriodType(type);
@@ -936,22 +934,15 @@ export default function FootprintClient({
                   ))}
                 </select>
               )}
-              <select
-                value={selYear || ''}
-                onChange={(e) => updatePeriod(periodType, selMonth, Number(e.target.value))}
-                className={`h-11 w-40 rounded-[20px] border bg-[#F7F9FB] px-4 text-sm ${
-                  fieldErrors.period && !selYear ? 'border-red-500' : 'border-[#BDC9C1]'
-                }`}
-              >
-                <option value="" disabled>
-                  ปี พ.ศ.
-                </option>
-                {yearOptions.map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
+              {/* [แก้ไข] เดิมเป็น <select> -> ช่องเลือกปีที่พิมพ์ค้นหาได้ */}
+              <YearPicker
+                value={selYear}
+                onChange={(y) => updatePeriod(periodType, selMonth, y)}
+                min={YEAR_MIN_BE}
+                max={YEAR_MAX_BE}
+                hasError={!!fieldErrors.period && !selYear}
+                className="w-40"
+              />
             </div>
             {fieldErrors.period && <p className="text-xs text-red-600">{fieldErrors.period}</p>}
             {periodType === 'year' && (
