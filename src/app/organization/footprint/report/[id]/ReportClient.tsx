@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import Link from 'next/link';
+import { showError } from '@/lib/dialog';
 
 export type Measure = {
   name: string;
@@ -52,23 +53,6 @@ function Co2e({ className = '' }: { className?: string }) {
     <span className={className}>
       tCO<sub>2</sub>e
     </span>
-  );
-}
-
-function Icon({ color, children }: { color: string; children: React.ReactNode }) {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={color}
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {children}
-    </svg>
   );
 }
 
@@ -136,68 +120,27 @@ export default function ReportClient({
       pdf.save(`carbon-footprint-report-${date}.pdf`);
     } catch (err) {
       console.error('Download report error:', err);
-      alert('ดาวน์โหลดรายงานไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+      showError('ดาวน์โหลดรายงานไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
     } finally {
       setDownloading(false);
     }
   }
 
+  /* [แก้ไข] เอาไอคอนบนการ์ดออก และให้แต่ละ scope มีสีประจำ 1 สี (ใช้ร่วมกันทั้งการ์ดและแท่งกราฟ)
+   * ดูการ์ดแล้วจับคู่กับแท่งในกราฟได้ทันที */
+  const SCOPE_COLOR = { s1: '#0D9488', s2: '#2563EB', s3: '#F97316' } as const;
+
   const cards = [
-    {
-      title: 'ก๊าซเรือนกระจกรวม',
-      value: total,
-      note: null as string | null,
-      bg: '#F0FDF4',
-      icon: (
-        <Icon color="#16A34A">
-          <path d="M3 3v18h18" />
-          <path d="M7 15l4-4 3 3 5-6" />
-        </Icon>
-      ),
-    },
-    {
-      title: 'scope 1 (ทางตรง)',
-      value: s1,
-      note: `คิดเป็น ${pct(s1, total)}% ของทั้งหมด`,
-      bg: '#F0FDFA',
-      icon: (
-        <Icon color="#0D9488">
-          <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
-        </Icon>
-      ),
-    },
-    {
-      title: 'scope 2 (ทางอ้อม)',
-      value: s2,
-      note: `คิดเป็น ${pct(s2, total)}% ของทั้งหมด`,
-      bg: '#EFF6FF',
-      icon: (
-        <Icon color="#2563EB">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M2 12h20" />
-          <path d="M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z" />
-        </Icon>
-      ),
-    },
-    {
-      title: 'scope 3 (ห่วงโซ่คุณค่า)',
-      value: s3,
-      note: `คิดเป็น ${pct(s3, total)}% ของทั้งหมด`,
-      bg: '#FFF7ED',
-      icon: (
-        <Icon color="#FB923C">
-          <path d="M21 8v13H3V8" />
-          <path d="M1 3h22v5H1z" />
-          <path d="M10 12h4" />
-        </Icon>
-      ),
-    },
+    { title: 'ก๊าซเรือนกระจกรวม', value: total, note: null as string | null, color: null as string | null },
+    { title: 'scope 1 (ทางตรง)', value: s1, note: `คิดเป็น ${pct(s1, total)}% ของทั้งหมด`, color: SCOPE_COLOR.s1 },
+    { title: 'scope 2 (ทางอ้อม)', value: s2, note: `คิดเป็น ${pct(s2, total)}% ของทั้งหมด`, color: SCOPE_COLOR.s2 },
+    { title: 'scope 3 (ห่วงโซ่คุณค่า)', value: s3, note: `คิดเป็น ${pct(s3, total)}% ของทั้งหมด`, color: SCOPE_COLOR.s3 },
   ];
 
   const bars = [
-    { label: 'scope 1', value: s1 },
-    { label: 'scope 2', value: s2 },
-    { label: 'scope 3', value: s3 },
+    { label: 'scope 1', value: s1, color: SCOPE_COLOR.s1 },
+    { label: 'scope 2', value: s2, color: SCOPE_COLOR.s2 },
+    { label: 'scope 3', value: s3, color: SCOPE_COLOR.s3 },
   ];
 
   return (
@@ -225,8 +168,9 @@ export default function ReportClient({
           >
             กลับแดชบอร์ด
           </Link>
+          {/* [แก้ไข] แก้ไขข้อมูลเริ่มที่ขั้นที่ 1 (ข้อมูลสำนักงาน) ของรายการนี้ แล้วกด "ถัดไป" ไปขั้นที่ 2 */}
           <Link
-            href={`/organization/footprint/activity?edit=${logId}`}
+            href={`/organization/footprint?edit=${logId}`}
             className="rounded-lg border border-[#32885F] bg-white px-4 py-2 text-sm font-semibold text-[#32885F]"
           >
             แก้ไขข้อมูล
@@ -245,16 +189,16 @@ export default function ReportClient({
       {/* การ์ดสรุป */}
       <div className="grid grid-cols-4 gap-6">
         {cards.map((c) => (
-          <div key={c.title} className="rounded-2xl bg-white p-6 shadow-md">
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-sm font-semibold text-[#6B7280]">{c.title}</p>
-              <div
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-                style={{ backgroundColor: c.bg }}
-              >
-                {c.icon}
-              </div>
-            </div>
+          <div
+            key={c.title}
+            className="rounded-2xl border-t-4 bg-white p-6 shadow-md"
+            style={{ borderTopColor: c.color ?? '#1E293B' }}
+          >
+            <p className="flex items-center gap-2 text-sm font-semibold text-[#6B7280]">
+              {/* จุดสีประจำ scope = สีเดียวกับแท่งในกราฟ */}
+              {c.color && <span className="h-3 w-3 shrink-0 rounded-sm" style={{ backgroundColor: c.color }} />}
+              {c.title}
+            </p>
             <div className="mt-4 flex items-baseline gap-1">
               <span className="text-[32px] font-bold leading-none text-[#1E293B]">
                 {fmt(c.value)}
@@ -306,8 +250,8 @@ export default function ReportClient({
                     {bars.map((b) => (
                       <div
                         key={b.label}
-                        className="w-20 rounded-t-sm bg-[#FF7C57]"
-                        style={{ height: `${(b.value / yMax) * 100}%` }}
+                        className="w-20 rounded-t-sm"
+                        style={{ height: `${(b.value / yMax) * 100}%`, backgroundColor: b.color }}
                         title={`${b.label}: ${fmt(b.value)} tCO2e`}
                       />
                     ))}
@@ -315,7 +259,8 @@ export default function ReportClient({
                 </div>
                 <div className="flex justify-around px-6 pt-3">
                   {bars.map((b) => (
-                    <span key={b.label} className="w-20 text-center text-xs text-[#64748B]">
+                    <span key={b.label} className="flex w-20 items-center justify-center gap-1.5 text-xs font-semibold" style={{ color: b.color }}>
+                      <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: b.color }} />
                       {b.label}
                     </span>
                   ))}

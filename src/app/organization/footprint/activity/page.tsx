@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { createSupabaseServer } from '@/lib/supabaseServer';
 import { requireOrgId } from '@/lib/auth';
-import FootprintClient, { type ExistingBill } from './FootprintClient';
+import FootprintClient from './FootprintClient';
 import type { CarbonScope } from '@/types/activity-management';
 import type { ActivityDetailWithValues, ScopeGroup } from '@/types/footprint';
 
@@ -15,32 +15,42 @@ export default async function FootprintActivityPage({
   const supabase = await createSupabaseServer();
   const { edit } = await searchParams;
 
-  const [scopesRes, detailsRes, officeRes] = await Promise.all([
-    supabase.from('carbon_scope').select('*').order('scope_number'),
-    supabase.from('activity_detail').select(`
+  // รายการที่ให้กรอกตามสโคป (ดึงจาก activity_detail ที่แอดมินเพิ่มไว้)
+  const DETAIL_COLS = `
       scopedetail_id,
       detail_name,
       unit,
       activity(activity_id, activity_name, scope_id),
       emission_factor(ef_value),
-      global_warming_potential(gwp_value)
-    `),
-    // นับว่ากรอกข้อมูลสำนักงานไว้กี่หัวข้อ (ใช้แสดงข้อความเตือน ไม่บังคับ)
-    supabase
-      .from('org_office_info')
-      .select('orginfo_id', { count: 'exact', head: true })
-      .eq('org_id', orgId),
+      global_warming_potential(gwp_value)`;
+  const loadDetails = async () => {
+    const res = await supabase.from('activity_detail').select(`${DETAIL_COLS}, ocr_source`);
+    // [แก้ไข] ถ้ายังไม่ได้รัน supabase/activity_detail_ocr_source.sql คอลัมน์ ocr_source จะยังไม่มี (42703)
+    // เดิม query ทั้งก้อน error -> หน้าไม่แสดงช่องกรอกเลย ตอนนี้โหลดใหม่โดยไม่เอาคอลัมน์นั้น (OCR ยังเติมฟอร์มไม่ได้จนกว่าจะรัน SQL)
+    if (res.error?.code === '42703') {
+      console.warn('[footprint] activity_detail.ocr_source ยังไม่มี กรุณารัน supabase/activity_detail_ocr_source.sql');
+      return supabase.from('activity_detail').select(DETAIL_COLS);
+    }
+    if (res.error) console.error('[footprint] โหลด activity_detail ไม่สำเร็จ:', res.error.message);
+    return res;
+  };
+
+  // [แก้ไข] เลิกนับข้อมูลสำนักงานทั้งองค์กรที่นี่ (ข้อมูลสำนักงานเป็นของแต่ละรายการแล้ว
+  // รายการใหม่ดูจากค่าที่กรอกในขั้นที่ 1 ฝั่งเบราว์เซอร์แทน)
+  const [scopesRes, detailsRes] = await Promise.all([
+    supabase.from('carbon_scope').select('*').order('scope_number'),
+    loadDetails(),
   ]);
 
-  // ถ้ามี ?edit=รหัส ให้โหลดค่าที่เคยกรอกและบิลที่เคยแนบ (เฉพาะรายการของตัวเอง)
+  // ถ้ามี ?edit=รหัส ให้โหลดค่าที่เคยกรอก (เฉพาะรายการของตัวเอง)
+  // [แก้ไข] เลิกโหลดบิลจาก org_bill_file แล้ว (OCR ช่วยกรอกอย่างเดียว ไม่เก็บบิล)
   let existingLogId: string | null = null;
   let existingName = '';
   let existingPeriod = '';
   let existingPeriodType: 'month' | 'year' = 'month';
   const existingValues: Record<string, string> = {};
-  let existingBills: ExistingBill[] = [];
   if (edit) {
-    const [logRes, savedRes, billRes] = await Promise.all([
+    const [logRes, savedRes] = await Promise.all([
       supabase
         .from('org_activity_list')
         .select('orgactlist_id, orgact_name, period_type, period_month')
@@ -51,11 +61,6 @@ export default async function FootprintActivityPage({
         .from('org_activity_detail')
         .select('scopedetail_id, amount')
         .eq('orgactlist_id', edit),
-      supabase
-        .from('org_bill_file')
-        .select('bill_id, bill_type, file_path, original_name, file_size')
-        .eq('orgactlist_id', edit)
-        .order('created_at'),
     ]);
     if (logRes.data) {
       const log = logRes.data as any;
@@ -68,7 +73,6 @@ export default async function FootprintActivityPage({
           existingValues[r.scopedetail_id] = String(parseFloat(Number(r.amount).toPrecision(7)));
         }
       }
-      existingBills = (billRes.data ?? []) as ExistingBill[];
     }
   }
 
@@ -90,11 +94,9 @@ export default async function FootprintActivityPage({
       orgId={orgId}
       existingLogId={existingLogId}
       existingValues={existingValues}
-      existingBills={existingBills}
       existingName={existingName}
       existingPeriod={existingPeriod}
       existingPeriodType={existingPeriodType}
-      hasOfficeInfo={(officeRes.count ?? 0) > 0}
     />
   );
 }

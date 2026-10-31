@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import type { DocumentItem } from '@/types/documents';
+import { showError } from '@/lib/dialog'; // [แก้ไข] กล่องแจ้งเตือนกลางแทน alert
 
 function getFileType(filePath: string | null): { label: string; color: string } {
   const ext = filePath?.split('.').pop()?.toLowerCase() ?? '';
@@ -35,12 +36,12 @@ export default function DocumentsClient({ documents }: { documents: DocumentItem
   // ----- เปิดดูไฟล์ (preview ในแท็บใหม่) -----
   function handleView(doc: DocumentItem) {
     if (!doc.file_path) {
-      alert('ไม่พบไฟล์สำหรับเอกสารนี้');
+      showError('ไม่พบไฟล์สำหรับเอกสารนี้');
       return;
     }
     const { data } = supabase.storage.from('documents').getPublicUrl(doc.file_path);
     if (!data?.publicUrl) {
-      alert('ไม่สามารถเปิดไฟล์ได้ในขณะนี้');
+      showError('ไม่สามารถเปิดไฟล์ได้ในขณะนี้');
       return;
     }
     window.open(data.publicUrl, '_blank', 'noopener,noreferrer');
@@ -56,7 +57,7 @@ export default function DocumentsClient({ documents }: { documents: DocumentItem
   // ----- บังคับดาวน์โหลดไฟล์จริง -----
   async function handleDownload(doc: DocumentItem) {
     if (!doc.file_path) {
-      alert('ไม่พบไฟล์สำหรับเอกสารนี้');
+      showError('ไม่พบไฟล์สำหรับเอกสารนี้');
       return;
     }
 
@@ -69,7 +70,7 @@ export default function DocumentsClient({ documents }: { documents: DocumentItem
     setDownloadingId(null);
 
     if (error || !data) {
-      alert('ดาวน์โหลดไม่สำเร็จ: ' + (error?.message ?? 'ไม่ทราบสาเหตุ'));
+      showError('ดาวน์โหลดไม่สำเร็จ: ' + (error?.message ?? 'ไม่ทราบสาเหตุ'));
       return;
     }
 

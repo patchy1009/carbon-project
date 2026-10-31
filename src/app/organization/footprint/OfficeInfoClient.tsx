@@ -1,13 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
 import FootprintStepper from '@/components/FootprintStepper';
 import { validateForm, isDecimal, maxLength, type formSchema } from '@/lib/validation';
 import { normalizeNumberString, normalizeText } from '@/lib/normalization';
-import { dbErrorMessage } from '@/lib/supabaseCrud';
+import { clearOfficeDraft, draftScope, readOfficeDraft, writeOfficeDraft } from '@/lib/officeDraft';
+
+/* [ปรับปรุง] ข้อมูลสำนักงานเป็นของ "แต่ละรายการ" (org_office_info.orgactlist_id) ไม่ใช่ชุดเดียวทั้งองค์กร
+ * - รายการใหม่: ฟอร์มว่างเสมอ / แก้ไข: เริ่มจากค่าที่บันทึกไว้ของรายการนั้น
+ * - ปุ่ม "ถัดไป": ตรวจข้อมูลแล้วพักค่าไว้ (sessionStorage) ยังไม่บันทึกลง DB
+ *   บันทึกจริงตอนกด "คำนวณ" ในขั้นที่ 2 (รายการใหม่ยังไม่มี orgactlist_id จนถึงตอนนั้น)
+ * - ย้อนกลับจากขั้นที่ 2 (ปุ่มกลับ หรือ Back ของเบราว์เซอร์ -> ?resume=1): เห็นค่าที่กรอกไว้ */
 
 export type OfficeInfoType = {
   info_id: string;
@@ -61,11 +66,13 @@ function validate(types: OfficeInfoType[], form: Record<string, string>) {
 export default function OfficeInfoClient({
   orgId,
   editId = null, // มีค่า = โหมดแก้ไขรายการเดิม ต้องพกไปขั้นที่ 2
+  resume = false, // true = กลับมาจากขั้นที่ 2 ของรายการใหม่
   types,
   saved: savedRows,
 }: {
   orgId: string;
   editId?: string | null;
+  resume?: boolean;
   types: OfficeInfoType[];
   saved: SavedInfo[];
 }) {
@@ -73,112 +80,64 @@ export default function OfficeInfoClient({
   const nextHref = editId
     ? `/organization/footprint/activity?edit=${editId}`
     : '/organization/footprint/activity';
+  const scope = draftScope(editId); // 'new' หรือ id ของรายการที่แก้ไข
 
-  // แถวที่บันทึกไว้แล้ว: key = info_id (เก็บไว้เพื่อรู้ว่าต้อง "อัปเดต" หรือ "เพิ่มใหม่")
-  const [saved, setSaved] = useState<Record<string, { orginfo_id: string; amount: string }>>(() => {
-    const m: Record<string, { orginfo_id: string; amount: string }> = {};
-    for (const r of savedRows) {
-      if (r.info_id) m[r.info_id] = { orginfo_id: r.orginfo_id, amount: r.amount ?? '' };
-    }
-    return m;
-  });
-
+  // ค่าเริ่มต้น: รายการใหม่ = ว่าง / แก้ไข = ค่าที่บันทึกไว้ของรายการนั้น
   const [form, setForm] = useState<Record<string, string>>(() => {
+    const savedByInfo: Record<string, string> = {};
+    for (const r of savedRows) if (r.info_id) savedByInfo[r.info_id] = r.amount ?? '';
     const init: Record<string, string> = {};
-    for (const t of types) init[t.info_id] = saved[t.info_id]?.amount ?? '';
+    for (const t of types) init[t.info_id] = savedByInfo[t.info_id] ?? '';
     return init;
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [openHint, setOpenHint] = useState<Record<string, boolean>>({});
-  const [saving, setSaving] = useState(false);
+
+  // [แก้ไข] เข้ามาใหม่ (navbar/dashboard/ปุ่มแก้ไขจากรายงาน) = เริ่มจากค่าตั้งต้น ล้างค่าที่พักไว้
+  //         ย้อนกลับมาจากขั้นที่ 2 (?resume=1) = เติมค่าที่กรอกไว้กลับเข้าฟอร์ม
+  // อ่าน sessionStorage ได้หลังหน้าโหลดในเบราว์เซอร์แล้วเท่านั้น จึงทำใน useEffect
+  useEffect(() => {
+    if (!resume) {
+      clearOfficeDraft(scope);
+      return;
+    }
+    const draft = readOfficeDraft(orgId, scope);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- เติมค่าจาก sessionStorage ครั้งเดียวหลังโหลด
+    if (draft) setForm((prev) => ({ ...prev, ...draft }));
+  }, [resume, orgId, scope]);
 
   function setField(id: string, value: string) {
     setForm((prev) => ({ ...prev, [id]: value }));
     if (errors[id]) setErrors((prev) => ({ ...prev, [id]: '' }));
   }
 
-  async function handleNext(e: React.FormEvent) {
+  // [แก้ไข] ปุ่ม "ถัดไป": ตรวจข้อมูลแล้วพักค่าไว้ ยังไม่บันทึกลง DB
+  // (บันทึกจริงตอนกด "คำนวณและดูรายงาน" ในขั้นที่ 2 ทั้งรายการใหม่และรายการที่แก้ไข)
+  function handleNext(e: React.FormEvent) {
     e.preventDefault();
 
     const { errors: errs, clean } = validate(types, form);
     setErrors(errs);
-    if (Object.keys(errs).length > 0) {
-      alert('กรุณาตรวจสอบข้อมูลที่กรอก (ช่องที่มีข้อความสีแดง)');
-      return;
-    }
+    // [แก้ไข] ไม่เด้ง alert แล้ว แสดงกรอบแดง + ข้อความใต้ช่องที่ผิดอย่างเดียว
+    if (Object.keys(errs).length > 0) return;
 
-    setSaving(true);
-    const next = { ...saved }; // อัปเดตตามที่สำเร็จจริง กันบันทึกซ้ำถ้าล้มกลางทาง
-    let failMessage: string | null = null;
-
-    try {
-      // แยกว่าแต่ละหัวข้อต้อง เพิ่ม / แก้ / ลบ
-      const toInsert: { org_id: string; info_id: string; amount: string }[] = [];
-      const toUpdate: { info_id: string; orginfo_id: string; amount: string }[] = [];
-      const toDelete: { info_id: string; orginfo_id: string }[] = [];
-
-      for (const t of types) {
-        const value = clean[t.info_id];
-        const ex = next[t.info_id];
-        if (value === '') {
-          if (ex) toDelete.push({ info_id: t.info_id, orginfo_id: ex.orginfo_id });
-        } else if (!ex) {
-          toInsert.push({ org_id: orgId, info_id: t.info_id, amount: value });
-        } else if (ex.amount !== value) {
-          toUpdate.push({ info_id: t.info_id, orginfo_id: ex.orginfo_id, amount: value });
-        }
-      }
-
-      if (toInsert.length > 0) {
-        const { data, error } = await supabase
-          .from('org_office_info')
-          .insert(toInsert)
-          .select('orginfo_id, info_id, amount');
-        if (error) throw error;
-        for (const r of data ?? []) {
-          if (r.info_id) next[r.info_id] = { orginfo_id: r.orginfo_id, amount: r.amount ?? '' };
-        }
-      }
-
-      for (const u of toUpdate) {
-        const { error } = await supabase
-          .from('org_office_info')
-          .update({ amount: u.amount, updated_at: new Date().toISOString() })
-          .eq('orginfo_id', u.orginfo_id)
-          .eq('org_id', orgId);
-        if (error) throw error;
-        next[u.info_id] = { orginfo_id: u.orginfo_id, amount: u.amount };
-      }
-
-      if (toDelete.length > 0) {
-        const { error } = await supabase
-          .from('org_office_info')
-          .delete()
-          .in('orginfo_id', toDelete.map((d) => d.orginfo_id))
-          .eq('org_id', orgId);
-        if (error) throw error;
-        for (const d of toDelete) delete next[d.info_id];
-      }
-    } catch (err) {
-      // [แก้ไข] แปลง error ของ DB เป็นข้อความที่อ่านเข้าใจ
-      const e = err as { code?: string; message?: string };
-      failMessage = e.message ? dbErrorMessage({ code: e.code, message: e.message }) : 'ไม่ทราบสาเหตุ';
-    } finally {
-      setSaved(next);
-      setSaving(false);
-    }
-
-    if (failMessage) {
-      alert('บันทึกข้อมูลสำนักงานไม่สำเร็จ: ' + failMessage);
-      return;
-    }
+    writeOfficeDraft(orgId, scope, clean);
+    // เปลี่ยน URL หน้านี้ใน history เป็น ?resume=1 ก่อนไปขั้นที่ 2
+    // กด Back ของเบราว์เซอร์กลับมาจะได้เห็นค่าที่กรอกไว้ (ไม่ถูกล้างเหมือนเข้ามาใหม่)
+    const here = new URLSearchParams(window.location.search);
+    here.set('resume', '1');
+    window.history.replaceState(null, '', `?${here.toString()}`);
     router.push(nextHref);
   }
+
+  /* [ปิดใช้งาน] เดิมโหมดแก้ไขบันทึกข้อมูลสำนักงานลง DB ทันทีที่กดปุ่มในหน้านี้
+   * ตอนนี้ย้ายไปบันทึกตอนกดคำนวณในขั้นที่ 2 (FootprintClient -> saveOfficeInfo) ให้เหมือนรายการใหม่ */
 
   return (
     <form onSubmit={handleNext} noValidate className="max-w-[1150px] mx-auto px-8 py-8">
       <h1 className="mb-4 text-[32px] font-medium text-black">วิเคราะห์การปล่อยก๊าซเรือนกระจก</h1>
       <FootprintStepper current={1} />
+
 
       <div className="overflow-hidden rounded-[25px] border border-[#BDC9C1] bg-white">
         <div className="flex items-center gap-2 border-b border-[#BDC9C1] bg-[#F2F4F6] px-4 py-2">
@@ -246,14 +205,15 @@ export default function OfficeInfoClient({
       </div>
 
       <div className="mt-8 flex items-center gap-4">
+        {/* [แก้ไข] ปุ่ม "ถัดไป" ไปหน้ากรอกข้อมูลการดำเนินกิจกรรม (ยังไม่บันทึกลง DB) */}
         <button
           type="submit"
-          disabled={saving}
-          className="h-[60px] rounded-full bg-[#32885F] px-8 text-base font-semibold tracking-wide text-white disabled:opacity-60"
+          className="h-[60px] rounded-full bg-[#32885F] px-10 text-base font-semibold tracking-wide text-white"
         >
-          {saving ? 'กำลังบันทึก...' : 'กรอกข้อมูลการดำเนินกิจกรรม'}
+          ถัดไป ›
         </button>
-        <Link href={nextHref} className="text-sm text-[#6B7280] underline">
+        {/* ข้ามขั้นตอน = ไม่ใช้ค่าในหน้านี้ (รายการใหม่: ไม่มีข้อมูลสำนักงาน / แก้ไข: คงค่าเดิมใน DB) */}
+        <Link href={nextHref} onClick={() => clearOfficeDraft(scope)} className="text-sm text-[#6B7280] underline">
           ข้ามขั้นตอนนี้
         </Link>
       </div>

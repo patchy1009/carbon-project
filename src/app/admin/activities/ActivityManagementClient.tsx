@@ -9,6 +9,8 @@ import { deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
 import { validateForm, extendSchema, notDuplicate, existsIn, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber } from '@/lib/normalization';
 import { fieldError as FieldError } from '@/components/FieldError';
+import { OCR_SOURCES } from '@/lib/bills/types';
+import { PencilIcon, TrashIcon } from '@/components/icons'; // [แก้ไข] แทนอิโมจิ ✏️ 🗑️
 
 /* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) เดิม validate แล้วเก็บ error ไว้ใน state แต่ "ไม่ได้แสดง" ใน modal -> เพิ่ม <FieldError> ใต้ทุกช่อง
@@ -36,7 +38,7 @@ const DETAIL_SELECT =
 
 const emptyScopeForm = { scope_number: '', scope_name: '', scope_detail: '' };
 const emptyActivityForm = { scope_id: '', activity_name: '' };
-const emptyDetailForm = { activity_id: '', detail_name: '', unit: '', description: '', ef_id: '', gwp_id: '' };
+const emptyDetailForm = { activity_id: '', detail_name: '', unit: '', description: '', ef_id: '', gwp_id: '', ocr_source: '' };
 
 export default function ActivityManagementClient({
   initialScopes,
@@ -107,6 +109,7 @@ export default function ActivityManagementClient({
             description: row.description ?? '',
             ef_id: row.ef_id ?? '',
             gwp_id: row.gwp_id ?? '',
+            ocr_source: row.ocr_source ?? '',
           }
         : emptyDetailForm
     );
@@ -255,6 +258,8 @@ export default function ActivityManagementClient({
         detail_name: [notDuplicate('ชื่อรายละเอียดในกิจกรรมนี้', sameActivityNames)],
         ef_id: [existsIn('ค่า EF', efOptions.map((o) => o.ef_id))],
         gwp_id: [existsIn('ค่า GWP', gwpOptions.map((o) => o.gwp_id))],
+        // [เพิ่ม] บิลแต่ละแบบเติมได้ช่องเดียว (กันยอดจากบิลเดียวกันถูกนับ 2 ช่อง)
+        ocr_source: [notDuplicate('ประเภทบิล', details.filter((d) => d.scopedetail_id !== editDetailId).map((d) => d.ocr_source))],
       })
     );
     if (!result.ok) { setDetailErrors(result.errors); return; }
@@ -267,6 +272,11 @@ export default function ActivityManagementClient({
       description: result.clean.description || null,
       ef_id: result.clean.ef_id || null,
       gwp_id: result.clean.gwp_id || null,
+      // ส่ง ocr_source เฉพาะเมื่อเลือกไว้ หรือแถวเดิมเคยมีค่า (ต้องการล้าง)
+      // กันบันทึกไม่ได้ในกรณีที่ยังไม่ได้รัน supabase/activity_detail_ocr_source.sql (ยังไม่มีคอลัมน์)
+      ...(result.clean.ocr_source || details.find((d) => d.scopedetail_id === editDetailId)?.ocr_source
+        ? { ocr_source: result.clean.ocr_source || null }
+        : {}),
     };
 
     if (editDetailId) {
@@ -306,7 +316,7 @@ export default function ActivityManagementClient({
   return (
     <div className="max-w-[1280px] px-8 pt-16 pb-16 space-y-12">
       <div>
-        <h1 className="text-[32px] font-bold leading-10 text-[#191C1C] font-['Be_Vietnam_Pro']">
+        <h1 className="text-[32px] font-bold leading-10 text-[#191C1C]">
           ขอบเขต &amp; กิจกรรมคาร์บอน (Scopes &amp; Activity Management)
         </h1>
       </div>
@@ -315,7 +325,7 @@ export default function ActivityManagementClient({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#266955]" />
-            <h2 className="text-xl font-bold text-[#191C1C] font-['Be_Vietnam_Pro']">
+            <h2 className="text-xl font-bold text-[#191C1C]">
               ขอบเขตคาร์บอน 3 สโคป (Carbon Scopes Configuration)
             </h2>
           </div>
@@ -346,10 +356,10 @@ export default function ActivityManagementClient({
                       Scope {scope.scope_number}
                     </span>
                   </div>
-                  <h3 className="text-lg font-semibold text-[#191C1C] font-['Be_Vietnam_Pro']">
+                  <h3 className="text-lg font-semibold text-[#191C1C]">
                     {scope.scope_name}
                   </h3>
-                  <p className="text-sm leading-relaxed text-[#3F4944] font-['Be_Vietnam_Pro'] whitespace-pre-line">
+                  <p className="text-sm leading-relaxed text-[#3F4944] whitespace-pre-line">
                     {scope.scope_detail ?? ''}
                   </p>
                 </div>
@@ -358,13 +368,13 @@ export default function ActivityManagementClient({
                     onClick={() => openScopeModal(scope)}
                     className="flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-sm text-[#266955] shadow-sm"
                   >
-                    ✏️ แก้ไข
+                    <PencilIcon /> แก้ไข
                   </button>
                   <button
                     onClick={() => handleDeleteScope(scope.scope_id)}
                     className="flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-sm text-[#266955] shadow-sm"
                   >
-                    🗑️ ลบขอบเขต
+                    <TrashIcon /> ลบขอบเขต
                   </button>
                 </div>
               </div>
@@ -376,7 +386,7 @@ export default function ActivityManagementClient({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#266955]" />
-            <h2 className="text-xl font-bold text-[#191C1C] font-['Be_Vietnam_Pro']">
+            <h2 className="text-xl font-bold text-[#191C1C]">
               กิจกรรมที่ต้องการจากสำนักงาน (Office Required Activities)
             </h2>
           </div>
@@ -416,15 +426,17 @@ export default function ActivityManagementClient({
                         onClick={() => openActivityModal(a)}
                         className="text-[#3F4944] hover:text-[#266955]"
                         title="แก้ไข"
+                      aria-label="แก้ไข"
                       >
-                        ✏️
+                        <PencilIcon />
                       </button>
                       <button
                         onClick={() => handleDeleteActivity(a.activity_id)}
                         className="text-[#3F4944] hover:text-red-500"
                         title="ลบ"
+                      aria-label="ลบ"
                       >
-                        🗑️
+                        <TrashIcon />
                       </button>
                     </span>
                   </div>
@@ -442,7 +454,7 @@ export default function ActivityManagementClient({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2.5 rounded-full bg-[#266955]" />
-            <h2 className="text-xl font-bold text-[#191C1C] font-['Be_Vietnam_Pro']">
+            <h2 className="text-xl font-bold text-[#191C1C]">
               รายละเอียดกิจกรรม (Activity Details)
             </h2>
           </div>
@@ -483,7 +495,15 @@ export default function ActivityManagementClient({
                       </span>
                     </td>
                     <td className="px-4 py-4 text-[#191C1C]">{d.activity?.activity_name}</td>
-                    <td className="px-4 py-4 text-[#191C1C]">{d.detail_name}</td>
+                    <td className="px-4 py-4 text-[#191C1C]">
+                      {d.detail_name}
+                      {/* [เพิ่ม] แสดงว่ารายการนี้รับข้อมูลจากบิลประเภทไหน */}
+                      {d.ocr_source && (
+                        <span className="ml-2 inline-block rounded bg-[#ECFDF5] px-1.5 py-0.5 text-[10px] font-semibold text-[#047857]">
+                          OCR: {OCR_SOURCES.find((o) => o.value === d.ocr_source)?.label ?? d.ocr_source}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-4 text-center">
                       <span className="px-2 py-0.5 rounded bg-[#EDEEEE] text-xs font-bold text-[#6F7974]">
                         {d.unit}
@@ -501,15 +521,17 @@ export default function ActivityManagementClient({
                         onClick={() => openDetailModal(d)}
                         className="text-[#3F4944] hover:text-[#266955]"
                         title="แก้ไข"
+                      aria-label="แก้ไข"
                       >
-                        ✏️
+                        <PencilIcon />
                       </button>
                       <button
                         onClick={() => handleDeleteDetail(d.scopedetail_id)}
                         className="text-[#3F4944] hover:text-red-500"
                         title="ลบ"
+                      aria-label="ลบ"
                       >
-                        🗑️
+                        <TrashIcon />
                       </button>
                     </td>
                   </tr>
@@ -664,6 +686,23 @@ export default function ActivityManagementClient({
                 ))}
               </select>
               <FieldError message={detailErrors.gwp_id} />
+            </div>
+            {/* [เพิ่ม] ผูกรายการนี้กับบิลที่อ่านด้วย OCR: ปริมาณจากบิลประเภทนี้จะถูกเติมลงช่องนี้ในหน้าบันทึกกิจกรรม */}
+            <div>
+              <label className="mb-1 block text-xs text-[#3F4944]">รับข้อมูลจากบิล (OCR ช่วยกรอก)</label>
+              <select
+                className={inputCls(!!detailErrors.ocr_source)}
+                value={detailForm.ocr_source}
+                onChange={(e) => setDetailForm({ ...detailForm, ocr_source: e.target.value })}
+              >
+                <option value="">ไม่รับข้อมูลจากบิล</option>
+                {OCR_SOURCES.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <FieldError message={detailErrors.ocr_source} />
             </div>
             <div>
               <textarea

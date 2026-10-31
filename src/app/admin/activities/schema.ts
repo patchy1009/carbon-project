@@ -1,5 +1,6 @@
 import {
-  required, requiredSelect, notNumericOnly, englishOnly, isPositiveInteger, maxLength, type formSchema,} from '@/lib/validation';
+  required, requiredSelect, notNumericOnly, englishOnly, isPositiveInteger, maxLength, existsIn, type formSchema,} from '@/lib/validation';
+import { OCR_SOURCES } from '@/lib/bills/types';
 import { normalizeNumberString, normalizeTextArea} from '@/lib/normalization';
 
 /* กฎที่ต้องใช้ข้อมูลบนหน้าจอ (ห้ามซ้ำ / ตัวเลือกต้องมีอยู่จริง) ใส่เพิ่มตอน submit
@@ -28,7 +29,7 @@ export const activitySchema: formSchema<ActivityField> = {
   },
 };
 
-export type DetailField = 'activity_id' | 'detail_name' | 'unit' | 'description' | 'ef_id' | 'gwp_id' ;
+export type DetailField = 'activity_id' | 'detail_name' | 'unit' | 'description' | 'ef_id' | 'gwp_id' | 'ocr_source';
 export const detailSchema: formSchema<DetailField> = {
   activity_id: { rules: [requiredSelect('กิจกรรม')] },
   detail_name: {
@@ -45,5 +46,9 @@ export const detailSchema: formSchema<DetailField> = {
   },
   gwp_id: {
     rules: []
-  }
+  },
+  // [เพิ่ม] รับข้อมูลจากบิล (OCR) ไม่บังคับ: ต้องเป็นค่าในรายการ และห้ามซ้ำกับรายการอื่น (ใส่ตอน submit)
+  ocr_source: {
+    rules: [existsIn('ประเภทบิล', OCR_SOURCES.map((o) => o.value))],
+  },
 };

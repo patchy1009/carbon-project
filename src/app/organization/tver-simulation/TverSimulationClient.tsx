@@ -11,6 +11,7 @@ import {
 } from '@/lib/validation';
 import { normalizeNumberString, normalizeToArabicNumber, formatCondition } from '@/lib/normalization';
 import { dbErrorMessage } from '@/lib/supabaseCrud';
+import { showAlert, showError } from '@/lib/dialog'; // [แก้ไข] กล่องแจ้งเตือนกลางแทน alert
 
 /* [ปรับปรุง] normalize / validate ฟอร์มจำลองโครงการ T-VER
  * 1) ชื่อโครงการ: ห้ามว่าง / ตัวเลขล้วน / ยาวเกิน 150 ตัวอักษร
@@ -81,7 +82,6 @@ export default function TverSimulationClient({
   const [savedProjectId, setSavedProjectId] = useState<string | null>(
     existingProject?.orgtreeproject_id ?? null
   );
-  const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // [เพิ่ม] error ใต้ช่อง: key = projectName / treeId / startDate / tverdetail_id
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -159,7 +159,6 @@ export default function TverSimulationClient({
     if (Object.keys(errs).length > 0) return;
 
     setSaving(true);
-    setNotice(null);
 
     const credits = calculateCredits();
     const cleanName = result.clean.projectName; // ชื่อที่ normalize แล้ว
@@ -175,7 +174,6 @@ export default function TverSimulationClient({
     };
 
     let projectId = savedProjectId;
-    const isUpdate = projectId !== null;
 
     if (projectId) {
       // เคยบันทึกแล้ว -> อัปเดตโครงการเดิม ไม่สร้างซ้ำ
@@ -185,7 +183,7 @@ export default function TverSimulationClient({
         .eq('orgtreeproject_id', projectId);
       if (error) {
         setSaving(false);
-        return alert('อัปเดตโครงการไม่สำเร็จ: ' + dbErrorMessage(error));
+        return showError('อัปเดตโครงการไม่สำเร็จ: ' + dbErrorMessage(error));
       }
 
       // ลบรายละเอียดเดิมก่อน แล้วค่อยบันทึกชุดใหม่ด้านล่าง
@@ -195,7 +193,7 @@ export default function TverSimulationClient({
         .eq('orgtreeproject_id', projectId);
       if (deleteError) {
         setSaving(false);
-        return alert('อัปเดตรายละเอียดไม่สำเร็จ: ' + dbErrorMessage(deleteError));
+        return showError('อัปเดตรายละเอียดไม่สำเร็จ: ' + dbErrorMessage(deleteError));
       }
     } else {
       // ยังไม่เคยบันทึก -> สร้างโครงการใหม่
@@ -206,7 +204,7 @@ export default function TverSimulationClient({
         .single();
       if (error || !data) {
         setSaving(false);
-        return alert('บันทึกโครงการไม่สำเร็จ: ' + (error ? dbErrorMessage(error) : 'ไม่ทราบสาเหตุ'));
+        return showError('บันทึกโครงการไม่สำเร็จ: ' + (error ? dbErrorMessage(error) : 'ไม่ทราบสาเหตุ'));
       }
       projectId = data.orgtreeproject_id as string;
       setSavedProjectId(projectId); // จำไว้ เพื่อให้การกดครั้งต่อไปเป็นการอัปเดต
@@ -230,17 +228,14 @@ export default function TverSimulationClient({
         .insert(detailRows);
       if (detailError) {
         setSaving(false);
-        return alert('บันทึกรายละเอียดโครงการไม่สำเร็จ: ' + dbErrorMessage(detailError));
+        return showError('บันทึกรายละเอียดโครงการไม่สำเร็จ: ' + dbErrorMessage(detailError));
       }
     }
 
     setResult(credits);
     setSaving(false);
-    setNotice(
-      isUpdate
-        ? `อัปเดตโครงการ "${cleanName}" ในรายการโครงการปลูกป่า T-VER เรียบร้อยแล้ว`
-        : `โครงการ "${cleanName}" ถูกบันทึกลงรายการโครงการปลูกป่า T-VER เรียบร้อยแล้ว`
-    );
+    // [แก้ไข] เดิมแสดงแถบแจ้งเตือนลอยค้างไว้ -> popup สั้นๆ แทน (ครั้งถัดไปที่กดจะอัปเดตโครงการเดิม ไม่สร้างซ้ำ)
+    showAlert('จำลองโครงการเรียบร้อย', { title: 'สำเร็จ', tone: 'success' });
   }
 
   const maxValue = result ? Math.max(result.year1, result.year2, result.year3) : 0;
@@ -248,35 +243,7 @@ export default function TverSimulationClient({
 
   return (
     <div className="max-w-[1280px] mx-auto px-8 py-8">
-      {/* แจ้งเตือนหลังบันทึกสำเร็จ (ลอยอยู่บนจอ ไม่หายไปจนกว่าผู้ใช้จะปิดเอง) */}
-      {notice && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 w-full max-w-[560px] px-4">
-          <div className="flex items-start gap-3 rounded-xl border border-[#BBF7D0] bg-[#F0FDF4] px-4 py-3 shadow-lg">
-            <span className="mt-0.5 text-lg text-[#16A34A]">✓</span>
-            <div className="flex-1 text-sm text-[#166534]">
-              <p className="font-semibold">{notice}</p>
-              <p className="mt-1">
-                ไม่ต้องสร้างโครงการนี้ซ้ำ หากแก้ไขข้อมูลแล้วกดปุ่มอีกครั้ง
-                ระบบจะอัปเดตโครงการเดิมให้
-              </p>
-              <Link
-                href="/organization/dashboard"
-                className="mt-2 inline-block font-semibold underline"
-              >
-                ดูในรายการโครงการ T-VER ›
-              </Link>
-            </div>
-            <button
-              type="button"
-              onClick={() => setNotice(null)}
-              aria-label="ปิดการแจ้งเตือน"
-              className="text-[#166534]"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
+      {/* [ลบ] แถบแจ้งเตือนลอย (มีลิงก์ไปแดชบอร์ด) -> ใช้ popup "จำลองโครงการเรียบร้อย" ของกล่องแจ้งเตือนกลางแทน */}
 
       <div className="mb-6">
         {isEditMode && (
@@ -384,11 +351,8 @@ export default function TverSimulationClient({
             disabled={saving}
             className="w-[239px] h-[60px] rounded-[20px] bg-[#32885F] text-white text-base font-semibold disabled:opacity-60"
           >
-            {saving
-              ? 'กำลังบันทึก...'
-              : savedProjectId
-              ? 'คำนวณและอัปเดตโครงการ'
-              : 'คำนวณและดูรายงาน'}
+            {/* [แก้ไข] เดิม "คำนวณและดูรายงาน" / "คำนวณและอัปเดตโครงการ" */}
+            {saving ? 'กำลังบันทึก...' : 'จำลองโครงการปลูกป่า'}
           </button>
         </form>
 
@@ -399,7 +363,7 @@ export default function TverSimulationClient({
 
           {!result && (
             <p className="text-center text-[#9CA3AF] py-20">
-              กรอกข้อมูลด้านซ้ายแล้วกด &quot;คำนวณและดูรายงาน&quot; เพื่อดูผลลัพธ์
+              กรอกข้อมูลด้านซ้ายแล้วกด &quot;จำลองโครงการปลูกป่า&quot; เพื่อดูผลลัพธ์
             </p>
           )}
 

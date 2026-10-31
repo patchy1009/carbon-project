@@ -28,3 +28,34 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* [เพิ่ม] แอนิเมชันของกล่องแจ้งเตือน/ยืนยัน (src/components/DialogHost.tsx) */
+@keyframes dialog-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes dialog-pop {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+/* [เพิ่ม] scroll bar ที่มองเห็นตลอด สำหรับลิสต์ในกรอบ (เช่น รายการใน dashboard)
+ * Edge/Windows 11 ซ่อน scroll bar จนกว่าจะเอาเมาส์ไปชี้ จึงกำหนดสไตล์เองให้เห็นเสมอ */
+.scroll-list {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.scroll-list::-webkit-scrollbar {
+  width: 8px;
+}
+.scroll-list::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 9999px;
+}
+.scroll-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+.scroll-list::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

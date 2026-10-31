@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Modal from "./Modal";
+import { showAlert } from "@/lib/dialog"; // [แก้ไข] กล่องแจ้งเตือนกลางแทน alert
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -21,12 +22,20 @@ export default function AuthModal({
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState(false);
+  // [เพิ่ม] ข้อความ error ของการเข้าสู่ระบบ แสดงใต้ฟอร์ม (เดิมเด้ง alert ซ้ำกับข้อความสีแดง)
+  const [loginMessage, setLoginMessage] = useState<string | null>(null);
 
   // state ฟอร์ม Register
   const [regEmail, setRegEmail] = useState("");
   const [regPassword, setRegPassword] = useState("");
   const [regOrgName, setRegOrgName] = useState("");
   const [regIndustry, setRegIndustry] = useState("");
+  // [เพิ่ม] error ของแต่ละช่องในฟอร์มลงทะเบียน (แทน required ของ browser ที่เด้ง popup)
+  const [regErrors, setRegErrors] = useState<Record<string, string>>({});
+  const regBorder = (field: string) =>
+    regErrors[field] ? "border-red-500 bg-red-50/20" : "border-gray-300 focus:border-[#1c5d41]";
+  const clearRegError = (field: string) =>
+    setRegErrors((prev) => (prev[field] ? { ...prev, [field]: "" } : prev));
 
   // state ช่องกรอก OTP 6 ช่อง
   const [otp, setOtp] = useState<string[]>(["", "", "", "", "", ""]);
@@ -54,10 +63,12 @@ export default function AuthModal({
 
     if (!loginEmail.trim() || !loginPassword) {
       setLoginError(true);
+      setLoginMessage("*กรุณากรอกอีเมลและรหัสผ่าน");
       return;
     }
 
     setLoginError(false);
+    setLoginMessage(null);
     setIsLoading(true);
 
     try {
@@ -77,7 +88,7 @@ export default function AuthModal({
       // API แจ้งว่า Login ไม่สำเร็จ
       if (!response.ok) {
         setLoginError(true);
-        alert(data.error || "ไม่สามารถเข้าสู่ระบบได้");
+        setLoginMessage("*" + (data.error || "รหัสผ่านหรืออีเมลไม่ถูกต้อง"));
         return;
       }
 
@@ -91,7 +102,7 @@ export default function AuthModal({
 
       if (!expectedRoute || data.redirectTo !== expectedRoute) {
         setLoginError(true);
-        alert("ไม่สามารถตรวจสอบสิทธิ์ผู้ใช้ได้");
+        setLoginMessage("*ไม่สามารถตรวจสอบสิทธิ์ผู้ใช้ได้");
         return;
       }
 
@@ -101,7 +112,7 @@ export default function AuthModal({
     } catch (error) {
       console.error("Login error:", error);
       setLoginError(true);
-      alert("ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่");
+      setLoginMessage("*ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่");
     } finally {
       setIsLoading(false);
     }
@@ -110,6 +121,15 @@ export default function AuthModal({
 
   const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // [แก้ไข] ตรวจเองแล้วแสดงกรอบแดง + ข้อความใต้ช่อง แทน required ของ browser
+    const errs: Record<string, string> = {};
+    if (!regEmail.trim()) errs.email = "กรุณากรอกอีเมล";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regEmail.trim())) errs.email = "รูปแบบอีเมลไม่ถูกต้อง";
+    if (!regPassword) errs.password = "กรุณากรอกรหัสผ่าน";
+    if (!regOrgName.trim()) errs.orgName = "กรุณากรอกชื่อองค์กร / บริษัท";
+    if (!regIndustry) errs.industry = "กรุณาเลือกประเภทอุตสาหกรรม";
+    setRegErrors(errs);
+    if (Object.keys(errs).length > 0) return;
     setStep("otp");
   };
 
@@ -119,7 +139,7 @@ export default function AuthModal({
       setOtpError(true);
       return;
     }
-    alert("ยืนยันการลงทะเบียนสำเร็จ!");
+    showAlert("ยืนยันการลงทะเบียนสำเร็จ!", { title: "ลงทะเบียนสำเร็จ", tone: "success" });
     onClose();
   };
 
@@ -138,7 +158,7 @@ export default function AuthModal({
               </p>
             </div>
 
-            <form onSubmit={handleLoginSubmit} className="space-y-4 text-left">
+            <form onSubmit={handleLoginSubmit} noValidate className="space-y-4 text-left">
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-1">
                   อีเมล (email)
@@ -176,7 +196,7 @@ export default function AuthModal({
 
               {loginError && (
                 <p className="text-[11px] text-red-500 text-center font-medium">
-                  *รหัสผ่านหรืออีเมลไม่ถูกต้อง
+                  {loginMessage ?? "*รหัสผ่านหรืออีเมลไม่ถูกต้อง"}
                 </p>
               )}
 
@@ -211,19 +231,19 @@ export default function AuthModal({
               </p>
             </div>
 
-            <form onSubmit={handleRegisterSubmit} className="space-y-3 text-left">
+            <form onSubmit={handleRegisterSubmit} noValidate className="space-y-3 text-left">
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-1">
                   อีเมล (email)
                 </label>
                 <input
                   type="email"
-                  required
                   value={regEmail}
-                  onChange={(e) => setRegEmail(e.target.value)}
+                  onChange={(e) => { setRegEmail(e.target.value); clearRegError("email"); }}
                   placeholder="name@company.co.th"
-                  className="w-full px-4 py-2 text-xs rounded-full border border-gray-300 focus:outline-none focus:border-[#1c5d41]"
+                  className={`w-full px-4 py-2 text-xs rounded-full border focus:outline-none ${regBorder("email")}`}
                 />
+                {regErrors.email && <p className="mt-1 text-[11px] text-red-500">{regErrors.email}</p>}
               </div>
 
               <div>
@@ -232,12 +252,12 @@ export default function AuthModal({
                 </label>
                 <input
                   type="password"
-                  required
                   value={regPassword}
-                  onChange={(e) => setRegPassword(e.target.value)}
+                  onChange={(e) => { setRegPassword(e.target.value); clearRegError("password"); }}
                   placeholder="••••••••"
-                  className="w-full px-4 py-2 text-xs rounded-full border border-gray-300 focus:outline-none focus:border-[#1c5d41]"
+                  className={`w-full px-4 py-2 text-xs rounded-full border focus:outline-none ${regBorder("password")}`}
                 />
+                {regErrors.password && <p className="mt-1 text-[11px] text-red-500">{regErrors.password}</p>}
               </div>
 
               <div>
@@ -246,12 +266,12 @@ export default function AuthModal({
                 </label>
                 <input
                   type="text"
-                  required
                   value={regOrgName}
-                  onChange={(e) => setRegOrgName(e.target.value)}
+                  onChange={(e) => { setRegOrgName(e.target.value); clearRegError("orgName"); }}
                   placeholder="บริษัท ตัวอย่าง จำกัด"
-                  className="w-full px-4 py-2 text-xs rounded-full border border-gray-300 focus:outline-none focus:border-[#1c5d41]"
+                  className={`w-full px-4 py-2 text-xs rounded-full border focus:outline-none ${regBorder("orgName")}`}
                 />
+                {regErrors.orgName && <p className="mt-1 text-[11px] text-red-500">{regErrors.orgName}</p>}
               </div>
 
               <div>
@@ -259,16 +279,16 @@ export default function AuthModal({
                   ประเภทอุตสาหกรรม
                 </label>
                 <select
-                  required
                   value={regIndustry}
-                  onChange={(e) => setRegIndustry(e.target.value)}
-                  className="w-full px-4 py-2 text-xs rounded-full border border-gray-300 focus:outline-none focus:border-[#1c5d41] text-gray-600 bg-white"
+                  onChange={(e) => { setRegIndustry(e.target.value); clearRegError("industry"); }}
+                  className={`w-full px-4 py-2 text-xs rounded-full border focus:outline-none text-gray-600 bg-white ${regBorder("industry")}`}
                 >
                   <option value="">เลือกประเภทอุตสาหกรรม</option>
                   <option value="energy">พลังงานและสาธารณูปโภค</option>
                   <option value="manufacturing">การผลิตและอุตสาหกรรม</option>
                   <option value="services">บริการและการพาณิชย์</option>
                 </select>
+                {regErrors.industry && <p className="mt-1 text-[11px] text-red-500">{regErrors.industry}</p>}
               </div>
 
               <button
@@ -337,7 +357,7 @@ export default function AuthModal({
               ไม่ได้รับข้อความความยืนยัน?{" "}
               <button
                 type="button"
-                onClick={() => alert("ส่งรหัส OTP ใหม่แล้ว")}
+                onClick={() => showAlert("ส่งรหัส OTP ใหม่แล้ว", { tone: "success" })}
                 className="text-[#1c5d41] font-semibold hover:underline ml-1"
               >
                 ส่งใหม่อีกครั้ง

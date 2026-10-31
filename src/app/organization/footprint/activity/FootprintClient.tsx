@@ -1,16 +1,26 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import Modal from '@/components/Modal';
 import FootprintStepper from '@/components/FootprintStepper';
 import type { ScopeGroup } from '@/types/footprint';
 import BillRow from '@/components/bills/BillRow';
-import { isEdited, keyOf, useBillOcr } from '@/lib/bills/useBillOcr';
-import type { BillType } from '@/lib/bills/types';
+import YearlySummary from '@/components/bills/YearlySummary';
+import { useBillOcr, type PendingBill } from '@/lib/bills/useBillOcr';
+import { checkBill, type BillTarget } from '@/lib/bills/checks';
+import { summarize, fillValue, formatQty, type GapChoice, type GapState } from '@/lib/bills/aggregate';
+import { ocrSourceOf, type ActivityPeriod, type BillType, type OcrSource } from '@/lib/bills/types';
 import { validateForm, required, notNumericOnly, maxLength, isDecimal, type formSchema } from '@/lib/validation';
 import { normalizeNumberString, normalizeToArabicNumber } from '@/lib/normalization';
+import { clearOfficeDraft, draftScope, hasOfficeValues, readOfficeDraft } from '@/lib/officeDraft';
+import { showAlert, showConfirm, showError } from '@/lib/dialog'; // [แก้ไข] กล่องแจ้งเตือนกลางแทน alert/confirm
+
+/* [ปรับปรุง] แนบบิล = OCR ช่วยกรอก (Auto-fill) อย่างเดียว ไม่เก็บรูปบิลลง Supabase แล้ว
+ *   แนบรูป -> POST /api/ocr (PaddleOCR) -> ตรวจแก้ใน BillRow -> กด "ยืนยัน"
+ *   -> รวมยอดตามช่องกิจกรรม (activity_detail.ocr_source) -> กด "เติมลงฟอร์ม" -> คำนวณด้วยสูตรเดิม
+ * ระบบแนบบิลเดิม (Storage 'bills' + ตาราง org_bill_file) ถูกคอมเมนต์ไว้ด้านล่าง ข้อมูลเก่าใน Supabase ยังอยู่ */
 
 /* [ปรับปรุง] normalize / validate ช่องที่ผู้ใช้กรอกเอง (ไม่รวมส่วน OCR ของบิล)
  * 1) ชื่อกิจกรรม: normalizeText + ห้ามว่าง + ห้ามเป็นตัวเลขล้วน + ยาวไม่เกิน NAME_MAX
@@ -20,33 +30,25 @@ import { normalizeNumberString, normalizeToArabicNumber } from '@/lib/normalizat
  * 4) ช่องปริมาณเปลี่ยนจาก type="number" เป็น text + inputMode="decimal" เพื่อรับเลขไทย */
 const AMOUNT_MAX_DECIMALS = 4;
 
-export type ExistingBill = {
-  bill_id: string;
-  bill_type: string;
-  file_path: string;
-  original_name: string | null;
-  file_size: number | null;
-};
+// [ปิดใช้งาน] บิลที่เคยบันทึกไว้ใน org_bill_file (ไม่โหลด/ไม่แสดงแล้ว)
+// export type ExistingBill = { bill_id: string; bill_type: string; file_path: string; original_name: string | null; file_size: number | null };
 
 type PeriodType = 'month' | 'year';
 
-// หมวดบิลที่ให้แนบ (เรียงตามที่แสดง) ; 'other' เป็นของเดิม แสดงเฉพาะเมื่อมีข้อมูลเก่า
-const BILL_CATEGORIES = [
+// หมวดบิลที่ให้แนบ (เรียงตามที่แสดง)
+const BILL_CATEGORIES: { value: BillType; label: string; hint: string }[] = [
   { value: 'water', label: 'บิลค่าน้ำ', hint: 'ใบแจ้งหนี้ค่าน้ำประปา' },
   { value: 'electricity', label: 'บิลค่าไฟฟ้า', hint: 'ใบแจ้งหนี้ค่าไฟฟ้า' },
-  { value: 'fuel', label: 'บิลน้ำมันเชื้อเพลิง', hint: 'ใบเสร็จหรือใบกำกับภาษีจากปั๊มน้ำมัน' },
-] as const;
-const billLabel = (v: string) =>
-  BILL_CATEGORIES.find((t) => t.value === v)?.label ?? (v === 'other' ? 'เอกสารอื่นๆ' : v);
+  { value: 'fuel', label: 'บิลน้ำมันเชื้อเพลิง', hint: 'ใบเสร็จหรือใบกำกับภาษีจากปั๊มน้ำมัน (แนบได้หลายใบต่อเดือน ระบบรวมยอดให้)' },
+];
+const billLabel = (v: string) => BILL_CATEGORIES.find((t) => t.value === v)?.label ?? v;
 
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-const MAX_BYTES = 10 * 1024 * 1024; // 10 MB ตรงกับที่ตั้งไว้ที่ bucket (อ่านอัตโนมัติได้ไม่เกิน 4 MB ดูที่ API)
+// [แก้ไข] Python OCR รับเฉพาะรูป (ไม่รับ PDF) และไม่เกิน 10 MB ตรงกับ /api/ocr และ api.py
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_BYTES = 10 * 1024 * 1024;
 // จำนวนไฟล์สูงสุดต่อหมวด (ปรับได้ตามต้องการ)
 const MAX_PER_TYPE: Record<PeriodType, number> = { month: 10, year: 50 };
 
-const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-const fmtSize = (n: number | null) =>
-  n === null ? '' : n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
 // ใช้จับไฟล์ซ้ำที่เลือกซ้ำในหน้าเดียวกัน
 const fileKey = (f: File) => `${f.name}|${f.size}|${f.lastModified}`;
 
@@ -105,23 +107,32 @@ export default function FootprintClient({
   orgId,
   existingLogId = null,       // มีค่า = โหมดแก้ไขรายการเดิม
   existingValues = {},        // ค่าที่เคยกรอก key = scopedetail_id
-  existingBills = [],         // บิลที่เคยแนบไว้
   existingName = '',          // ชื่อกิจกรรมเดิม (orgact_name)
   existingPeriod = '',        // 'YYYY-MM-DD' (period_month)
   existingPeriodType = 'month',
-  hasOfficeInfo = true,
 }: {
   scopeGroups: ScopeGroup[];
   orgId: string;
   existingLogId?: string | null;
   existingValues?: Record<string, string>;
-  existingBills?: ExistingBill[];
   existingName?: string;
   existingPeriod?: string;
   existingPeriodType?: PeriodType;
-  hasOfficeInfo?: boolean;
 }) {
   const isEdit = existingLogId !== null;
+  // ลิงก์ย้อนกลับไปขั้นที่ 1 (ปุ่มกลับ และลิงก์เตือนข้อมูลสำนักงาน)
+  // ?resume=1 = เอาค่าที่กรอกไว้กลับมา ไม่ล้างเหมือนเข้ามาใหม่ / ?edit= = ยังอยู่ในโหมดแก้ไขรายการเดิม
+  const backHref = isEdit
+    ? `/organization/footprint?edit=${existingLogId}&resume=1`
+    : '/organization/footprint?resume=1';
+
+  // [แก้ไข] รายการใหม่: ดูว่ากรอกข้อมูลสำนักงานในขั้นที่ 1 ไว้ไหม (ค่าที่ค้างใน sessionStorage)
+  // ฝั่ง server ถือว่ามี เพื่อไม่ให้กล่องเตือนกะพริบตอนโหลด
+  const hasOfficeInfo = useSyncExternalStore(
+    () => () => {},
+    () => hasOfficeValues(readOfficeDraft(orgId, 'new')),
+    () => true,
+  );
 
   const [values, setValues] = useState<Record<string, string>>(existingValues);
   // [เพิ่ม] error ใต้ช่อง: key = 'name' หรือ scopedetail_id
@@ -141,18 +152,84 @@ export default function FootprintClient({
   const periodMonth = derivePeriod(periodType, selMonth, selYear); // ค่าที่จะบันทึก
 
   // ส่วนแนบบิล
-  const [saved, setSaved] = useState<ExistingBill[]>(existingBills);
   const maxPerType = MAX_PER_TYPE[periodType];
 
   // ตัวเลือกปี พ.ศ.: ย้อนหลัง 5 ปี ไปข้างหน้า 1 ปี (รวมปีของรายการเดิมถ้าอยู่นอกช่วง)
   const nowBE = new Date().getFullYear() + 543;
 
   // อ่านบิลด้วย OCR + ตรวจเดือน/ซ้ำ (ถ้ายังไม่เลือกเดือน ใช้ค่าสำรองเพื่อไม่ให้แถวบิลพัง)
-  const ocrPeriod = {
+  const ocrPeriod: ActivityPeriod = {
     type: periodType,
     month: periodMonth || `${(selYear || nowBE) - 543}-01-01`,
   };
-  const bills = useBillOcr(orgId, ocrPeriod);
+  const bills = useBillOcr();
+
+  // [เพิ่ม] ช่องกิจกรรมที่รับข้อมูลจากบิล: จับคู่ด้วย activity_detail.ocr_source ที่แอดมินตั้ง (ไม่เดาจากชื่อ)
+  const billTargets = new Map<OcrSource, BillTarget>();
+  for (const g of scopeGroups) {
+    for (const d of g.details) {
+      if (d.ocr_source) {
+        billTargets.set(d.ocr_source, {
+          scopedetail_id: d.scopedetail_id, detail_name: d.detail_name, unit: d.unit, source: d.ocr_source,
+        });
+      }
+    }
+  }
+  const checkCtx = { period: ocrPeriod, items: bills.items, targets: billTargets };
+  const checksOf = (it: PendingBill) => checkBill(it, checkCtx);
+  const targetOf = (it: PendingBill) => {
+    const src = it.billType ? ocrSourceOf(it.billType, it.fuelType) : null;
+    return src ? billTargets.get(src) : undefined;
+  };
+
+  // [เพิ่ม] ยอดรวมจากบิลที่ยืนยันแล้ว แยกตามช่องกิจกรรม + ตัวเลือกเติมเดือนที่ขาด (รายปี)
+  const billSummaries = summarize(bills.items, checksOf, billTargets);
+  const [gaps, setGaps] = useState<GapState>({});
+  // ยอดที่เติมลงฟอร์มล่าสุดของแต่ละช่อง (ไว้แสดงป้าย "จากบิล" และเตือนถ้ายังไม่ได้เติม)
+  const [filled, setFilled] = useState<Record<string, { value: string; count: number }>>({});
+
+  function setGap(scopedetailId: string, month: number, choice: GapChoice | null) {
+    setGaps((prev) => {
+      const forTarget = { ...(prev[scopedetailId] ?? {}) };
+      if (choice) forTarget[month] = choice;
+      else delete forTarget[month];
+      return { ...prev, [scopedetailId]: forTarget };
+    });
+  }
+
+  /* [เพิ่ม] เติมยอดจากบิลลงช่องกิจกรรม (ผู้ใช้แก้ต่อในฟอร์มได้) ถามก่อนเขียนทับค่าที่กรอกเอง */
+  async function fillFromBills(ids?: string[]) {
+    const targets = billSummaries.filter((s) => !ids || ids.includes(s.target.scopedetail_id));
+    const next: Record<string, string> = {};
+    const overwrite: string[] = [];
+    for (const s of targets) {
+      const v = fillValue(s, ocrPeriod, gaps);
+      if (v === null) continue; // รายปีที่ยังขาดบางเดือน
+      const id = s.target.scopedetail_id;
+      const value = formatQty(v);
+      const current = (values[id] ?? '').trim();
+      if (current !== '' && current !== value && current !== filled[id]?.value) overwrite.push(s.target.detail_name ?? id);
+      next[id] = value;
+    }
+    if (Object.keys(next).length === 0) return showAlert('ยังไม่มียอดที่เติมได้ (รายปีต้องจัดการเดือนที่ไม่มีบิลให้ครบ 12 เดือนก่อน)');
+    if (overwrite.length > 0 &&
+        !(await showConfirm(`ช่อง ${overwrite.join(', ')} มีค่าที่กรอกไว้แล้ว ต้องการแทนที่ด้วยยอดจากบิลหรือไม่?`, { confirmText: 'แทนที่' }))) return;
+
+    setValues((prev) => ({ ...prev, ...next }));
+    setFieldErrors((prev) => {
+      const out = { ...prev };
+      for (const id of Object.keys(next)) delete out[id];
+      return out;
+    });
+    setFilled((prev) => {
+      const out = { ...prev };
+      for (const s of targets) {
+        const id = s.target.scopedetail_id;
+        if (next[id] !== undefined) out[id] = { value: next[id], count: s.bills.length };
+      }
+      return out;
+    });
+  }
 
   const yearOptions = (() => {
     const set = new Set<number>();
@@ -166,12 +243,13 @@ export default function FootprintClient({
     setSelMonth(m);
     setSelYear(y);
     if (!nameTouched) setName(defaultName(type, derivePeriod(type, m, y)));
+    if (fieldErrors.period) setFieldErrors((prev) => ({ ...prev, period: '' }));
   }
 
   function handleChange(scopedetailId: string, value: string) {
     setValues((prev) => ({ ...prev, [scopedetailId]: value }));
     // พิมพ์แก้แล้วล้าง error ของช่องนั้น
-    if (fieldErrors[scopedetailId]) setFieldErrors((prev) => ({ ...prev, [scopedetailId]: '' }));
+    if (fieldErrors[scopedetailId] || fieldErrors.form) setFieldErrors((prev) => ({ ...prev, [scopedetailId]: '', form: '' }));
   }
 
   // [เพิ่ม] schema ของทั้งหน้า: ชื่อกิจกรรม + ปริมาณทุกรายการ (key = scopedetail_id)
@@ -191,71 +269,74 @@ export default function FootprintClient({
   }
 
   // ---------- แนบไฟล์บิล (แยกตามหมวด) ----------
-  const countOf = (type: string) =>
-    saved.filter((b) => b.bill_type === type).length +
-    bills.items.filter((p) => p.type === type).length;
+  const countOf = (type: string) => bills.items.filter((p) => p.slot === type).length;
 
-  function handleFiles(type: string, e: React.ChangeEvent<HTMLInputElement>) {
+  function handleFiles(type: BillType, e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = ''; // ให้เลือกไฟล์เดิมซ้ำได้
 
     // ต้องรู้เดือน/ปีของกิจกรรมก่อน เพื่อตรวจว่าบิลตรงกับช่วงเวลานี้
+    // [แก้ไข] เดิมเด้ง alert -> แสดงกรอบแดง + ข้อความใต้ช่องเดือน/ปีแทน
     if (!periodMonth) {
-      return alert(
-        periodType === 'year'
-          ? 'กรุณาเลือกปีของกิจกรรมก่อนแนบบิล'
-          : 'กรุณาเลือกเดือนและปีของกิจกรรมก่อนแนบบิล'
-      );
+      setFieldErrors((prev) => ({
+        ...prev,
+        period: periodType === 'year' ? 'กรุณาเลือกปีของกิจกรรมก่อนแนบบิล' : 'กรุณาเลือกเดือนและปีของกิจกรรมก่อนแนบบิล',
+      }));
+      return;
     }
 
     const accepted: File[] = [];
+    const rejected: string[] = []; // [แก้ไข] รวมไฟล์ที่ใช้ไม่ได้ แจ้งครั้งเดียว (เดิมเด้ง alert ทีละไฟล์)
     const seen = new Set(
-      bills.items.filter((p) => p.type === type).map((p) => fileKey(p.file))
+      bills.items.filter((p) => p.slot === type).map((p) => fileKey(p.file))
     );
 
     for (const f of files) {
       if (!ALLOWED_TYPES.includes(f.type)) {
-        alert(`ไฟล์ "${f.name}" ไม่รองรับ (รองรับ JPG, PNG, WEBP และ PDF)`);
+        rejected.push(`"${f.name}" ไม่รองรับ (รองรับเฉพาะรูป JPG, PNG, WEBP)`);
         continue;
       }
       if (f.size === 0) {
-        alert(`ไฟล์ "${f.name}" ว่างเปล่า`);
+        rejected.push(`"${f.name}" เป็นไฟล์ว่างเปล่า`);
         continue;
       }
       if (f.size > MAX_BYTES) {
-        alert(`ไฟล์ "${f.name}" ใหญ่เกิน 10 MB`);
+        rejected.push(`"${f.name}" ใหญ่เกิน 10 MB`);
         continue;
       }
       if (seen.has(fileKey(f))) {
-        alert(`ไฟล์ "${f.name}" ถูกเลือกไว้แล้วในหมวดนี้`);
+        rejected.push(`"${f.name}" ถูกเลือกไว้แล้วในหมวดนี้`);
         continue;
       }
       seen.add(fileKey(f));
       accepted.push(f);
     }
 
+    if (rejected.length > 0) showError(rejected.join('\n'), { title: 'ไฟล์บางไฟล์ใช้ไม่ได้' });
     if (accepted.length === 0) return;
     if (countOf(type) + accepted.length > maxPerType) {
-      alert(`หมวด${billLabel(type)} แนบได้สูงสุด ${maxPerType} ไฟล์`);
+      showError(`หมวด${billLabel(type)} แนบได้สูงสุด ${maxPerType} ไฟล์`);
       return;
     }
-    bills.add(type as BillType, accepted); // อ่านบิลทีละไฟล์ แล้วแสดงผลให้ตรวจแก้
+    bills.add(type, accepted); // อ่านบิลทีละไฟล์ แล้วแสดงผลให้ตรวจแก้
   }
 
+  /* [ปิดใช้งาน] ระบบเก็บรูปบิลเดิม: เปิดดู/ลบบิลที่เคยเก็บ และอัปโหลดรูปบิลลง Storage 'bills' + ตาราง org_bill_file
+   * ไม่ใช้แล้ว เพราะ OCR เป็นแค่ตัวช่วยกรอก ไม่เก็บรูปบิล (ข้อมูลเก่าใน Supabase ยังอยู่ ไม่ได้ลบ)
   async function openSaved(b: ExistingBill) {
     const { data, error } = await supabase.storage
       .from('bills')
       .createSignedUrl(b.file_path, 120); // ลิงก์ใช้ได้ 2 นาที
-    if (error || !data) return alert('เปิดไฟล์ไม่สำเร็จ: ' + error?.message);
+    if (error || !data) return showError('เปิดไฟล์ไม่สำเร็จ: ' + error?.message);
     window.open(data.signedUrl, '_blank');
   }
 
   async function deleteSaved(b: ExistingBill) {
     if (!confirm(`ลบไฟล์ "${b.original_name ?? 'บิล'}" ?`)) return;
     const { error: stErr } = await supabase.storage.from('bills').remove([b.file_path]);
-    if (stErr) return alert('ลบไฟล์ไม่สำเร็จ: ' + stErr.message);
+    if (stErr) return showError('ลบไฟล์ไม่สำเร็จ: ' + stErr.message);
     const { error } = await supabase.from('org_bill_file').delete().eq('bill_id', b.bill_id);
-    if (error) return alert('ลบข้อมูลไฟล์ไม่สำเร็จ: ' + error.message);
+    if (error) return showError('ลบข้อมูลไฟล์ไม่สำเร็จ: ' + error.message);
     setSaved((prev) => prev.filter((x) => x.bill_id !== b.bill_id));
   }
 
@@ -316,9 +397,30 @@ export default function FootprintClient({
     bills.clear();
     return failed;
   }
+  */
+
+  /* [เพิ่ม] เหตุผลที่ยังกดคำนวณไม่ได้ / ต้องถามก่อน (แทน bills.blockReason เดิม)
+   * บิลไม่บังคับแนบ: บิลที่ยังไม่ยืนยันจะไม่ถูกนำไปใช้ แต่ต้องรอให้อ่านเสร็จก่อน */
+  function billConfirmMessages(): { block: string | null; ask: string[] } {
+    if (bills.items.some((i) => i.status === 'reading')) return { block: 'กำลังอ่านบิล กรุณารอสักครู่', ask: [] };
+    const ask: string[] = [];
+    const unconfirmed = bills.items.filter((i) => !i.confirmed).length;
+    if (unconfirmed > 0) ask.push(`มีบิล ${unconfirmed} ใบที่ยังไม่ได้ยืนยัน (จะไม่ถูกนำไปคำนวณ)`);
+    const notFilled = billSummaries.filter((s) => {
+      const v = fillValue(s, ocrPeriod, gaps);
+      return v === null || (values[s.target.scopedetail_id] ?? '').trim() !== formatQty(v);
+    });
+    if (notFilled.length > 0) {
+      ask.push(`ยอดจากบิลของ ${notFilled.map((s) => s.target.detail_name).join(', ')} ยังไม่ได้เติมลงฟอร์ม หรือถูกแก้ต่างจากยอดบิล`);
+    }
+    return { block: null, ask };
+  }
 
   // ตรวจรายการที่ซ้อนกับช่วงเวลานี้ คืนข้อความเตือน หรือ null ถ้าไม่ซ้อน
   async function findOverlap(): Promise<string | null> {
+    // [แก้ไข] โหมดแก้ไขที่ไม่ได้เปลี่ยนเดือน/ปี: เป็นการอัปเดตรายการเดิม ช่วงเวลาซ้อนเท่าเดิม ไม่ต้องถามซ้ำ
+    if (isEdit && periodType === existingPeriodType && periodMonth === existingPeriod.slice(0, 10)) return null;
+
     const y = Number(periodMonth.slice(0, 4)); // ปี ค.ศ.
     let q = supabase
       .from('org_activity_list')
@@ -338,11 +440,48 @@ export default function FootprintClient({
 
     const hitType: PeriodType = hit.period_type === 'year' ? 'year' : 'month';
     const hitLabel = periodLabel(hitType, hit.period_month);
+    // [แก้ไข] โหมดแก้ไข: บอกให้ชัดว่าเป็นการอัปเดตรายการนี้ ไม่ใช่การบันทึกรายการใหม่เพิ่ม
+    if (isEdit) {
+      return `ช่วงเวลาที่แก้เป็น ${periodLabel(periodType, periodMonth)} ซ้อนกับรายการ "${hit.orgact_name}" (${hitLabel}) ที่มีอยู่แล้ว
+` +
+        'ยอดรวมของทั้ง 2 รายการอาจนับซ้ำ ต้องการอัปเดตรายการนี้ต่อหรือไม่?';
+    }
     return periodType === 'year'
       ? `ปี ${yearBEOf(periodMonth)} มีรายการ "${hit.orgact_name}" (${hitLabel}) อยู่แล้ว\nการบันทึกรายปีเพิ่มอาจทำให้ยอดรวมนับซ้ำ ต้องการบันทึกต่อหรือไม่?`
       : hitType === 'year'
       ? `มีรายการรายปี "${hit.orgact_name}" ที่ครอบคลุมช่วงนี้อยู่แล้ว\nการบันทึกรายเดือนเพิ่มอาจทำให้ยอดรวมนับซ้ำ ต้องการบันทึกต่อหรือไม่?`
       : `${periodLabel('month', periodMonth)} มีรายการ "${hit.orgact_name}" อยู่แล้ว\nต้องการบันทึกรายการนี้เพิ่มหรือไม่?`;
+  }
+
+  /* [เพิ่ม] บันทึกข้อมูลสำนักงานที่พักไว้จากขั้นที่ 1 ลง org_office_info (ผูกด้วย orgactlist_id)
+   * - ไม่มีค่าที่พักไว้ (เข้าขั้นที่ 2 ตรงๆ หรือกดข้าม) -> ไม่แตะข้อมูลสำนักงานเดิม
+   * - รายการที่แก้ไข: ลบชุดเดิมของรายการนั้นแล้วใส่ชุดใหม่
+   * ล้มเหลวไม่ยกเลิกรายการที่บันทึกแล้ว: แจ้งให้กดแก้ไขรายการแล้วกรอกข้อมูลสำนักงานใหม่ */
+  async function saveOfficeInfo(logId: string) {
+    const scope = draftScope(existingLogId);
+    const draft = readOfficeDraft(orgId, scope);
+    if (!draft) return;
+
+    const rows = Object.entries(draft)
+      .filter(([, amount]) => amount !== '')
+      .map(([info_id, amount]) => ({ orgactlist_id: logId, info_id, amount })); // [แก้ไข] ไม่มี org_id แล้ว
+
+    let error: { message: string } | null = null;
+    if (isEdit) {
+      ({ error } = await supabase
+        .from('org_office_info')
+        .delete()
+        .eq('orgactlist_id', logId));
+    }
+    if (!error && rows.length > 0) {
+      ({ error } = await supabase.from('org_office_info').insert(rows));
+    }
+    if (error) {
+      await showError('บันทึกรายการเรียบร้อย แต่บันทึกข้อมูลสำนักงานไม่สำเร็จ: ' + error.message +
+        '\n(กดแก้ไขรายการเพื่อกรอกข้อมูลสำนักงานใหม่ได้)');
+      return;
+    }
+    clearOfficeDraft(scope);
   }
 
   // ---------- คำนวณและบันทึก ----------
@@ -361,19 +500,18 @@ export default function FootprintClient({
       }
     }
 
+    // [แก้ไข] เดิมเด้ง alert "กรุณาตรวจสอบข้อมูล..." และ "กรุณาเลือกเดือนและปี"
+    //   ตอนนี้แสดงแค่กรอบแดง + ข้อความใต้ช่อง (เดือน/ปีใช้ key 'period') ไม่มี popup
+    if (!periodMonth) errs.period = periodType === 'year' ? 'กรุณาเลือกปี' : 'กรุณาเลือกเดือนและปี';
+
     setFieldErrors(errs);
-    if (Object.keys(errs).length > 0) {
-      return alert('กรุณาตรวจสอบข้อมูลที่กรอก (ช่องที่มีข้อความสีแดง)');
-    }
+    if (Object.keys(errs).length > 0) return;
     const cleanName = result.clean.name; // ชื่อที่ normalize แล้ว (ยุบช่องว่าง/ตัดหัวท้าย)
 
-    if (!periodMonth) {
-      return alert(periodType === 'year' ? 'กรุณาเลือกปี' : 'กรุณาเลือกเดือนและปี');
-    }
-
-    // บิลที่แนบต้องอ่านเสร็จ เดือนตรงกิจกรรม ไม่ซ้ำ และผู้ใช้รับทราบคำเตือนแล้ว
-    const why = bills.blockReason();
-    if (why) return alert(why);
+    // [แก้ไข] บิลต้องอ่านเสร็จ ส่วนบิลที่ยังไม่ยืนยัน/ยอดที่ยังไม่เติมลงฟอร์ม ให้ผู้ใช้ตัดสินใจเอง
+    const billState = billConfirmMessages();
+    if (billState.block) return showAlert(billState.block, { tone: 'warning' });
+    if (billState.ask.length > 0 && !await showConfirm(`${billState.ask.join('\n')}\n\nต้องการคำนวณด้วยค่าที่อยู่ในฟอร์มตอนนี้หรือไม่?`, { confirmText: 'คำนวณต่อ' })) return;
 
     setLoading(true);
 
@@ -402,12 +540,13 @@ export default function FootprintClient({
 
     if (rows.length === 0) {
       setLoading(false);
-      alert('กรุณากรอกปริมาณอย่างน้อย 1 รายการ');
+      // [แก้ไข] เดิมเด้ง alert -> แสดงข้อความสีแดงเหนือปุ่มคำนวณ
+      setFieldErrors((prev) => ({ ...prev, form: 'กรุณากรอกปริมาณอย่างน้อย 1 รายการ' }));
       return;
     }
 
     const overlap = await findOverlap();
-    if (overlap && !confirm(overlap)) {
+    if (overlap && !(await showConfirm(overlap, { title: 'ช่วงเวลาซ้อนกับรายการอื่น', confirmText: isEdit ? 'อัปเดตต่อ' : 'บันทึกต่อ' }))) {
       setLoading(false);
       return;
     }
@@ -425,7 +564,7 @@ export default function FootprintClient({
         .eq('orgactlist_id', logId);
       if (oldError) {
         setLoading(false);
-        return alert('อ่านรายละเอียดเดิมไม่สำเร็จ: ' + oldError.message);
+        return showError('อ่านรายละเอียดเดิมไม่สำเร็จ: ' + oldError.message);
       }
 
       // เพิ่มชุดใหม่ก่อน ถ้าล้มเหลวข้อมูลเดิมยังอยู่ครบ
@@ -434,7 +573,7 @@ export default function FootprintClient({
         .insert(rows.map((r) => ({ orgactlist_id: logId, ...r })));
       if (insError) {
         setLoading(false);
-        return alert('บันทึกรายละเอียดไม่สำเร็จ: ' + insError.message);
+        return showError('บันทึกรายละเอียดไม่สำเร็จ: ' + insError.message);
       }
 
       const oldIds = (oldRows ?? []).map((r: any) => r.orgactdetail_id as string);
@@ -445,7 +584,7 @@ export default function FootprintClient({
           .in('orgactdetail_id', oldIds);
         if (delError) {
           setLoading(false);
-          return alert('ลบรายละเอียดเดิมไม่สำเร็จ: ' + delError.message);
+          return showError('ลบรายละเอียดเดิมไม่สำเร็จ: ' + delError.message);
         }
       }
 
@@ -462,7 +601,7 @@ export default function FootprintClient({
         .eq('org_id', orgId);
       if (updError) {
         setLoading(false);
-        return alert('อัปเดตยอดรวมไม่สำเร็จ: ' + updError.message);
+        return showError('อัปเดตยอดรวมไม่สำเร็จ: ' + updError.message);
       }
     } else {
       // ===== โหมดสร้างใหม่ =====
@@ -480,7 +619,7 @@ export default function FootprintClient({
         .single();
       if (headError || !head) {
         setLoading(false);
-        return alert('บันทึกไม่สำเร็จ: ' + headError?.message);
+        return showError('บันทึกไม่สำเร็จ: ' + headError?.message);
       }
       logId = head.orgactlist_id as string;
 
@@ -490,31 +629,30 @@ export default function FootprintClient({
       if (detailError) {
         await supabase.from('org_activity_list').delete().eq('orgactlist_id', logId);
         setLoading(false);
-        return alert('บันทึกรายละเอียดไม่สำเร็จ: ' + detailError.message);
+        return showError('บันทึกรายละเอียดไม่สำเร็จ: ' + detailError.message);
       }
     }
 
-    // อัปโหลดบิลที่แนบ (ทำหลังบันทึกรายการสำเร็จ ถ้าบิลล้มเหลวรายการยังอยู่ครบ)
-    if (bills.items.length > 0) {
-      const failed = await uploadPending(logId);
-      if (failed > 0) {
-        alert(
-          `บันทึกรายการเรียบร้อย แต่แนบไฟล์ไม่สำเร็จ ${failed} ไฟล์ ` +
-            `(กดแก้ไขข้อมูลเพื่อแนบใหม่ได้)`
-        );
-      }
-    }
+    // [เพิ่ม] บันทึกข้อมูลสำนักงานที่กรอกในขั้นที่ 1 ผูกกับรายการนี้ (ทั้งรายการใหม่และที่แก้ไข)
+    await saveOfficeInfo(logId);
+
+    // [ปิดใช้งาน] เดิมอัปโหลดรูปบิลลง Storage หลังบันทึกรายการ -> ตอนนี้ไม่เก็บรูปบิลแล้ว
+    // if (bills.items.length > 0) { const failed = await uploadPending(logId); ... }
 
     setLoading(false);
+    // ล้างบิลที่แนบ (อยู่แค่ใน state) หลังบันทึกสำเร็จ
+    bills.clear();
+    setGaps({});
+    setFilled({});
     if (!isEdit) setValues({});
     setDone({ id: logId, total });
   }
 
   // การ์ดแนบบิลของแต่ละหมวด
-  function renderBillCategory(type: string, label: string, hint: string, canAdd: boolean) {
-    const savedOfType = saved.filter((b) => b.bill_type === type);
-    const pendingOfType = bills.items.filter((p) => p.type === type);
-    const used = savedOfType.length + pendingOfType.length;
+  // [แก้ไข] เลิกแสดงบิลที่เคยเก็บใน org_bill_file และส่งช่องกิจกรรมที่จะเติม (target) ให้ BillRow
+  function renderBillCategory(type: BillType, label: string, hint: string) {
+    const pendingOfType = bills.items.filter((p) => p.slot === type);
+    const used = pendingOfType.length;
     const full = used >= maxPerType;
 
     return (
@@ -531,71 +669,37 @@ export default function FootprintClient({
 
         <div className="space-y-3 p-4">
           <div className="flex flex-wrap items-center gap-3">
-            {canAdd && (
-              <label
-                className={`flex h-11 items-center rounded-[20px] px-5 text-sm font-semibold text-white ${
-                  full ? 'cursor-not-allowed bg-[#94A3B8]' : 'cursor-pointer bg-[#32885F]'
-                }`}
-              >
-                เลือกไฟล์
-                <input
-                  type="file"
-                  multiple
-                  disabled={full}
-                  accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
-                  onChange={(e) => handleFiles(type, e)}
-                  className="hidden"
-                />
-              </label>
-            )}
+            <label
+              className={`flex h-11 items-center rounded-[20px] px-5 text-sm font-semibold text-white ${
+                full ? 'cursor-not-allowed bg-[#94A3B8]' : 'cursor-pointer bg-[#32885F]'
+              }`}
+            >
+              เลือกรูปบิล
+              <input
+                type="file"
+                multiple
+                disabled={full}
+                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                onChange={(e) => handleFiles(type, e)}
+                className="hidden"
+              />
+            </label>
             <span className="text-xs text-[#6B7280]">{hint}</span>
           </div>
 
-          {used === 0 && <p className="text-xs text-[#94A3B8]">ยังไม่มีไฟล์ในหมวดนี้</p>}
+          {used === 0 && <p className="text-xs text-[#94A3B8]">ยังไม่มีบิลในหมวดนี้</p>}
 
-          {/* บิลที่เคยบันทึกไว้แล้ว */}
-          {savedOfType.length > 0 && (
-            <ul className="space-y-2">
-              {savedOfType.map((b) => (
-                <li
-                  key={b.bill_id}
-                  className="flex items-center justify-between rounded-xl border border-[#E2E8F0] px-4 py-2 text-sm"
-                >
-                  <span>
-                    {b.original_name ?? 'บิล'}{' '}
-                    <span className="text-xs text-[#94A3B8]">{fmtSize(b.file_size)}</span>
-                  </span>
-                  <span className="flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => openSaved(b)}
-                      className="text-[#32885F] hover:underline"
-                    >
-                      เปิดดู
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => deleteSaved(b)}
-                      className="text-[#94A3B8] hover:text-red-500"
-                    >
-                      ลบ
-                    </button>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {/* ไฟล์ที่เลือกไว้ รอบันทึก: อ่านบิลอัตโนมัติ แล้วให้ตรวจแก้เดือน/ปริมาณ */}
+          {/* บิลที่แนบ: OCR อ่านแล้วให้ตรวจแก้ แล้วกดยืนยัน */}
           {pendingOfType.length > 0 && (
             <ul className="space-y-2">
               {pendingOfType.map((p) => (
                 <BillRow
                   key={p.uid}
                   item={p}
-                  checks={bills.checksOf(p)}
+                  checks={checksOf(p)}
                   period={ocrPeriod}
-                  onEdit={(patch) => void bills.edit(p, patch)}
+                  target={targetOf(p)}
+                  onEdit={(patch) => bills.edit(p.uid, patch)}
                   onRemove={() => bills.remove(p.uid)}
                   trashIcon={<TrashIcon />}
                 />
@@ -607,7 +711,65 @@ export default function FootprintClient({
     );
   }
 
-  const hasLegacyOther = saved.some((b) => b.bill_type === 'other');
+  // [เพิ่ม] การ์ดสรุปยอดจากบิลที่ยืนยันแล้ว + ปุ่มเติมลงฟอร์ม
+  function renderBillSummary() {
+    if (billSummaries.length === 0) return null;
+    return (
+      <div className="overflow-hidden rounded-[25px] border border-[#32885F] bg-white">
+        <div className="flex items-center justify-between border-b border-[#BDC9C1] bg-[#ECFDF5] px-4 py-2">
+          <h3 className="text-base text-[#191C1E]">
+            สรุปยอดจากบิลที่ยืนยันแล้ว ({periodType === 'year' ? `ปี ${yearBEOf(ocrPeriod.month)}` : periodLabel('month', ocrPeriod.month)})
+          </h3>
+          <button
+            type="button"
+            onClick={() => fillFromBills()}
+            className="rounded-full bg-[#32885F] px-4 py-1.5 text-xs font-semibold text-white"
+          >
+            เติมทั้งหมดลงฟอร์ม
+          </button>
+        </div>
+        <div className="divide-y divide-[#E2E8F0]">
+          {billSummaries.map((s) => {
+            const id = s.target.scopedetail_id;
+            const v = fillValue(s, ocrPeriod, gaps);
+            return (
+              <div key={id} className="space-y-2 p-4 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-medium text-[#191C1E]">{s.target.detail_name}</p>
+                    <p className="text-xs text-[#6B7280]">
+                      จากบิล {s.bills.length} ใบ
+                      {periodType === 'month' && ' (บิลหลายใบในเดือนเดียวกันรวมยอดให้แล้ว)'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-base font-semibold">
+                      {v === null ? 'ยังขาดบางเดือน' : `${v.toLocaleString('th-TH', { maximumFractionDigits: 4 })} ${s.target.unit ?? ''}`}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={v === null}
+                      onClick={() => fillFromBills([id])}
+                      className="rounded-full border border-[#32885F] px-3 py-1 text-xs font-semibold text-[#32885F] disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
+                    >
+                      เติมลงช่องนี้
+                    </button>
+                  </div>
+                </div>
+                {periodType === 'year' && (
+                  <YearlySummary
+                    summary={s}
+                    gaps={gaps[id] ?? {}}
+                    onGapChange={(month, choice) => setGap(id, month, choice)}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[1150px] mx-auto px-8 py-8">
@@ -669,7 +831,7 @@ export default function FootprintClient({
       {!hasOfficeInfo && !isEdit && (
         <div className="mb-6 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] px-4 py-3 text-sm text-[#92400E]">
           ยังไม่ได้กรอกข้อมูลสำนักงาน{' '}
-          <Link href="/organization/footprint" className="font-semibold underline">
+          <Link href={backHref} className="font-semibold underline">
             กรอกข้อมูลสำนักงาน
           </Link>
         </div>
@@ -760,7 +922,9 @@ export default function FootprintClient({
                 <select
                   value={selMonth || ''}
                   onChange={(e) => updatePeriod('month', Number(e.target.value), selYear || nowBE)}
-                  className="h-11 w-48 rounded-[20px] border border-[#BDC9C1] bg-[#F7F9FB] px-4 text-sm"
+                  className={`h-11 w-48 rounded-[20px] border bg-[#F7F9FB] px-4 text-sm ${
+                    fieldErrors.period && !selMonth ? 'border-red-500' : 'border-[#BDC9C1]'
+                  }`}
                 >
                   <option value="" disabled>
                     เดือน
@@ -775,7 +939,9 @@ export default function FootprintClient({
               <select
                 value={selYear || ''}
                 onChange={(e) => updatePeriod(periodType, selMonth, Number(e.target.value))}
-                className="h-11 w-40 rounded-[20px] border border-[#BDC9C1] bg-[#F7F9FB] px-4 text-sm"
+                className={`h-11 w-40 rounded-[20px] border bg-[#F7F9FB] px-4 text-sm ${
+                  fieldErrors.period && !selYear ? 'border-red-500' : 'border-[#BDC9C1]'
+                }`}
               >
                 <option value="" disabled>
                   ปี พ.ศ.
@@ -787,6 +953,7 @@ export default function FootprintClient({
                 ))}
               </select>
             </div>
+            {fieldErrors.period && <p className="text-xs text-red-600">{fieldErrors.period}</p>}
             {periodType === 'year' && (
               <p className="text-xs text-[#6B7280]">
                 รายปี: กรอกปริมาณรวมตลอดทั้งปีในแต่ละรายการ (เช่น ผลรวมของบิลไฟ 12 เดือน)
@@ -799,18 +966,18 @@ export default function FootprintClient({
       {/* แนบบิล แยกตามหมวด */}
       <div className="mb-6">
         <div className="mb-3">
-          <h2 className="text-base font-medium text-[#191C1E]">แนบบิลและเอกสารประกอบ (ไม่บังคับ)</h2>
+          <h2 className="text-base font-medium text-[#191C1E]">อ่านบิลเพื่อช่วยกรอกข้อมูล (ไม่บังคับ)</h2>
+          {/* [แก้ไข] ข้อความใหม่: OCR ช่วยกรอกเท่านั้น ไม่เก็บรูปบิล */}
           <p className="text-xs text-[#6B7280]">
-            แนบรูปหรือไฟล์ PDF แยกตามประเภทบิล เก็บเป็นหลักฐานประกอบรายการ
-            (JPG, PNG, WEBP, PDF ไม่เกิน 10 MB ต่อไฟล์ แนบได้สูงสุด {maxPerType} ไฟล์ต่อหมวด)
-            ระบบจะอ่านเดือนและปริมาณจากบิลให้ (อ่านอัตโนมัติได้เมื่อไฟล์ไม่เกิน 4 MB)
-            กรุณาตรวจและแก้ไขให้ถูกต้องก่อนบันทึก
+            แนบรูปบิลแยกตามประเภท (JPG, PNG, WEBP ไม่เกิน 10 MB ต่อไฟล์ สูงสุด {maxPerType} ไฟล์ต่อหมวด)
+            ระบบจะอ่านเดือน ปริมาณ และเลขที่บิลให้ ตรวจแก้แล้วกด &quot;ยืนยันข้อมูล&quot;
+            จากนั้นกด &quot;เติมลงฟอร์ม&quot; ระบบไม่เก็บรูปบิลไว้
+            {periodType === 'year' && ' (รายปี: แนบบิลของแต่ละเดือนในปีนั้น เดือนที่ไม่มีบิลกรอกเองหรือใช้ค่าเดือนก่อนหน้าได้)'}
           </p>
         </div>
         <div className="flex flex-col gap-4">
-          {BILL_CATEGORIES.map((c) => renderBillCategory(c.value, c.label, c.hint, true))}
-          {hasLegacyOther &&
-            renderBillCategory('other', 'เอกสารอื่นๆ (ข้อมูลเดิม)', 'หมวดนี้เพิ่มไฟล์ใหม่ไม่ได้', false)}
+          {BILL_CATEGORIES.map((c) => renderBillCategory(c.value, c.label, c.hint))}
+          {renderBillSummary()}
         </div>
       </div>
 
@@ -870,6 +1037,11 @@ export default function FootprintClient({
                   {fieldErrors[detail.scopedetail_id] && (
                     <p className="text-xs text-red-600">{fieldErrors[detail.scopedetail_id]}</p>
                   )}
+                  {/* [เพิ่ม] ป้ายบอกว่าค่านี้เติมจากบิล (หายเมื่อผู้ใช้แก้ค่าเอง) */}
+                  {filled[detail.scopedetail_id] &&
+                    (values[detail.scopedetail_id] ?? '').trim() === filled[detail.scopedetail_id].value && (
+                      <p className="text-xs text-emerald-700">✓ เติมจากบิล {filled[detail.scopedetail_id].count} ใบ</p>
+                    )}
                 </div>
               ))}
             </div>
@@ -877,9 +1049,12 @@ export default function FootprintClient({
         ))}
       </div>
 
+      {/* [เพิ่ม] error ระดับฟอร์ม (เช่น ยังไม่กรอกปริมาณเลย) แสดงเหนือปุ่ม แทน popup */}
+      {fieldErrors.form && <p className="mt-6 text-sm text-red-600">{fieldErrors.form}</p>}
       <div className="mt-8 flex items-center gap-4">
         <Link
-          href={isEdit ? `/organization/footprint?edit=${existingLogId}` : '/organization/footprint'}
+          // [แก้ไข] กลับไปขั้นที่ 1 พร้อม ?resume=1 เพื่อให้เห็นค่าข้อมูลสำนักงานที่กรอกไว้
+          href={backHref}
           className="flex h-[60px] items-center rounded-[20px] border border-[#BDC9C1] px-8 text-base font-semibold text-[#64748B]"
         >
           กลับ

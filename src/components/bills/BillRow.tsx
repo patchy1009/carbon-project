@@ -1,32 +1,51 @@
 // components/bills/BillRow.tsx
 'use client';
+/* [ปรับปรุง] แถวตรวจบิล 1 ใบ: แสดงค่าที่ OCR อ่านได้ ให้ผู้ใช้แก้ แล้วกด "ยืนยันข้อมูล"
+ * - แก้ได้: ประเภทบิล, เลขที่บิล, เดือน/ปี, ชนิดน้ำมัน, ปริมาณ
+ * - แสดงคำเตือนจาก OCR (warnings) และผลตรวจของระบบ (checks.ts)
+ * - แสดงว่าจะเติมลงช่องกิจกรรมไหน เป็นปริมาณเท่าไรหลังแปลงหน่วย
+ * - ยืนยันแล้วช่องจะล็อก ต้องกด "แก้ไข" ก่อน (ยกเลิกการยืนยัน) */
 import type { ReactNode } from 'react';
-import type { ActivityPeriod, Check } from '@/lib/bills/types';
-import type { PendingBill } from '@/lib/bills/useBillOcr';
+import { normalizeNumberString, normalizeToArabicNumber } from '@/lib/normalization';
+import { canConfirm, hasFail, hasWarn, type BillTarget } from '@/lib/bills/checks';
+import { unitFactor, round4 } from '@/lib/bills/units';
+import {
+  BILL_TYPE_LABEL, BILL_UNIT, BILL_UNIT_LABEL, FUEL_TYPES,
+  type ActivityPeriod, type BillType, type Check, type FuelType,
+} from '@/lib/bills/types';
+import type { BillEdit, PendingBill } from '@/lib/bills/useBillOcr';
 
 const MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-const UNIT = { electricity: 'kWh', water: 'ลบ.ม.', fuel: 'ลิตร' } as const;
-
-type Edit = Partial<Pick<PendingBill, 'billMonth' | 'quantity' | 'fuelType' | 'ack'>>;
 
 export default function BillRow(props: {
   item: PendingBill;
   checks: Check[];
   period: ActivityPeriod;
-  onEdit: (p: Edit) => void;
+  target: BillTarget | undefined;   // ช่องกิจกรรมที่บิลนี้จะเติม
+  onEdit: (p: BillEdit) => void;
   onRemove: () => void;
   trashIcon: ReactNode;
 }) {
-  const { item, checks, period, onEdit, onRemove, trashIcon } = props;
-  const baseYear = +period.month.slice(0, 4);
-  const y = item.billMonth ? +item.billMonth.slice(0, 4) : baseYear;
-  const m = item.billMonth ? +item.billMonth.slice(5, 7) : 0;
-  const setMonth = (yy: number, mm: number) =>
-    onEdit({ billMonth: mm ? `${yy}-${String(mm).padStart(2, '0')}-01` : '' });
+  const { item, checks, period, target, onEdit, onRemove, trashIcon } = props;
+  const locked = item.confirmed;
 
-  const hasFail = checks.some((c) => c.level === 'fail');
-  const hasWarn = checks.some((c) => c.level === 'warn');
-  const border = hasFail ? 'border-red-300 bg-red-50' : hasWarn ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white';
+  // ปีให้เลือก: รอบปีของกิจกรรม ±1 และปีที่ OCR อ่านได้ (ค.ศ. แสดงเป็น พ.ศ.)
+  const baseYear = +period.month.slice(0, 4);
+  const years = [...new Set([baseYear - 1, baseYear, baseYear + 1, ...(item.year ? [item.year] : [])])].sort();
+
+  const fail = hasFail(checks);
+  const warn = hasWarn(checks);
+  const border = locked && !fail
+    ? 'border-emerald-300 bg-emerald-50'
+    : fail ? 'border-red-300 bg-red-50' : warn ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white';
+
+  // ตัวอย่างปริมาณหลังแปลงหน่วยของช่องกิจกรรม เช่น 41,000 ลิตร -> 41 ลบ.ม.
+  const billUnit = item.billType ? BILL_UNIT[item.billType] : null;
+  const qty = normalizeToArabicNumber(normalizeNumberString(item.quantity));
+  const factor = billUnit && target ? unitFactor(billUnit, target.unit) : null;
+  const preview = qty !== null && factor !== null ? round4(qty * factor) : null;
+
+  const field = 'w-full rounded border px-2 py-1 disabled:bg-slate-100 disabled:text-slate-500';
 
   return (
     <li className={`rounded-lg border p-3 text-sm ${border}`}>
@@ -37,47 +56,107 @@ export default function BillRow(props: {
         </button>
       </div>
 
-      {item.status === 'reading' && <p className="mt-2 text-slate-500">กำลังอ่านบิล (รูปใช้เวลาประมาณ 5-20 วินาที)...</p>}
-      {item.status === 'error' && <p className="mt-2 text-red-600">{item.error}</p>}
+      {item.status === 'reading' && <p className="mt-2 text-slate-500">กำลังอ่านบิล (ประมาณ 5-20 วินาที)...</p>}
+      {item.status === 'error' && <p className="mt-2 text-red-600">✕ {item.error} (กรุณาเอาไฟล์นี้ออก)</p>}
 
       {item.status === 'ready' && (
         <>
-          {item.note && <p className="mt-2 text-amber-700">{item.note}</p>}
+          {item.note && <p className="mt-2 text-amber-700">⚠ {item.note}</p>}
+
           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
             <label className="block">
-              <span className="text-xs text-slate-500">เดือนของบิล</span>
+              <span className="text-xs text-slate-500">ประเภทบิล</span>
+              <select
+                disabled={locked}
+                value={item.billType}
+                onChange={(e) => onEdit({ billType: e.target.value as BillType | '' })}
+                className={field}
+              >
+                <option value="">ไม่ทราบ</option>
+                {(Object.keys(BILL_TYPE_LABEL) as BillType[]).map((t) => (
+                  <option key={t} value={t}>{BILL_TYPE_LABEL[t]}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="text-xs text-slate-500">เลขที่บิล</span>
+              <input
+                disabled={locked}
+                value={item.billNumber}
+                maxLength={50}
+                onChange={(e) => onEdit({ billNumber: e.target.value })}
+                className={`${field} ${item.billNumber.trim() === '' ? 'border-amber-400' : ''}`}
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-xs text-slate-500">เดือน/ปีของบิล</span>
               <div className="flex gap-1">
-                <select value={m} onChange={(e) => setMonth(y, +e.target.value)} className="w-full rounded border px-2 py-1">
+                <select
+                  disabled={locked}
+                  value={item.month}
+                  onChange={(e) => onEdit({ month: +e.target.value })}
+                  className={field}
+                >
                   <option value={0}>เลือกเดือน</option>
                   {MONTHS.map((n, i) => <option key={n} value={i + 1}>{n}</option>)}
                 </select>
-                <select value={y} onChange={(e) => setMonth(+e.target.value, m)} className="rounded border px-2 py-1">
-                  {[baseYear - 1, baseYear, baseYear + 1].map((yy) => <option key={yy} value={yy}>{yy + 543}</option>)}
+                <select
+                  disabled={locked}
+                  value={item.year}
+                  onChange={(e) => onEdit({ year: +e.target.value })}
+                  className="rounded border px-2 py-1 disabled:bg-slate-100"
+                >
+                  <option value={0}>ปี</option>
+                  {years.map((y) => <option key={y} value={y}>{y + 543}</option>)}
                 </select>
               </div>
             </label>
 
-            <label className="block">
-              <span className="text-xs text-slate-500">ปริมาณ ({UNIT[item.type]})</span>
-              <input
-                inputMode="decimal"
-                value={item.quantity}
-                onChange={(e) => onEdit({ quantity: e.target.value.replace(/[^0-9.]/g, '') })}
-                className={`w-full rounded border px-2 py-1 ${item.quantity.trim() === '' ? 'border-amber-400' : ''}`}
-              />
-            </label>
-
-            {item.type === 'fuel' && (
+            {item.billType === 'fuel' && (
               <label className="block">
                 <span className="text-xs text-slate-500">ชนิดน้ำมัน</span>
-                <select value={item.fuelType} onChange={(e) => onEdit({ fuelType: e.target.value as PendingBill['fuelType'] })} className="w-full rounded border px-2 py-1">
-                  <option value="">ไม่ระบุ</option>
-                  <option value="diesel">ดีเซล</option>
-                  <option value="gasoline">เบนซิน/แก๊สโซฮอล์</option>
+                <select
+                  disabled={locked}
+                  value={item.fuelType}
+                  onChange={(e) => onEdit({ fuelType: e.target.value as FuelType | '' })}
+                  className={`${field} ${item.fuelType === '' ? 'border-amber-400' : ''}`}
+                >
+                  <option value="">เลือกชนิดน้ำมัน</option>
+                  {FUEL_TYPES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
                 </select>
               </label>
             )}
+
+            <label className="block">
+              <span className="text-xs text-slate-500">
+                ปริมาณ{billUnit ? ` (${BILL_UNIT_LABEL[billUnit]})` : ''}
+              </span>
+              <input
+                disabled={locked}
+                inputMode="decimal"
+                value={item.quantity}
+                onChange={(e) => onEdit({ quantity: e.target.value })}
+                className={`${field} ${item.quantity.trim() === '' ? 'border-amber-400' : ''}`}
+              />
+            </label>
           </div>
+
+          {/* ช่องกิจกรรมที่จะถูกเติม (ตามความสัมพันธ์ ocr_source ที่แอดมินตั้ง) */}
+          {target && (
+            <p className="mt-2 text-xs text-slate-600">
+              จะนำไปรวมในช่อง <b>{target.detail_name}</b>
+              {preview !== null && <> : <b>{preview.toLocaleString('th-TH')}</b> {target.unit}</>}
+            </p>
+          )}
+
+          {/* คำเตือนที่ระบบ OCR ส่งมา */}
+          {(item.ocr?.warnings?.length ?? 0) > 0 && (
+            <ul className="mt-2 space-y-0.5 text-xs text-slate-500">
+              {item.ocr!.warnings.map((w) => <li key={w}>ระบบอ่านบิลแจ้ง: {w}</li>)}
+            </ul>
+          )}
 
           {checks.length > 0 && (
             <ul className="mt-2 space-y-1">
@@ -89,12 +168,31 @@ export default function BillRow(props: {
             </ul>
           )}
 
-          {hasWarn && !hasFail && (
-            <label className="mt-2 flex items-center gap-2">
-              <input type="checkbox" checked={item.ack} onChange={(e) => onEdit({ ack: e.target.checked })} />
-              <span>ตรวจแล้ว รับทราบคำเตือนข้างต้น</span>
-            </label>
-          )}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {warn && !fail && !locked && (
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={item.ack} onChange={(e) => onEdit({ ack: e.target.checked })} />
+                <span>ตรวจแล้ว รับทราบคำเตือนข้างต้น</span>
+              </label>
+            )}
+            {locked ? (
+              <>
+                <span className="font-semibold text-emerald-700">✓ ยืนยันข้อมูลแล้ว</span>
+                <button type="button" onClick={() => onEdit({ confirmed: false })} className="text-xs text-slate-600 underline">
+                  แก้ไข
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                disabled={!canConfirm(item, checks)}
+                onClick={() => onEdit({ confirmed: true })}
+                className="rounded-full bg-[#32885F] px-4 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                ยืนยันข้อมูล
+              </button>
+            )}
+          </div>
         </>
       )}
     </li>

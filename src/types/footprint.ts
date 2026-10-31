@@ -1,9 +1,11 @@
 import type { CarbonScope } from './activity-management';
+import type { OcrSource } from '@/lib/bills/types';
 
 export interface ActivityDetailWithValues {
   scopedetail_id: string;
   detail_name: string | null;
   unit: string | null;
+  ocr_source: OcrSource | null; // [เพิ่ม] บิลที่เติมช่องนี้ (ดู supabase/activity_detail_ocr_source.sql)
   activity: {
     activity_id: string;
     activity_name: string | null;

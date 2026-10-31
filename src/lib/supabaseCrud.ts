@@ -1,5 +1,6 @@
 
 import {supabase} from "./supabaseClient";
+import { showConfirm, showError } from "./dialog"; // [แก้ไข] ใช้กล่องแจ้งเตือนกลางแทน alert/confirm ของเบราว์เซอร์
 
 type Values = Record<string, unknown>;
 
@@ -39,11 +40,11 @@ export async function insertRecord<T>(
             : query.eq(duplicateCol, duplicateVal);
         const { data: existingData, error: checkError } = await query;
         if (checkError) {
-            alert('ตรวจสอบข้อมูลซ้ำไม่สำเร็จ: '+dbErrorMessage(checkError));
+            showError('ตรวจสอบข้อมูลซ้ำไม่สำเร็จ: '+dbErrorMessage(checkError));
             return null;
         }
         if (existingData && existingData.length > 0) {
-            alert(duplicateMessage);
+            showError(duplicateMessage, { title: 'ข้อมูลซ้ำ' });
             return null;
         }
     }
@@ -56,7 +57,7 @@ export async function insertRecord<T>(
     .single();
 
     if ( error ) {
-        alert(errorLabel+'ไม่สำเร็จ: '+dbErrorMessage(error)); // [แก้ไข] ใช้ข้อความที่อ่านเข้าใจ
+        showError(errorLabel+'ไม่สำเร็จ: '+dbErrorMessage(error)); // [แก้ไข] ใช้ข้อความที่อ่านเข้าใจ
         return null;
     }
     return data as unknown as T;
@@ -79,12 +80,12 @@ export async function updateRecord<T>(
     .maybeSingle(); // [แก้ไข] .single() -> .maybeSingle() เพื่อแยกกรณี "ไม่พบ/ไม่มีสิทธิ์" ออกมาแจ้งให้ชัด
 
     if ( error ) {
-        alert(errorLable+'ไม่สำเร็จ: '+dbErrorMessage(error));
+        showError(errorLable+'ไม่สำเร็จ: '+dbErrorMessage(error));
         return null;
     }
     if ( !data ) {
         // RLS ไม่อนุญาต หรือแถวถูกลบไปแล้ว: update สำเร็จแต่ไม่มีแถวไหนถูกแก้
-        alert(errorLable+'ไม่สำเร็จ: ไม่พบข้อมูล หรือไม่มีสิทธิ์แก้ไข');
+        showError(errorLable+'ไม่สำเร็จ: ไม่พบข้อมูล หรือไม่มีสิทธิ์แก้ไข');
         return null;
     }
     return data as unknown as T;
@@ -97,7 +98,7 @@ export async function deleteRecord(
     idVal : string,
     confirmMessage : string = 'ยืนยันการลบข้อมูล?',
 ) : Promise<boolean> {
-    if ( !confirm(confirmMessage) ) return false;
+    if ( !(await showConfirm(confirmMessage, { danger: true })) ) return false;
 
     const { error } = await supabase
         .from(tableName)
@@ -106,7 +107,7 @@ export async function deleteRecord(
 
     if ( error ) {
         // [แก้ไข] 23503 ตอนลบ = มีตารางอื่นอ้างถึงแถวนี้อยู่ แจ้งให้ชัดกว่าข้อความภาษาอังกฤษของ DB
-        alert('ลบข้อมูลไม่สำเร็จ: '+(error.code === '23503'
+        showError('ลบข้อมูลไม่สำเร็จ: '+(error.code === '23503'
             ? 'ข้อมูลนี้ถูกใช้งานอยู่ในส่วนอื่น ต้องลบข้อมูลที่อ้างถึงก่อน'
             : dbErrorMessage(error)));
         return false;

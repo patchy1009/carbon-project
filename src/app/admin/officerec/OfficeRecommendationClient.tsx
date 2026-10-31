@@ -5,7 +5,9 @@ import { supabase } from '@/lib/supabaseClient';
 import { dbErrorMessage, deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
 import { validateForm, extendSchema, notDuplicate, existsIn, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber } from '@/lib/normalization';
+import { showConfirm, showError } from '@/lib/dialog'; // [แก้ไข] กล่องแจ้งเตือนกลางแทน alert/confirm
 import { infoSchema, recSchema, condValueSchema, type InfoField, type RecField } from './schema';
+import { PencilIcon, TrashIcon } from '@/components/icons'; // [แก้ไข] แทนอิโมจิ ✏️ 🗑️
 
 /* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) ลบตัวช่วยตรวจที่เขียนซ้ำในไฟล์ (cleanText/cleanNumber/isNumeric/isNumberOnlyText)
@@ -374,7 +376,7 @@ export default function OfficeRecommendationClient({
       // ⚠️ เปลี่ยนหน่วยของหัวข้อที่บริษัทกรอกไว้แล้ว ค่าเดิมของบริษัทจะถูกตีความด้วยหน่วยใหม่
       const old = infoTypes.find((i) => i.info_id === editInfoId);
       if (old && (old.unit ?? '') !== (values.unit ?? '') &&
-          !confirm('เปลี่ยนหน่วยของหัวข้อนี้? ค่าที่บริษัทเคยกรอกไว้จะถูกตีความด้วยหน่วยใหม่')) {
+          !(await showConfirm('เปลี่ยนหน่วยของหัวข้อนี้? ค่าที่บริษัทเคยกรอกไว้จะถูกตีความด้วยหน่วยใหม่', { confirmText: 'เปลี่ยนหน่วย' }))) {
         return;
       }
       const updated = await updateRecord<InfoType>(
@@ -546,6 +548,12 @@ export default function OfficeRecommendationClient({
     setRecErrors(errs);
     if (Object.keys(errs).length > 0) return;
 
+    // [ย้ายมา] เดิมถามตอนกด "เผยแพร่" ตอนนี้บันทึกแล้วแนะนำทันที จึงถามตอนบันทึกแทน
+    if (conds.length === 0 &&
+        !(await showConfirm('แนวทางนี้ไม่มีเงื่อนไข จะถูกแนะนำให้ทุกองค์กร ต้องการบันทึกหรือไม่?', { confirmText: 'บันทึก' }))) {
+      return;
+    }
+
     setSaving(true);
 
     // ค่าตัวแทน = ค่ากลางของช่วง (ถ้ากรอกค่าเดียว = ค่านั้น)
@@ -573,9 +581,9 @@ export default function OfficeRecommendationClient({
     // ===== [เพิ่ม] โหมดแก้ไข =====
     if (editRecId) {
       const old = recs.find((r) => r.rec_uid === editRecId);
-      // 1) แก้แนวทาง (สถานะเดิมคงไว้)
+      // 1) แก้แนวทาง [แก้ไข] ตั้ง status = 'published' ด้วย (แนวทางเก่าที่เคยเป็นร่าง แก้แล้วกลายเป็นใช้งาน)
       const updated = await updateRecord<RecRow>(
-        'carbon_reduction_recommendation', 'rec_uid', editRecId, recValues, '*', 'แก้ไขแนวทาง'
+        'carbon_reduction_recommendation', 'rec_uid', editRecId, { ...recValues, status: 'published' }, '*', 'แก้ไขแนวทาง'
       );
       if (!updated) {
         setSaving(false);
@@ -590,7 +598,7 @@ export default function OfficeRecommendationClient({
           .select('*');
         if (error) {
           setSaving(false);
-          return alert('บันทึกเงื่อนไขไม่สำเร็จ: ' + dbErrorMessage(error));
+          return showError('บันทึกเงื่อนไขไม่สำเร็จ: ' + dbErrorMessage(error));
         }
         savedConds = (data ?? []) as CondRow[];
       }
@@ -599,7 +607,7 @@ export default function OfficeRecommendationClient({
         const { error } = await supabase.from('recommendation_condition').delete().in('condition_id', oldIds);
         if (error) {
           setSaving(false);
-          return alert('ลบเงื่อนไขเดิมไม่สำเร็จ: ' + dbErrorMessage(error));
+          return showError('ลบเงื่อนไขเดิมไม่สำเร็จ: ' + dbErrorMessage(error));
         }
       }
       setRecs((prev) =>
@@ -611,10 +619,11 @@ export default function OfficeRecommendationClient({
     }
 
     // ===== โหมดเพิ่มใหม่ =====
-    // 1) บันทึกแนวทาง (เริ่มเป็นร่าง ต้องกด "เผยแพร่" ก่อนองค์กรจะเห็น)
+    // 1) บันทึกแนวทาง [แก้ไข] เดิมเริ่มเป็น 'draft' ต้องกด "เผยแพร่" ก่อน
+    //    ตอนนี้บันทึกแล้วพร้อมแนะนำทันที (คอลัมน์ status ยังอยู่ใน DB จึงเก็บเป็น 'published')
     const created = await insertRecord<RecRow>(
       'carbon_reduction_recommendation',
-      { ...recValues, status: 'draft' },
+      { ...recValues, status: 'published' },
       '*',
       'เพิ่มแนวทาง'
     );
@@ -637,7 +646,7 @@ export default function OfficeRecommendationClient({
           .delete()
           .eq('rec_uid', created.rec_uid);
         setSaving(false);
-        return alert('บันทึกเงื่อนไขไม่สำเร็จ: ' + dbErrorMessage(error));
+        return showError('บันทึกเงื่อนไขไม่สำเร็จ: ' + dbErrorMessage(error));
       }
       savedConds = (data ?? []) as CondRow[];
     }
@@ -659,33 +668,8 @@ export default function OfficeRecommendationClient({
     setRecs((prev) => prev.filter((r) => r.rec_uid !== id));
   }
 
-  async function toggleStatus(r: RecRow) {
-    const next = r.status === 'published' ? 'draft' : 'published';
-
-    if (next === 'published') {
-      if (!r.carbon_reduction_amount || r.carbon_reduction_amount > 100) {
-        return alert('เผยแพร่ไม่ได้: ค่า % ที่ลดได้ต้องอยู่ระหว่าง 0-100');
-      }
-      const noCond = (r.recommendation_condition ?? []).length === 0;
-      const msg = noCond
-        ? 'แนวทางนี้ไม่มีเงื่อนไข จะถูกแนะนำให้ทุกองค์กร ต้องการเผยแพร่?'
-        : 'เผยแพร่แนวทางนี้? องค์กรที่เข้าเงื่อนไขจะเห็นในรายงานทันที';
-      if (!confirm(msg)) return;
-    }
-
-    const { data, error } = await supabase
-      .from('carbon_reduction_recommendation')
-      .update({ status: next })
-      .eq('rec_uid', r.rec_uid)
-      .select('rec_uid');
-
-    if (error) return alert('เปลี่ยนสถานะไม่สำเร็จ: ' + error.message);
-    if (!data || data.length === 0) {
-      return alert('เปลี่ยนสถานะไม่สำเร็จ: ไม่พบข้อมูลหรือไม่มีสิทธิ์');
-    }
-
-    setRecs((prev) => prev.map((x) => (x.rec_uid === r.rec_uid ? { ...x, status: next } : x)));
-  }
+  /* [ปิดใช้งาน] toggleStatus (สลับ ร่าง/เผยแพร่) ไม่ใช้แล้ว
+   * กด "บันทึก" = เก็บลง DB และพร้อมแนะนำในรายงานทันที จึงไม่มีสถานะให้สลับ */
 
   // แก้ค่าในแถวเงื่อนไขใน popup
   const setCond = (i: number, patch: Partial<CondForm>) =>
@@ -747,15 +731,17 @@ export default function OfficeRecommendationClient({
                       onClick={() => openInfoModal(i)}
                       className="text-[#94A3B8] hover:text-[#266955]"
                       title="แก้ไข"
+                    aria-label="แก้ไข"
                     >
-                      ✏️
+                      <PencilIcon />
                     </button>
                     <button
                       onClick={() => handleDeleteInfo(i.info_id)}
                       className="text-[#94A3B8] hover:text-red-500"
                       title="ลบ"
+                    aria-label="ลบ"
                     >
-                      🗑️
+                      <TrashIcon />
                     </button>
                   </td>
                 </tr>
@@ -772,7 +758,7 @@ export default function OfficeRecommendationClient({
             <h2 className="text-xl font-bold text-[#0F172A]">แนวทางลดคาร์บอน</h2>
             <p className="mt-1 text-xs text-[#94A3B8]">
               เปอร์เซ็นต์ที่ลดได้คิดจากก๊าซของ &quot;กิจกรรมที่ผูก&quot; ขององค์กรนั้น
-              แนวทางที่ยังเป็นร่างจะไม่แสดงในรายงาน
+              บันทึกแล้วจะแนะนำในรายงานขององค์กรที่เข้าเงื่อนไขทันที
             </p>
           </div>
           <button
@@ -791,20 +777,18 @@ export default function OfficeRecommendationClient({
                 <th className="px-5 py-3 text-left">กิจกรรมที่ผูก</th>
                 <th className="px-5 py-3 text-right">ลดได้</th>
                 <th className="px-5 py-3 text-left">เงื่อนไข (ต้องผ่านทุกข้อ)</th>
-                <th className="px-5 py-3 text-center">สถานะ</th>
                 <th className="px-5 py-3 text-center">จัดการ</th>
               </tr>
             </thead>
             <tbody>
               {sortedRecs.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-8 text-center text-[#94A3B8]">
+                  <td colSpan={5} className="px-5 py-8 text-center text-[#94A3B8]">
                     ยังไม่มีแนวทาง
                   </td>
                 </tr>
               )}
               {sortedRecs.map((r) => {
-                const published = r.status === 'published';
                 const rc = r.recommendation_condition ?? [];
                 return (
                   <tr key={r.rec_uid} className="border-t border-[#F1F5F9] align-top">
@@ -826,33 +810,23 @@ export default function OfficeRecommendationClient({
                         </ul>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-center">
-                      <button
-                        onClick={() => toggleStatus(r)}
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          published
-                            ? 'bg-[#F0FDF4] text-[#16A34A]'
-                            : 'bg-[#F1F5F9] text-[#64748B]'
-                        }`}
-                        title={published ? 'กดเพื่อถอนกลับเป็นร่าง' : 'กดเพื่อเผยแพร่'}
-                      >
-                        {published ? 'เผยแพร่แล้ว' : 'ร่าง'}
-                      </button>
-                    </td>
+                    {/* [ลบ] คอลัมน์สถานะ (ร่าง/เผยแพร่แล้ว) บันทึกแล้วใช้งานทันที */}
                     <td className="px-5 py-4 text-center space-x-2 whitespace-nowrap">
                       <button
                         onClick={() => openRecModal(r)}
                         className="text-[#94A3B8] hover:text-[#266955]"
                         title="แก้ไข"
+                      aria-label="แก้ไข"
                       >
-                        ✏️
+                        <PencilIcon />
                       </button>
                       <button
                         onClick={() => handleDeleteRec(r.rec_uid)}
                         className="text-[#94A3B8] hover:text-red-500"
                         title="ลบ"
+                      aria-label="ลบ"
                       >
-                        🗑️
+                        <TrashIcon />
                       </button>
                     </td>
                   </tr>
@@ -1115,7 +1089,7 @@ export default function OfficeRecommendationClient({
                 disabled={saving}
                 className="rounded-lg bg-[#059669] px-4 py-2 text-sm text-white disabled:opacity-60"
               >
-                {saving ? 'กำลังบันทึก...' : editRecId ? 'บันทึกการแก้ไข' : 'บันทึกเป็นร่าง'}
+                {saving ? 'กำลังบันทึก...' : editRecId ? 'บันทึกการแก้ไข' : 'บันทึก'}
               </button>
             </div>
           </form>

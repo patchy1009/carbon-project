@@ -2,9 +2,8 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { usePathname } from 'next/navigation';
+import NavUser from '@/components/NavUser';
 
 const navItems = [
   { label: 'EF & GWP Value', href: '/admin/ef-gwp' },
@@ -14,42 +13,12 @@ const navItems = [
   { label: 'Allocation & TAX & Doc', href: '/admin/allotaxdoc' },
 ];
 
-interface AdminProfile {
-  full_name: string;
-  role: string;
-}
-
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const [profile, setProfile] = useState<AdminProfile | null>(null);
 
-  useEffect(() => {
-    async function loadProfile() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data } = await supabase
-        .from('user_roles')
-        .select('full_name, role')
-        .eq('user_id', user.id)
-        .single();
-
-      if (data) setProfile(data as AdminProfile);
-    }
-    loadProfile();
-  }, []);
-
-  async function handleLogout() {
-    await supabase.auth.signOut(); // ลบ session ใน cookie
-    router.replace('/organization/login');
-    router.refresh();
-  }
-
+  // [แก้ไข] ใช้ฟอนต์เดียวกับฝั่ง organization (font-sans)
   return (
-    <div className="min-h-screen bg-[#F8FAFC]">
+    <div className="min-h-screen bg-[#F8FAFC] text-gray-800 font-sans">
       {/* Top Navbar */}
       <header
         className="fixed top-0 left-0 right-0 z-50 h-[84px] flex items-center justify-between px-8 rounded-bl-[50px]"
@@ -58,35 +27,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           boxShadow: '-1px 6px 12.1px rgba(0, 63, 66, 0.81)',
         }}
       >
-        <div>
-          <h1 className="text-white font-bold text-2xl leading-[22px] font-['Prompt']">
+        {/* [แก้ไข] โลโก้และส่วนผู้ใช้ให้หน้าตาเดียวกับ navbar ฝั่ง organization */}
+        <div className="flex items-baseline gap-3">
+          <Link
+            href="/admin/ef-gwp"
+            className="text-white font-bold text-[28px] font-['Prompt'] hover:opacity-90 transition"
+            style={{ textShadow: '3px 2px 2.8px rgba(0,0,0,0.25)' }}
+          >
             Carbon Calculator
-          </h1>
-          <p className="text-white text-sm font-['Prompt']">Admin</p>
+          </Link>
+          <span className="text-white/80 text-sm">Admin</span>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#FF951B] flex items-center justify-center text-white text-sm font-bold font-['Prompt']">
-              {profile?.full_name?.slice(0, 2) ?? '..'}
-            </div>
-            <div className="text-right">
-              <p className="text-white text-base font-semibold leading-5">
-                {profile?.full_name ?? 'กำลังโหลด...'}
-              </p>
-              <p className="text-white text-sm font-light leading-4">
-                {profile?.role ?? ''}
-              </p>
-            </div>
-          </div>
-          <button onClick={handleLogout} aria-label="ออกจากระบบ">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-          </button>
-        </div>
+        {/* [แก้ไข] เดิมแสดงชื่อ/บทบาทจาก user_roles + ไอคอนออกจากระบบ
+            ตอนนี้ใช้ NavUser เดียวกับฝั่ง organization: อีเมล + "ออกจากระบบ" + วงกลมผู้ใช้ */}
+        <NavUser />
       </header>
 
       <div className="pt-[84px] flex">
@@ -99,7 +54,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`rounded-md px-3 py-2.5 text-sm font-medium font-['Sarabun'] ${
+                  className={`rounded-md px-3 py-2.5 text-sm font-medium ${
                     isActive ? 'bg-[#F2D84E] text-black' : 'text-black hover:bg-[#F1F5F9]'
                   }`}
                 >

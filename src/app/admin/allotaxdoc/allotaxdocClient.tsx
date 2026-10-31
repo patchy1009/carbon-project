@@ -9,6 +9,7 @@ import { validateForm, extendSchema, notDuplicate, validateFile, type formError 
 import { normalizeToArabicNumber, safeStorageName, fileBaseName, fileExtension } from '@/lib/normalization';
 import { fieldError as FieldError } from '@/components/FieldError';
 import { docSchema, costSchema, DOC_FILE_RULE, type DocField, type CostField } from './schema';
+import { showError } from '@/lib/dialog'; // [แก้ไข] กล่องแจ้งเตือนกลางแทน alert
 
 /* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) เอกสาร: ชื่อผ่าน normalize + validate (ห้ามว่าง/ตัวเลขล้วน/ซ้ำ/ยาวเกิน) แสดง error ใต้ช่องแทน alert
@@ -278,7 +279,7 @@ export default function AlloTaxDocClient({
       .upload(filePath, pendingFile, { contentType: pendingFile.type || undefined });
 
     if (uploadError) {
-      alert('อัปโหลดไฟล์ไม่สำเร็จ: ' + uploadError.message);
+      showError('อัปโหลดไฟล์ไม่สำเร็จ: ' + uploadError.message);
       setUploading(false);
       return;
     }
@@ -344,7 +345,7 @@ export default function AlloTaxDocClient({
         .remove([doc.file_path]);
       if (storageError) {
         // แถวถูกลบแล้ว ไฟล์ที่ค้างใน Storage ไม่กระทบการใช้งาน แค่แจ้งให้ทราบ
-        alert('ลบเอกสารแล้ว แต่ลบไฟล์ใน Storage ไม่สำเร็จ: ' + dbErrorMessage(storageError));
+        showError('ลบเอกสารแล้ว แต่ลบไฟล์ใน Storage ไม่สำเร็จ: ' + dbErrorMessage(storageError));
       }
     }
 
@@ -378,14 +379,14 @@ export default function AlloTaxDocClient({
       return;
     }
 
-    alert('เปิดเอกสารไม่สำเร็จ: ' + (error?.message ?? 'ไม่พบลิงก์เอกสาร'));
+    showError('เปิดเอกสารไม่สำเร็จ: ' + (error?.message ?? 'ไม่พบลิงก์เอกสาร'));
   }
 
   return (
     <div className="flex max-w-[1152px] flex-col gap-4 px-6 py-8">
       {/* Page Title */}
       <div className="flex items-center justify-between border-b border-slate-200/60 pb-2 pt-8">
-        <h1 className="font-['Be_Vietnam_Pro'] text-[32px] font-bold leading-[32px] text-[#1E293B]">
+        <h1 className="text-[32px] font-bold leading-[32px] text-[#1E293B]">
           เป้าหมาย, ต้นทุน &amp; เอกสารโครงการ
         </h1>
       </div>
@@ -395,7 +396,7 @@ export default function AlloTaxDocClient({
       {/* ---------------------------------------------------------------- */}
       <section className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 font-['Be_Vietnam_Pro'] text-xl font-bold text-[#1E293B]">
+          <h2 className="flex items-center gap-2 text-xl font-bold text-[#1E293B]">
             <span className="h-[6px] w-[7px] rounded-full bg-[#266955]" />
             เป้าหมายโครงการ
           </h2>
@@ -415,7 +416,7 @@ export default function AlloTaxDocClient({
               className="flex w-1/3 flex-col gap-4 rounded-xl border border-slate-200/70 bg-white p-5 shadow-sm"
             >
               <div className="flex items-start justify-between">
-                <span className="font-['Be_Vietnam_Pro'] text-sm font-semibold text-[#1E293B]">
+                <span className="text-sm font-semibold text-[#1E293B]">
                   {t.name}
                 </span>
                 <div className="flex items-center gap-0.5 text-slate-400">
@@ -434,7 +435,7 @@ export default function AlloTaxDocClient({
                     <span className="h-2 w-2 rounded-full bg-[#FF9D42]" />
                     ชดเชยตนเอง
                   </span>
-                  <span className="font-['Be_Vietnam_Pro'] font-semibold text-[#334155]">
+                  <span className="font-semibold text-[#334155]">
                     {t.selfOffsetPct}%
                   </span>
                 </div>
@@ -443,7 +444,7 @@ export default function AlloTaxDocClient({
                     <span className="h-2 w-2 rounded-full bg-[#CBD5E1]" />
                     ขายเชิงพาณิชย์
                   </span>
-                  <span className="font-['Be_Vietnam_Pro'] font-semibold text-[#334155]">
+                  <span className="font-semibold text-[#334155]">
                     {t.commercialPct}%
                   </span>
                 </div>
@@ -461,7 +462,7 @@ export default function AlloTaxDocClient({
       {/* Section 2: ต้นทุนโครงการ                                         */}
       {/* ---------------------------------------------------------------- */}
       <section className="flex flex-col gap-4">
-        <h2 className="flex items-center gap-2 font-['Be_Vietnam_Pro'] text-xl font-bold text-[#1E293B]">
+        <h2 className="flex items-center gap-2 text-xl font-bold text-[#1E293B]">
           <span className="h-[6px] w-[7px] rounded-full bg-[#266955]" />
           ต้นทุนโครงการ
         </h2>
@@ -509,7 +510,7 @@ export default function AlloTaxDocClient({
             <div className="flex w-[180px] flex-col gap-1">
               <label className="text-xs text-[#475569]">ราคาสุทธิคำนวณ</label>
               <div className="flex items-center justify-between rounded-lg border border-[#DCF0E8] bg-[#F0F9F6]/70 px-3 py-2">
-                <span className="font-['Be_Vietnam_Pro'] text-sm font-semibold text-[#346556]">
+                <span className="text-sm font-semibold text-[#346556]">
                   {netPreview.toFixed(2)}
                 </span>
                 <span className="text-[10px] text-[#64748B]">บาท</span>
@@ -579,7 +580,7 @@ export default function AlloTaxDocClient({
       {/* Section 3: เอกสารโครงการ (live / Supabase-backed)                */}
       {/* ---------------------------------------------------------------- */}
       <section className="flex flex-col gap-4">
-        <h2 className="flex items-center gap-2 font-['Be_Vietnam_Pro'] text-xl font-bold text-[#1E293B]">
+        <h2 className="flex items-center gap-2 text-xl font-bold text-[#1E293B]">
           <span className="h-[6px] w-[7px] rounded-full bg-[#266955]" />
           เอกสารโครงการ
         </h2>
@@ -625,7 +626,7 @@ export default function AlloTaxDocClient({
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#F0F9F6]">
                 <UploadCloudIcon className="h-4 w-4 text-[#549C83]" />
               </span>
-              <span className="font-['Be_Vietnam_Pro'] text-xs font-bold text-[#334155]">
+              <span className="text-xs font-bold text-[#334155]">
                 คลิกหรือลากไฟล์มาวางที่นี่
               </span>
               <span className="text-[11px] text-[#94A3B8]">
@@ -663,7 +664,7 @@ export default function AlloTaxDocClient({
                     <FileIcon className="h-3.5 w-4" />
                   </span>
                   <div className="flex flex-col">
-                    <span className="font-['Be_Vietnam_Pro'] text-[11px] font-bold text-[#1E293B]">
+                    <span className="text-[11px] font-bold text-[#1E293B]">
                       {doc.document_name ?? 'ไม่มีชื่อเอกสาร'}
                     </span>
                     <span className="text-[11px] text-[#94A3B8]">

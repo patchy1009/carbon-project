@@ -8,6 +8,7 @@ import { validateForm, extendSchema, notDuplicate, existsIn, type formError } fr
 import { normalizeToArabicNumber } from '@/lib/normalization';
 import { fieldError as FieldError } from '@/components/FieldError';
 import { efTypeSchema, efSchema, gwpSchema, type EfTypeField, type EfField, type GwpField } from './schema';
+import { PencilIcon, TrashIcon } from '@/components/icons'; // [แก้ไข] แทนอิโมจิ ✏️ 🗑️
 
 /* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) ลบ modal "เพิ่มค่า EF" และ "เพิ่มค่า GWP" ชุดเก่าที่ซ้อนอยู่ (เดิม render 2 ชุดพร้อมกันเวลาเปิด)
@@ -236,14 +237,14 @@ export default function EfGwpClient({
 
   return (
     <div className="max-w-[1280px] px-8 pt-16 pb-8 space-y-8">
-      <h1 className="text-[32px] font-bold leading-[32px] tracking-[-0.6px] text-[#0F172A] font-['Be_Vietnam_Pro']">
+      <h1 className="text-[32px] font-bold leading-[32px] tracking-[-0.6px] text-[#0F172A]">
         ค่า Emission Factor (EF) และ ค่า GWP
       </h1>
 
       {/* Section 1: EF Categories */}
       <div className="w-full rounded-xl border border-[#E2E8F0] shadow-sm p-6 space-y-4">
         <div className="flex items-center justify-between border-b border-[#F1F5F9] pb-3">
-          <h2 className="text-xl font-bold text-[#0F172A] font-['Be_Vietnam_Pro']">
+          <h2 className="text-xl font-bold text-[#0F172A]">
             ประเภท EF (EF Categories)
           </h2>
           <button
@@ -260,7 +261,7 @@ export default function EfGwpClient({
               className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F1F5F9] text-xs font-sans"
             >
               {/* [เพิ่ม] กดที่ชื่อเพื่อแก้ไข */}
-              <button onClick={() => openTypeModal(t)} className="hover:underline" title="แก้ไข">
+              <button onClick={() => openTypeModal(t)} className="hover:underline" title="แก้ไข" aria-label="แก้ไข">
                 {t.type_name}
               </button>
               <button
@@ -277,7 +278,7 @@ export default function EfGwpClient({
       {/* Section 2: EF Table */}
       <div className="w-full rounded-xl border border-[#E2E8F0] shadow-sm">
         <div className="flex items-center justify-between px-6 py-6 border-b border-[#F1F5F9]">
-          <h2 className="text-xl font-bold text-[#0F172A] font-['Be_Vietnam_Pro']">
+          <h2 className="text-xl font-bold text-[#0F172A]">
             ตารางค่า EF (Emission Factor)
           </h2>
           <button
@@ -317,15 +318,16 @@ export default function EfGwpClient({
                     </td>
                     <td className="px-5 py-4 text-[#64748B]">{row.real_unit}</td>
                     <td className="px-5 py-4 text-center space-x-2">
-                      <button onClick={() => openEfModal(row)} className="text-[#94A3B8] hover:text-[#266955]" title="แก้ไข">
-                        ✏️
+                      <button onClick={() => openEfModal(row)} className="text-[#94A3B8] hover:text-[#266955]" title="แก้ไข" aria-label="แก้ไข">
+                        <PencilIcon />
                       </button>
                       <button
                         onClick={() => handleDeleteEf(row.ef_id)}
                         className="text-[#94A3B8] hover:text-red-500"
                         title="ลบ"
+                      aria-label="ลบ"
                       >
-                        🗑️
+                        <TrashIcon />
                       </button>
                     </td>
                   </tr>
@@ -339,7 +341,7 @@ export default function EfGwpClient({
       {/* Section 3: GWP Table */}
       <div className="w-full max-w-[944px] rounded-xl border border-[#E2E8F0] shadow-sm">
         <div className="flex items-center justify-between px-6 py-6 border-b border-[#F1F5F9]">
-          <h2 className="text-xl font-bold text-[#0F172A] font-['Be_Vietnam_Pro']">
+          <h2 className="text-xl font-bold text-[#0F172A]">
             ตารางค่า GWP (Global Warming Potential)
           </h2>
           <button
@@ -365,15 +367,16 @@ export default function EfGwpClient({
                   {row.gwp_value}
                 </td>
                 <td className="px-5 py-4 text-center space-x-2">
-                  <button onClick={() => openGwpModal(row)} className="text-[#94A3B8] hover:text-[#266955]" title="แก้ไข">
-                    ✏️
+                  <button onClick={() => openGwpModal(row)} className="text-[#94A3B8] hover:text-[#266955]" title="แก้ไข" aria-label="แก้ไข">
+                    <PencilIcon />
                   </button>
                   <button
                     onClick={() => handleDeleteGwp(row.gwp_id)}
                     className="text-[#94A3B8] hover:text-red-500"
                     title="ลบ"
+                  aria-label="ลบ"
                   >
-                    🗑️
+                    <TrashIcon />
                   </button>
                 </td>
               </tr>

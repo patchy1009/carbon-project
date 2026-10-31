@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import AuthModal from '@/components/AuthModal';
-import { supabase } from '@/lib/supabaseClient';
+import NavUser from '@/components/NavUser';
 
 const navItems = [
   { label: 'หน้าหลัก', href: '/organization/dashboard' },
@@ -21,23 +20,6 @@ export default function OrganizationLayout({
 }) {
   // State สำหรับเปิด/ปิด Pop-up เข้าสู่ระบบ
   const [isAuthOpen, setIsAuthOpen] = useState(false);
-  // อีเมลของบัญชีที่ล็อกอินอยู่ (null = ยังไม่ล็อกอิน)
-  const [email, setEmail] = useState<string | null>(null);
-  const router = useRouter();
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setEmail(session?.user.email ?? null);
-    });
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  async function handleLogout() {
-    await supabase.auth.signOut(); // ลบ session ใน cookie
-    router.replace('/organization/login');
-    router.refresh();
-  }
 
   return (
     <div className="min-h-screen bg-white text-gray-800 font-sans">
@@ -71,39 +53,9 @@ export default function OrganizationLayout({
           ))}
         </div>
 
-        {/* ปุ่มขวาสุด — ล็อกอินแล้วแสดงอีเมล + ออกจากระบบ / ยังไม่ล็อกอินเปิด Pop-up */}
-        <div className="flex items-center gap-3">
-        {email && (
-          <>
-            <span className="text-white text-sm hidden md:inline">{email}</span>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="text-white text-sm underline hover:opacity-80"
-            >
-              ออกจากระบบ
-            </button>
-          </>
-        )}
-        <button
-          type="button"
-          onClick={() => !email && setIsAuthOpen(true)}
-          aria-label={email ? 'บัญชีผู้ใช้' : 'เข้าสู่ระบบ'}
-          className="w-[55px] h-[55px] rounded-full bg-white border-[3px] border-[#6FB898] shadow-[0px_1px_6px_rgba(0,0,0,0.25)] flex items-center justify-center"
-        >
-          <svg
-            width="20"
-            height="21"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="#6FB898"
-            strokeWidth="2"
-          >
-            <circle cx="12" cy="8" r="4" />
-            <path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
-          </svg>
-        </button>
-        </div>
+        {/* ปุ่มขวาสุด — ล็อกอินแล้วแสดงอีเมล + ออกจากระบบ / ยังไม่ล็อกอินเปิด Pop-up
+            [แก้ไข] ย้ายไปเป็น component กลาง NavUser ให้ฝั่ง admin ใช้หน้าตาเดียวกัน */}
+        <NavUser onLoginClick={() => setIsAuthOpen(true)} />
       </nav>
 
       {/* ================= เนื้อหาของแต่ละหน้า ================= */}

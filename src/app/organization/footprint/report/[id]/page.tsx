@@ -36,14 +36,18 @@ export default async function FootprintReportPage({
         'scopedetail_id, amount, ghg_emission, activity_detail(detail_name, activity(carbon_scope(scope_number)))'
       )
       .eq('orgactlist_id', id),
-    // เฉพาะแนวทางที่เผยแพร่แล้ว + เงื่อนไขของแต่ละแนวทาง
+    // แนวทางทั้งหมด + เงื่อนไขของแต่ละแนวทาง
+    // [แก้ไข] เดิมเอาเฉพาะ status = 'published' ตอนนี้แอดมินกดบันทึก = พร้อมแนะนำ (ไม่มีสถานะร่างแล้ว)
+    //   แนวทางเก่าที่เคยค้างเป็นร่างก็จะแสดงด้วย
     supabase
       .from('carbon_reduction_recommendation')
-      .select('*, recommendation_condition(*)')
-      .eq('status', 'published'),
-    // ข้อมูลสำนักงานขององค์กร (ใช้ตัดสินเงื่อนไข)
-    supabase.from('org_office_info').select('info_id, amount').eq('org_id', orgId),
+      .select('*, recommendation_condition(*)'),
+    // [แก้ไข] ข้อมูลสำนักงานของ "รายการนี้" (ใช้ตัดสินเงื่อนไข) เดิมใช้ชุดเดียวทั้งองค์กร
+    // org_office_info ไม่มี org_id แล้ว: ความเป็นเจ้าของตรวจจาก logRes ด้านบน (ไม่ใช่ของตัวเอง -> notFound)
+    supabase.from('org_office_info').select('info_id, amount').eq('orgactlist_id', id),
   ]);
+  if (officeRes.error) console.error('org_office_info error:', officeRes.error.message);
+  const officeRows = officeRes.data;
 
   const log = logRes.data;
   if (!log) notFound();
@@ -70,7 +74,7 @@ export default async function FootprintReportPage({
     if (n && n in data.scope) data.scope[n] += Number(d.ghg_emission) || 0;
   }
 
-  for (const o of (officeRes.data ?? []) as any[]) {
+  for (const o of (officeRows ?? []) as any[]) {
     const v = toNum(o.amount);
     if (o.info_id && v !== null) data.office[o.info_id] = v;
   }

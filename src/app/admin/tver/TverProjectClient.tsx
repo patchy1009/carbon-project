@@ -7,6 +7,7 @@ import { deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
 import { validateForm, extendSchema, notDuplicate, requiredWith, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber, formatCondition, CONDITION_OPERATORS } from '@/lib/normalization';
 import { fieldError as FieldError } from '@/components/FieldError';
+import { PencilIcon, TrashIcon } from '@/components/icons'; // [แก้ไข] แทนอิโมจิ ✏️ 🗑️
 import { treeSchema, tverDetailSchema, type TreeField, type TverDetailField } from './schema';
 
 /* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
@@ -154,15 +155,15 @@ export default function TverProjectClient({
 
   return (
     <div className="max-w-[1280px] px-8 pt-6 pb-16 space-y-6">
-      <h1 className="text-[32px] font-bold leading-10 tracking-[-0.8px] text-[#191C1C] font-['Be_Vietnam_Pro']">
+      <h1 className="text-[32px] font-bold leading-10 tracking-[-0.8px] text-[#191C1C]">
         ข้อมูลการจัดทำโครงการปลูกป่า T-VER
       </h1>
 
       {/* Section 1: Tree Species Catalog */}
       <section className="rounded-xl bg-white shadow-sm p-6 space-y-6">
         <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-xl font-bold text-[#191C1C] font-['Be_Vietnam_Pro']">
-            🌳 รายการต้นไม้ (Tree Species Catalog)
+          <h2 className="flex items-center gap-2 text-xl font-bold text-[#191C1C]">
+            รายการต้นไม้ (Tree Species Catalog)
           </h2>
           <button
             onClick={() => openTreeModal()}
@@ -184,20 +185,22 @@ export default function TverProjectClient({
               {trees.map((t) => (
                 <tr key={t.tree_id} className="border-b border-[#F3F4F4]">
                   <td className="px-4 py-4 font-bold text-[#191C1C]">{t.tree_name}</td>
-                  <td className="px-4 py-4 text-right space-x-2">
+                  <td className="px-4 py-4 text-right space-x-3">
                     <button
                       onClick={() => openTreeModal(t)}
                       className="text-[#3F4944] hover:text-[#266955]"
                       title="แก้ไข"
+                      aria-label="แก้ไข"
                     >
-                      ✏️
+                      <PencilIcon />
                     </button>
                     <button
                       onClick={() => handleDeleteTree(t.tree_id)}
                       className="text-[#3F4944] hover:text-red-500"
                       title="ลบ"
+                      aria-label="ลบ"
                     >
-                      🗑️
+                      <TrashIcon />
                     </button>
                   </td>
                 </tr>
@@ -217,8 +220,8 @@ export default function TverProjectClient({
       {/* Section 2: Forestry Project Parameters & Criteria */}
       <section className="rounded-xl bg-white shadow-sm p-6 space-y-6">
         <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-xl font-bold text-[#191C1C] font-['Be_Vietnam_Pro']">
-            📋 รายละเอียดโครงการปลูกป่า (Forestry Project Parameters &amp; Criteria)
+          <h2 className="flex items-center gap-2 text-xl font-bold text-[#191C1C]">
+            รายละเอียดโครงการปลูกป่า (Forestry Project Parameters &amp; Criteria)
           </h2>
           <button
             onClick={() => openDetailModal()}
@@ -253,20 +256,22 @@ export default function TverProjectClient({
                     )}
                   </td>
                   <td className="px-4 py-4 text-[#3F4944] max-w-[420px] whitespace-pre-line">{d.detail}</td>
-                  <td className="px-4 py-4 text-right space-x-2 whitespace-nowrap">
+                  <td className="px-4 py-4 text-right space-x-3 whitespace-nowrap">
                     <button
                       onClick={() => openDetailModal(d)}
                       className="text-[#3F4944] hover:text-[#266955]"
                       title="แก้ไข"
+                      aria-label="แก้ไข"
                     >
-                      ✏️
+                      <PencilIcon />
                     </button>
                     <button
                       onClick={() => handleDeleteDetail(d.tverdetail_id)}
                       className="text-[#3F4944] hover:text-red-500"
                       title="ลบ"
+                      aria-label="ลบ"
                     >
-                      🗑️
+                      <TrashIcon />
                     </button>
                   </td>
                 </tr>

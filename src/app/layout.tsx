@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { IBM_Plex_Sans_Thai } from 'next/font/google';
 import './globals.css';
+import DialogHost from '@/components/DialogHost';
 
 const ibmPlexSansThai = IBM_Plex_Sans_Thai({
   subsets: ['thai', 'latin'],
@@ -20,7 +21,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="th" className={ibmPlexSansThai.variable}>
-      <body className="font-sans">{children}</body>
+      <body className="font-sans">
+        {children}
+        {/* [เพิ่ม] กล่องแจ้งเตือน/ยืนยันกลางของทุกหน้า (แทน alert/confirm ของเบราว์เซอร์) */}
+        <DialogHost />
+      </body>
     </html>
   );
 }
