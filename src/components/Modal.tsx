@@ -50,3 +50,35 @@ export default function Modal({
     </div>
   );
 }
+
+export function ModalShell({
+  children,
+  onClose,
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <div className="bg-white rounded-xl p-6 w-[420px]" onClick={(e) => e.stopPropagation()}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function ModalActions({ onCancel }: { onCancel: () => void }) {
+  return (
+    <div className="flex justify-end gap-2 pt-2">
+      <button type="button" onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border">
+        ยกเลิก
+      </button>
+      <button type="submit" className="px-4 py-2 text-sm rounded-lg bg-[#059669] text-white">
+        บันทึก
+      </button>
+    </div>
+  );
+}

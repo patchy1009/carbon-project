@@ -1,88 +1,75 @@
-"use client";
+// src/app/admin/layout.tsx
+'use client';
 
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import NavUser from '@/components/NavUser';
 
 const navItems = [
-  { href: "/admin/dashboard", label: "Dashboard" },
-  { href: "/admin/users", label: "ผู้ใช้งาน" },
-  { href: "/admin/abnormal", label: "มอนิเตอร์บัญชี" },
-  { href: "/admin/activities", label: "ข้อมูลกิจกรรม" },
-  { href: "/admin/formula", label: "สูตรคำนวณ" },
-  { href: "/admin/recommendation", label: "แนวทางลดคาร์บอน" },
-  { href: "/admin/guideline", label: "โครงการ T-VER" },
-  { href: "/admin/documents", label: "เอกสาร" },
-  { href: "/admin/allocation", label: "การจัดสรรคาร์บอนเครดิต" },
-  { href: "/admin/tax", label: "ภาษี" },
+  { label: 'EF & GWP Value', href: '/admin/ef-gwp' },
+  { label: 'Activity Management', href: '/admin/activities' },
+  { label: 'สำนักงาน & คำแนะนำ', href: '/admin/officerec' },
+  { label: 'T-VER Project', href: '/admin/tver' },
+  { label: 'Allocation & TAX & Doc', href: '/admin/allotaxdoc' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
 
+  // [แก้ไข] ใช้ฟอนต์เดียวกับฝั่ง organization (font-sans)
   return (
-    <div className="min-h-screen bg-[#F7FAF8] text-[#25352F]">
-      <header className="sticky top-0 z-40 bg-gradient-to-r from-[#117056] to-[#158C69] text-white shadow-[0_1px_3px_rgba(15,74,59,0.12)]">
-        <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between gap-6 px-6">
-          <Link href="/admin/dashboard" className="flex shrink-0 items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/15 font-bold">C</div>
-            <div className="leading-tight">
-              <p className="font-semibold text-[15px]">Carbon Calculator</p>
-              <p className="text-[11px] text-[#DEF7EC]">Admin</p>
-            </div>
+    <div className="min-h-screen bg-[#F8FAFC] text-gray-800 font-sans">
+      {/* Top Navbar */}
+      <header
+        className="fixed top-0 left-0 right-0 z-50 h-[84px] flex items-center justify-between px-8 rounded-bl-[50px]"
+        style={{
+          background: 'linear-gradient(90deg, #2D4A63 0%, #32885F 100%)',
+          boxShadow: '-1px 6px 12.1px rgba(0, 63, 66, 0.81)',
+        }}
+      >
+        {/* [แก้ไข] โลโก้และส่วนผู้ใช้ให้หน้าตาเดียวกับ navbar ฝั่ง organization */}
+        <div className="flex items-baseline gap-3">
+          <Link
+            href="/admin/ef-gwp"
+            className="text-white font-bold text-[28px] font-['Prompt'] hover:opacity-90 transition"
+            style={{ textShadow: '3px 2px 2.8px rgba(0,0,0,0.25)' }}
+          >
+            Carbon Calculator
           </Link>
-
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              aria-label="การแจ้งเตือน"
-              className="relative flex h-9 w-9 items-center justify-center rounded-lg hover:bg-white/10"
-            >
-              <span className="text-lg">♧</span>
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-400 ring-2 ring-[#117056]" />
-            </button>
-
-            <div className="ml-1 flex items-center gap-2 border-l border-white/20 pl-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-xs font-semibold">
-                อว
-              </div>
-              <div className="hidden leading-tight xl:block">
-                <p className="text-[13px] font-medium">อมรรัตน์ วงศ์ดี</p>
-                <p className="text-[11px] text-[#DEF7EC]">ผู้ดูแลระบบ</p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => router.push("/login")}
-              className="ml-2 rounded-lg bg-white/10 px-3 py-1.5 text-[13px] font-medium hover:bg-white/20"
-            >
-              ออกจากระบบ
-            </button>
-          </div>
+          <span className="text-white/80 text-sm">Admin</span>
         </div>
 
-        <nav className="mx-auto flex h-11 max-w-[1440px] items-center gap-6 overflow-x-auto border-t border-white/10 px-6 text-[13px] font-medium">
-          {navItems.map((item) => {
-            const active = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`relative whitespace-nowrap pb-0 transition ${
-                  active
-                    ? "text-white after:absolute after:-bottom-[14px] after:left-0 after:right-0 after:h-[3px] after:rounded-t-md after:bg-[#22AD82]"
-                    : "text-[#BAEDD9] hover:text-white"
-                }`}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+        {/* [แก้ไข] เดิมแสดงชื่อ/บทบาทจาก user_roles + ไอคอนออกจากระบบ
+            ตอนนี้ใช้ NavUser เดียวกับฝั่ง organization: อีเมล + "ออกจากระบบ" + วงกลมผู้ใช้ */}
+        <NavUser />
       </header>
 
-      <main className="mx-auto max-w-[1440px] px-6 py-8">{children}</main>
+      <div className="pt-[84px] flex">
+        {/* Sidebar */}
+        <aside className="fixed left-0 top-[84px] bottom-0 w-[179px] bg-white shadow-[0px_4px_4px_rgba(0,0,0,0.3)] overflow-y-auto">
+          <nav className="flex flex-col gap-1 px-3 pt-6 pb-4">
+            {navItems.map((item) => {
+              const isActive = pathname.startsWith(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`rounded-md px-3 py-2.5 text-sm font-medium ${
+                    isActive ? 'bg-[#F2D84E] text-black' : 'text-black hover:bg-[#F1F5F9]'
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+        </aside>
+
+        {/* Main content */}
+        <main className="ml-[179px] flex-1 min-h-[calc(100vh-84px)]">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

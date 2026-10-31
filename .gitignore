@@ -10,6 +10,9 @@
 !.yarn/releases
 !.yarn/versions
 
+# samples ocr
+/samples
+
 # testing
 /coverage
 
@@ -39,3 +42,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Python virtual environments
+.venv/
+.venv-*/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
