@@ -17,6 +17,7 @@ import { validateForm, required, notNumericOnly, maxLength, isDecimal, type form
 import { normalizeNumberString, normalizeToArabicNumber } from '@/lib/normalization';
 import { clearOfficeDraft, draftScope, hasOfficeValues, readOfficeDraft } from '@/lib/officeDraft';
 import { showAlert, showConfirm, showError } from '@/lib/dialog'; // [แก้ไข] กล่องแจ้งเตือนกลางแทน alert/confirm
+import { TrashIcon } from '@/components/icons';
 
 /* [ปรับปรุง] แนบบิล = OCR ช่วยกรอก (Auto-fill) อย่างเดียว ไม่เก็บรูปบิลลง Supabase แล้ว
  *   แนบรูป -> POST /api/ocr (PaddleOCR) -> ตรวจแก้ใน BillRow -> กด "ยืนยัน"
@@ -52,28 +53,6 @@ const MAX_PER_TYPE: Record<PeriodType, number> = { month: 10, year: 50 };
 
 // ใช้จับไฟล์ซ้ำที่เลือกซ้ำในหน้าเดียวกัน
 const fileKey = (f: File) => `${f.name}|${f.size}|${f.lastModified}`;
-
-// ไอคอนถังขยะ
-function TrashIcon() {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="h-5 w-5"
-      aria-hidden="true"
-    >
-      <path d="M3 6h18" />
-      <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
-      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-      <path d="M10 11v6M14 11v6" />
-    </svg>
-  );
-}
 
 // ---------- ช่วงเวลา (เดือน/ปี) ----------
 const TH_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
@@ -699,7 +678,7 @@ export default function FootprintClient({
                   target={targetOf(p)}
                   onEdit={(patch) => bills.edit(p.uid, patch)}
                   onRemove={() => bills.remove(p.uid)}
-                  trashIcon={<TrashIcon />}
+                  trashIcon={<TrashIcon className="h-5 w-5" />}
                 />
               ))}
             </ul>
@@ -960,10 +939,7 @@ export default function FootprintClient({
           <h2 className="text-base font-medium text-[#191C1E]">อ่านบิลเพื่อช่วยกรอกข้อมูล (ไม่บังคับ)</h2>
           {/* [แก้ไข] ข้อความใหม่: OCR ช่วยกรอกเท่านั้น ไม่เก็บรูปบิล */}
           <p className="text-xs text-[#6B7280]">
-            แนบรูปบิลแยกตามประเภท (JPG, PNG, WEBP ไม่เกิน 10 MB ต่อไฟล์ สูงสุด {maxPerType} ไฟล์ต่อหมวด)
-            ระบบจะอ่านเดือน ปริมาณ และเลขที่บิลให้ ตรวจแก้แล้วกด &quot;ยืนยันข้อมูล&quot;
-            จากนั้นกด &quot;เติมลงฟอร์ม&quot; ระบบไม่เก็บรูปบิลไว้
-            {periodType === 'year' && ' (รายปี: แนบบิลของแต่ละเดือนในปีนั้น เดือนที่ไม่มีบิลกรอกเองหรือใช้ค่าเดือนก่อนหน้าได้)'}
+            {`แนบรูปบิลแยกตามประเภท (JPG, PNG, WEBP ไม่เกิน 10 MB ต่อไฟล์ สูงสุด ${maxPerType} ไฟล์ต่อหมวด) ระบบจะอ่านเดือน ปริมาณ และเลขที่บิลให้ ตรวจแก้แล้วกด "ยืนยันข้อมูล" จากนั้นกด "เติมลงฟอร์ม" ระบบไม่เก็บรูปบิลไว้${periodType === 'year' ? ' (รายปี: แนบบิลของแต่ละเดือนในปีนั้น เดือนที่ไม่มีบิลกรอกเองหรือใช้ค่าเดือนก่อนหน้าได้)' : ''}`}
           </p>
         </div>
         <div className="flex flex-col gap-4">

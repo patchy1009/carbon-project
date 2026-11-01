@@ -7,9 +7,10 @@ import { ModalActions, ModalShell } from '@/components/Modal';
 import { dbErrorMessage, deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
 import { validateForm, extendSchema, notDuplicate, validateFile, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber, safeStorageName, fileBaseName, fileExtension } from '@/lib/normalization';
-import { fieldError as FieldError } from '@/components/FieldError';
+import FieldError from '@/components/FieldError';
 import { docSchema, costSchema, DOC_FILE_RULE, type DocField, type CostField } from './schema';
 import { showError } from '@/lib/dialog'; // [แก้ไข] กล่องแจ้งเตือนกลางแทน alert
+import { DownloadIcon, FileIcon, PencilIcon, PlusIcon, TrashIcon, UploadCloudIcon } from '@/components/icons';
 
 /* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) เอกสาร: ชื่อผ่าน normalize + validate (ห้ามว่าง/ตัวเลขล้วน/ซ้ำ/ยาวเกิน) แสดง error ใต้ช่องแทน alert
@@ -25,93 +26,7 @@ import { showError } from '@/lib/dialog'; // [แก้ไข] กล่อง�
  */
 const BUCKET = 'documents';
 
-/* -------------------------------------------------------------------------- */
-/*  Small inline icons (kept dependency-free)                                 */
-/* -------------------------------------------------------------------------- */
-
-function PencilIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" className={className}>
-      <path
-        d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1L5 12.8l-2.8.7.7-2.8 8.4-8.4Z"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function TrashIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" className={className}>
-      <path
-        d="M2.5 4.5h11M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M6.8 7.5v4M9.2 7.5v4M3.5 4.5l.6 8a1 1 0 0 0 1 .9h5.8a1 1 0 0 0 1-.9l.6-8"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function DownloadIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" className={className}>
-      <path
-        d="M8 2v8m0 0 3-3M8 10 5 7M3 13h10"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function PlusIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 12 12" fill="none" className={className}>
-      <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function FileIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 14 16" fill="none" className={className}>
-      <path
-        d="M2 1.5h6L12 5.5V14a.5.5 0 0 1-.5.5h-9A.5.5 0 0 1 2 14V1.5Z"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinejoin="round"
-      />
-      <path d="M8 1.5V5h4" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function UploadCloudIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 18" fill="none" className={className}>
-      <path
-        d="M6.5 17A4.5 4.5 0 0 1 5.4 8.1 5.5 5.5 0 0 1 16.2 6.6 4 4 0 0 1 17.5 17H6.5Z"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M12 14V8m0 0-2.4 2.4M12 8l2.4 2.4"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
+/* [แก้ไข] ไอคอนที่เคยเขียนไว้ในไฟล์นี้ ย้ายไปไว้ที่ components/icons.tsx (ใช้ร่วมกันทุกหน้า) */
 
 /* -------------------------------------------------------------------------- */
 /*  Helpers                                                                    */

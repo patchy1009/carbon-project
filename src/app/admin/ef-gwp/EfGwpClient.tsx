@@ -6,9 +6,10 @@ import { ModalActions, ModalShell } from '@/components/Modal';
 import { deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
 import { validateForm, extendSchema, notDuplicate, existsIn, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber } from '@/lib/normalization';
-import { fieldError as FieldError } from '@/components/FieldError';
+import FieldError from '@/components/FieldError';
 import { efTypeSchema, efSchema, gwpSchema, type EfTypeField, type EfField, type GwpField } from './schema';
-import { PencilIcon, TrashIcon } from '@/components/icons'; // [แก้ไข] แทนอิโมจิ ✏️ 🗑️
+import RowActions from '@/components/RowActions'; // [แก้ไข] ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
+import { inputClass } from '@/components/formStyles'; // [แก้ไข] class ช่องกรอกกลาง
 
 /* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) ลบ modal "เพิ่มค่า EF" และ "เพิ่มค่า GWP" ชุดเก่าที่ซ้อนอยู่ (เดิม render 2 ชุดพร้อมกันเวลาเปิด)
@@ -18,8 +19,6 @@ import { PencilIcon, TrashIcon } from '@/components/icons'; // [แก้ไข]
  * 5) เอา required / type="number" ของ HTML ออก (ใส่ noValidate) ให้ทุกช่องผ่าน normalize + validate ของเรา
  *    เพราะ type="number" รับเลขไทยไม่ได้ และ browser จะเด้งข้อความของมันเองก่อนถึงโค้ดเรา */
 
-const inputCls = (hasError: boolean) =>
-  `w-full border rounded-lg px-3 py-2 text-sm ${hasError ? 'border-red-500' : ''}`;
 
 const palette = [
   { bg: 'bg-[#D3F1FF]', border: 'border-[#84CCFF]', text: 'text-[#1B4FB1]' },
@@ -318,17 +317,7 @@ export default function EfGwpClient({
                     </td>
                     <td className="px-5 py-4 text-[#64748B]">{row.real_unit}</td>
                     <td className="px-5 py-4 text-center space-x-2">
-                      <button onClick={() => openEfModal(row)} className="text-[#94A3B8] hover:text-[#266955]" title="แก้ไข" aria-label="แก้ไข">
-                        <PencilIcon />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteEf(row.ef_id)}
-                        className="text-[#94A3B8] hover:text-red-500"
-                        title="ลบ"
-                      aria-label="ลบ"
-                      >
-                        <TrashIcon />
-                      </button>
+                      <RowActions onEdit={() => openEfModal(row)} onDelete={() => handleDeleteEf(row.ef_id)} />
                     </td>
                   </tr>
                 );
@@ -367,17 +356,7 @@ export default function EfGwpClient({
                   {row.gwp_value}
                 </td>
                 <td className="px-5 py-4 text-center space-x-2">
-                  <button onClick={() => openGwpModal(row)} className="text-[#94A3B8] hover:text-[#266955]" title="แก้ไข" aria-label="แก้ไข">
-                    <PencilIcon />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteGwp(row.gwp_id)}
-                    className="text-[#94A3B8] hover:text-red-500"
-                    title="ลบ"
-                  aria-label="ลบ"
-                  >
-                    <TrashIcon />
-                  </button>
+                  <RowActions onEdit={() => openGwpModal(row)} onDelete={() => handleDeleteGwp(row.gwp_id)} />
                 </td>
               </tr>
             ))}
@@ -392,7 +371,7 @@ export default function EfGwpClient({
             <h3 className="text-lg font-bold">{editTypeId ? 'แก้ไขประเภท EF' : 'เพิ่มประเภท EF ใหม่'}</h3>
             <div>
               <input
-                className={inputCls(!!typeErrors.type_name)}
+                className={inputClass(!!typeErrors.type_name)}
                 placeholder="ชื่อประเภท เช่น Stationary Source"
                 type="text"
                 maxLength={100}
@@ -414,7 +393,7 @@ export default function EfGwpClient({
 
             <div>
               <select
-                className={inputCls(!!efError.eftype_id)}
+                className={inputClass(!!efError.eftype_id)}
                 value={efForm.eftype_id}
                 onChange={(e) => setEfForm({ ...efForm, eftype_id: e.target.value })}
               >
@@ -430,7 +409,7 @@ export default function EfGwpClient({
 
             <div>
               <input
-                className={inputCls(!!efError.ef_name)}
+                className={inputClass(!!efError.ef_name)}
                 placeholder="ชื่อกิจกรรม/เชื้อเพลิง"
                 maxLength={150}
                 value={efForm.ef_name}
@@ -441,7 +420,7 @@ export default function EfGwpClient({
 
             <div>
               <input
-                className={inputCls(!!efError.ef_value)}
+                className={inputClass(!!efError.ef_value)}
                 placeholder="ค่า EF (ทศนิยมไม่เกิน 6 หลัก)"
                 type="text"
                 inputMode="decimal"
@@ -453,7 +432,7 @@ export default function EfGwpClient({
 
             <div>
               <input
-                className={inputCls(!!efError.real_unit)}
+                className={inputClass(!!efError.real_unit)}
                 placeholder="หน่วย เช่น kWh, Litre, kg"
                 maxLength={50}
                 value={efForm.real_unit}
@@ -475,7 +454,7 @@ export default function EfGwpClient({
 
             <div>
               <input
-                className={inputCls(!!gwpErrors.gas_name)}
+                className={inputClass(!!gwpErrors.gas_name)}
                 placeholder="ชื่อก๊าซ เช่น คาร์บอนไดออกไซด์ (CO2)"
                 maxLength={100}
                 value={gwpForm.gas_name}
@@ -486,7 +465,7 @@ export default function EfGwpClient({
 
             <div>
               <input
-                className={inputCls(!!gwpErrors.gwp_value)}
+                className={inputClass(!!gwpErrors.gwp_value)}
                 placeholder="ค่า GWP"
                 type="text"
                 inputMode="decimal"

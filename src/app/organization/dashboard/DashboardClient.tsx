@@ -7,6 +7,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { dbErrorMessage } from '@/lib/supabaseCrud';
 import { showConfirm, showError } from '@/lib/dialog';
 import type { OrgActivityLog, OrgTreeProject } from '@/types/dashboard';
+import { TrashIcon } from '@/components/icons';
+import { formatNumber, formatThaiDate } from '@/lib/format';
 
 /* [เพิ่ม] ลบรายการบันทึกการปล่อยก๊าซ และโครงการ T-VER จากหน้า Dashboard
  * ลบข้อมูลลูกก่อนแล้วค่อยลบแถวหลัก (ไม่พึ่ง ON DELETE CASCADE ของ DB เพราะบางตารางอาจไม่ได้ตั้งไว้)
@@ -39,29 +41,6 @@ async function deleteTreeProject(id: string): Promise<string | null> {
   const { data, error } = await supabase.from('org_tree_project').delete().eq('orgtreeproject_id', id).select('orgtreeproject_id');
   if (error) return dbErrorMessage(error);
   return data && data.length > 0 ? null : 'ไม่พบโครงการ หรือไม่มีสิทธิ์ลบ';
-}
-
-function TrashIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
-      <path d="M3 6h18" />
-      <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
-      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-      <path d="M10 11v6M14 11v6" />
-    </svg>
-  );
-}
-
-function formatNumber(n: number | null): string {
-  return new Intl.NumberFormat('th-TH').format(n ?? 0);
-}
-
-function formatThaiDate(dateStr: string): string {
-  return new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(new Date(dateStr));
 }
 
 function sumCredits(p: OrgTreeProject): number {

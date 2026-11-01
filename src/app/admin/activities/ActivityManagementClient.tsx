@@ -8,9 +8,11 @@ import { ModalActions, ModalShell } from '@/components/Modal';
 import { deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
 import { validateForm, extendSchema, notDuplicate, existsIn, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber } from '@/lib/normalization';
-import { fieldError as FieldError } from '@/components/FieldError';
+import FieldError from '@/components/FieldError';
 import { OCR_SOURCES } from '@/lib/bills/types';
 import { PencilIcon, TrashIcon } from '@/components/icons'; // [แก้ไข] แทนอิโมจิ ✏️ 🗑️
+import RowActions from '@/components/RowActions'; // [แก้ไข] ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
+import { inputClass } from '@/components/formStyles'; // [แก้ไข] class ช่องกรอกกลาง
 
 /* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) เดิม validate แล้วเก็บ error ไว้ใน state แต่ "ไม่ได้แสดง" ใน modal -> เพิ่ม <FieldError> ใต้ทุกช่อง
@@ -30,8 +32,6 @@ const scopeBadgeStyle: Record<number, string> = {
   3: 'bg-[#FFE1C8] text-[#775B45]',
 };
 
-const inputCls = (hasError?: boolean) =>
-  `w-full border rounded-lg px-3 py-2 text-sm ${hasError ? 'border-red-500' : ''}`;
 
 const DETAIL_SELECT =
   '*, activity(activity_id, activity_name, scope_id, carbon_scope(scope_id, scope_name, scope_number)), emission_factor(ef_id, ef_name, ef_value, real_unit),global_warming_potential(gwp_id, gas_name, gwp_value)';
@@ -422,22 +422,7 @@ export default function ActivityManagementClient({
                   >
                     <span className="text-sm text-[#191C1C]">{a.activity_name}</span>
                     <span className="flex gap-2">
-                      <button
-                        onClick={() => openActivityModal(a)}
-                        className="text-[#3F4944] hover:text-[#266955]"
-                        title="แก้ไข"
-                      aria-label="แก้ไข"
-                      >
-                        <PencilIcon />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteActivity(a.activity_id)}
-                        className="text-[#3F4944] hover:text-red-500"
-                        title="ลบ"
-                      aria-label="ลบ"
-                      >
-                        <TrashIcon />
-                      </button>
+                      <RowActions onEdit={() => openActivityModal(a)} onDelete={() => handleDeleteActivity(a.activity_id)} />
                     </span>
                   </div>
                 ))}
@@ -517,22 +502,7 @@ export default function ActivityManagementClient({
                     </td>
                     <td className="px-4 py-4 text-[#3F4944] max-w-[320px] whitespace-pre-line">{d.description}</td>
                     <td className="px-4 py-4 text-right space-x-2 whitespace-nowrap">
-                      <button
-                        onClick={() => openDetailModal(d)}
-                        className="text-[#3F4944] hover:text-[#266955]"
-                        title="แก้ไข"
-                      aria-label="แก้ไข"
-                      >
-                        <PencilIcon />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteDetail(d.scopedetail_id)}
-                        className="text-[#3F4944] hover:text-red-500"
-                        title="ลบ"
-                      aria-label="ลบ"
-                      >
-                        <TrashIcon />
-                      </button>
+                      <RowActions onEdit={() => openDetailModal(d)} onDelete={() => handleDeleteDetail(d.scopedetail_id)} />
                     </td>
                   </tr>
                 );
@@ -548,7 +518,7 @@ export default function ActivityManagementClient({
             <h3 className="text-lg font-bold">{editScopeId ? 'แก้ไขขอบเขต' : 'เพิ่มขอบเขตใหม่'}</h3>
             <div>
               <input
-                className={inputCls(!!scopeErrors.scope_number)}
+                className={inputClass(!!scopeErrors.scope_number)}
                 placeholder="หมายเลขสโคป เช่น 1, 2, 3"
                 type="text"
                 inputMode="numeric"
@@ -559,7 +529,7 @@ export default function ActivityManagementClient({
             </div>
             <div>
               <input
-                className={inputCls(!!scopeErrors.scope_name)}
+                className={inputClass(!!scopeErrors.scope_name)}
                 placeholder="ชื่อขอบเขต เช่น Direct Emissions"
                 maxLength={150}
                 value={scopeForm.scope_name}
@@ -569,7 +539,7 @@ export default function ActivityManagementClient({
             </div>
             <div>
               <textarea
-                className={inputCls(!!scopeErrors.scope_detail)}
+                className={inputClass(!!scopeErrors.scope_detail)}
                 placeholder="คำอธิบายขอบเขต เช่น Direct GHG emissions from sources owned or controlled by your company..."
                 rows={3}
                 maxLength={1000}
@@ -589,7 +559,7 @@ export default function ActivityManagementClient({
             <h3 className="text-lg font-bold">{editActivityId ? 'แก้ไขกิจกรรม' : 'เพิ่มกิจกรรมใหม่'}</h3>
             <div>
               <select
-                className={inputCls(!!activityErrors.scope_id)}
+                className={inputClass(!!activityErrors.scope_id)}
                 value={activityForm.scope_id}
                 onChange={(e) => setActivityForm({ ...activityForm, scope_id: e.target.value })}
               >
@@ -604,7 +574,7 @@ export default function ActivityManagementClient({
             </div>
             <div>
               <input
-                className={inputCls(!!activityErrors.activity_name)}
+                className={inputClass(!!activityErrors.activity_name)}
                 placeholder="ชื่อกิจกรรม เช่น การใช้น้ำมันเชื้อเพลิงยานพาหนะ"
                 maxLength={150}
                 value={activityForm.activity_name}
@@ -623,7 +593,7 @@ export default function ActivityManagementClient({
             <h3 className="text-lg font-bold">{editDetailId ? 'แก้ไขรายละเอียดกิจกรรม' : 'เพิ่มรายละเอียดกิจกรรม'}</h3>
             <div>
               <select
-                className={inputCls(!!detailErrors.activity_id)}
+                className={inputClass(!!detailErrors.activity_id)}
                 value={detailForm.activity_id}
                 onChange={(e) => setDetailForm({ ...detailForm, activity_id: e.target.value })}
               >
@@ -638,7 +608,7 @@ export default function ActivityManagementClient({
             </div>
             <div>
               <input
-                className={inputCls(!!detailErrors.detail_name)}
+                className={inputClass(!!detailErrors.detail_name)}
                 placeholder="ชื่อรายละเอียดที่บันทึก เช่น น้ำมันดีเซล B7"
                 maxLength={150}
                 value={detailForm.detail_name}
@@ -648,7 +618,7 @@ export default function ActivityManagementClient({
             </div>
             <div>
               <input
-                className={inputCls(!!detailErrors.unit)}
+                className={inputClass(!!detailErrors.unit)}
                 // [แก้ไข] ตัวอย่างเดิมมี "ลิตร" แต่ข้อกำหนดของหน้านี้คือหน่วยเป็นภาษาอังกฤษ
                 placeholder="หน่วย (ภาษาอังกฤษ) เช่น Litre, kWh, kg, km"
                 maxLength={50}
@@ -659,7 +629,7 @@ export default function ActivityManagementClient({
             </div>
             <div>
               <select
-                className={inputCls(!!detailErrors.ef_id)}
+                className={inputClass(!!detailErrors.ef_id)}
                 value={detailForm.ef_id}
                 onChange={(e) => setDetailForm({ ...detailForm, ef_id: e.target.value })}
               >
@@ -674,7 +644,7 @@ export default function ActivityManagementClient({
             </div>
             <div>
               <select
-                className={inputCls(!!detailErrors.gwp_id)}
+                className={inputClass(!!detailErrors.gwp_id)}
                 value={detailForm.gwp_id}
                 onChange={(e) => setDetailForm({ ...detailForm, gwp_id: e.target.value })}
               >
@@ -691,7 +661,7 @@ export default function ActivityManagementClient({
             <div>
               <label className="mb-1 block text-xs text-[#3F4944]">รับข้อมูลจากบิล (OCR ช่วยกรอก)</label>
               <select
-                className={inputCls(!!detailErrors.ocr_source)}
+                className={inputClass(!!detailErrors.ocr_source)}
                 value={detailForm.ocr_source}
                 onChange={(e) => setDetailForm({ ...detailForm, ocr_source: e.target.value })}
               >
@@ -706,7 +676,7 @@ export default function ActivityManagementClient({
             </div>
             <div>
               <textarea
-                className={inputCls(!!detailErrors.description)}
+                className={inputClass(!!detailErrors.description)}
                 placeholder="รายละเอียดวิธีบันทึกข้อมูล"
                 rows={2}
                 maxLength={1000}

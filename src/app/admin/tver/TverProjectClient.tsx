@@ -6,9 +6,10 @@ import { ModalActions, ModalShell } from '@/components/Modal';
 import { deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
 import { validateForm, extendSchema, notDuplicate, requiredWith, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber, formatCondition, CONDITION_OPERATORS } from '@/lib/normalization';
-import { fieldError as FieldError } from '@/components/FieldError';
-import { PencilIcon, TrashIcon } from '@/components/icons'; // [แก้ไข] แทนอิโมจิ ✏️ 🗑️
+import FieldError from '@/components/FieldError';
 import { treeSchema, tverDetailSchema, type TreeField, type TverDetailField } from './schema';
+import RowActions from '@/components/RowActions'; // [แก้ไข] ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
+import { inputClass } from '@/components/formStyles'; // [แก้ไข] class ช่องกรอกกลาง
 
 /* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) เดิมบันทึกค่าจากฟอร์มลง DB ตรงๆ -> ตอนนี้ผ่าน normalize + validate (schema.ts) ทุกช่อง
@@ -20,8 +21,6 @@ import { treeSchema, tverDetailSchema, type TreeField, type TverDetailField } fr
  * 5) ใช้ ModalShell / ModalActions จาก components/Modal แทนตัวที่เขียนซ้ำไว้ท้ายไฟล์
  * 6) เพิ่มการแก้ไขทั้ง 2 ตาราง */
 
-const inputCls = (hasError?: boolean) =>
-  `w-full border rounded-lg px-3 py-2 text-sm ${hasError ? 'border-red-500' : ''}`;
 
 const emptyDetailForm = { detail_name: '', unit: '', condition_operator: '', condition_number: '', detail: '' };
 
@@ -186,22 +185,7 @@ export default function TverProjectClient({
                 <tr key={t.tree_id} className="border-b border-[#F3F4F4]">
                   <td className="px-4 py-4 font-bold text-[#191C1C]">{t.tree_name}</td>
                   <td className="px-4 py-4 text-right space-x-3">
-                    <button
-                      onClick={() => openTreeModal(t)}
-                      className="text-[#3F4944] hover:text-[#266955]"
-                      title="แก้ไข"
-                      aria-label="แก้ไข"
-                    >
-                      <PencilIcon />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteTree(t.tree_id)}
-                      className="text-[#3F4944] hover:text-red-500"
-                      title="ลบ"
-                      aria-label="ลบ"
-                    >
-                      <TrashIcon />
-                    </button>
+                    <RowActions onEdit={() => openTreeModal(t)} onDelete={() => handleDeleteTree(t.tree_id)} />
                   </td>
                 </tr>
               ))}
@@ -257,22 +241,7 @@ export default function TverProjectClient({
                   </td>
                   <td className="px-4 py-4 text-[#3F4944] max-w-[420px] whitespace-pre-line">{d.detail}</td>
                   <td className="px-4 py-4 text-right space-x-3 whitespace-nowrap">
-                    <button
-                      onClick={() => openDetailModal(d)}
-                      className="text-[#3F4944] hover:text-[#266955]"
-                      title="แก้ไข"
-                      aria-label="แก้ไข"
-                    >
-                      <PencilIcon />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteDetail(d.tverdetail_id)}
-                      className="text-[#3F4944] hover:text-red-500"
-                      title="ลบ"
-                      aria-label="ลบ"
-                    >
-                      <TrashIcon />
-                    </button>
+                    <RowActions onEdit={() => openDetailModal(d)} onDelete={() => handleDeleteDetail(d.tverdetail_id)} />
                   </td>
                 </tr>
               ))}
@@ -295,7 +264,7 @@ export default function TverProjectClient({
             <h3 className="text-lg font-bold">{editTreeId ? 'แก้ไขต้นไม้' : 'เพิ่มต้นไม้ใหม่'}</h3>
             <div>
               <input
-                className={inputCls(!!treeErrors.tree_name)}
+                className={inputClass(!!treeErrors.tree_name)}
                 placeholder="ชื่อต้นไม้ เช่น ยางนา"
                 maxLength={100}
                 value={treeForm.tree_name}
@@ -315,7 +284,7 @@ export default function TverProjectClient({
             <h3 className="text-lg font-bold">{editDetailId ? 'แก้ไขเงื่อนไขโครงการ' : 'เพิ่มเงื่อนไขโครงการ'}</h3>
             <div>
               <input
-                className={inputCls(!!detailErrors.detail_name)}
+                className={inputClass(!!detailErrors.detail_name)}
                 placeholder="รายละเอียดโครงการ เช่น พื้นที่โครงการทั้งหมด"
                 maxLength={150}
                 value={detailForm.detail_name}
@@ -325,7 +294,7 @@ export default function TverProjectClient({
             </div>
             <div>
               <input
-                className={inputCls(!!detailErrors.unit)}
+                className={inputClass(!!detailErrors.unit)}
                 placeholder="หน่วย เช่น ไร่, แปลง, ต้น, ปี"
                 maxLength={50}
                 value={detailForm.unit}
@@ -354,7 +323,7 @@ export default function TverProjectClient({
                   ))}
                 </select>
                 <input
-                  className={`${inputCls(!!detailErrors.condition_number)} flex-1`}
+                  className={`${inputClass(!!detailErrors.condition_number)} flex-1`}
                   placeholder="เช่น 1000"
                   type="text"
                   inputMode="decimal"
@@ -375,7 +344,7 @@ export default function TverProjectClient({
             </div>
             <div>
               <textarea
-                className={inputCls(!!detailErrors.detail)}
+                className={inputClass(!!detailErrors.detail)}
                 placeholder="คำอธิบาย"
                 rows={3}
                 maxLength={1000}

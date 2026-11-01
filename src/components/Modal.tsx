@@ -51,19 +51,30 @@ export default function Modal({
   );
 }
 
+/* [กลาง] กรอบ popup ของฟอร์มฝั่ง admin (คลิกพื้นหลัง = ปิด)
+ * [แก้ไข] เพิ่ม title (หัวข้อ popup) และ wide (popup กว้าง) แทน Dialog ที่หน้าสำนักงาน&คำแนะนำเขียนซ้ำไว้เอง
+ *   และให้เลื่อนดูได้เมื่อเนื้อหายาวเกินจอ */
 export function ModalShell({
   children,
   onClose,
+  title,
+  wide = false,
 }: {
   children: React.ReactNode;
   onClose: () => void;
+  title?: string;
+  wide?: boolean;
 }) {
   return (
     <div
-      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
       onClick={onClose}
     >
-      <div className="bg-white rounded-xl p-6 w-[420px]" onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`bg-white rounded-xl p-6 max-w-full max-h-[90vh] overflow-y-auto ${wide ? 'w-[860px]' : 'w-[440px]'}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {title && <h3 className="mb-4 text-lg font-bold">{title}</h3>}
         {children}
       </div>
     </div>

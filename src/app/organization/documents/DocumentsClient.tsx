@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import type { DocumentItem } from '@/types/documents';
 import { showError } from '@/lib/dialog'; // [แก้ไข] กล่องแจ้งเตือนกลางแทน alert
+import { formatThaiDate } from '@/lib/format';
 
 function getFileType(filePath: string | null): { label: string; color: string } {
   const ext = filePath?.split('.').pop()?.toLowerCase() ?? '';
@@ -19,14 +20,6 @@ function getFileType(filePath: string | null): { label: string; color: string } 
     default:
       return { label: 'FILE', color: 'bg-[#6B7280]' };
   }
-}
-
-function formatThaiDate(dateStr: string): string {
-  return new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(new Date(dateStr));
 }
 
 export default function DocumentsClient({ documents }: { documents: DocumentItem[] }) {
@@ -133,7 +126,7 @@ export default function DocumentsClient({ documents }: { documents: DocumentItem
                       {doc.document_name}
                     </h4>
                     <div className="flex items-center gap-1 text-xs text-[#9CA3AF]">
-                      📅 {formatThaiDate(doc.upload_date)}
+                      📅 {formatThaiDate(doc.upload_date, 'numeric')}
                     </div>
                   </div>
                 </div>

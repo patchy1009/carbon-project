@@ -7,7 +7,10 @@ import { validateForm, extendSchema, notDuplicate, existsIn, type formError } fr
 import { normalizeToArabicNumber } from '@/lib/normalization';
 import { showConfirm, showError } from '@/lib/dialog'; // [แก้ไข] กล่องแจ้งเตือนกลางแทน alert/confirm
 import { infoSchema, recSchema, condValueSchema, type InfoField, type RecField } from './schema';
-import { PencilIcon, TrashIcon } from '@/components/icons'; // [แก้ไข] แทนอิโมจิ ✏️ 🗑️
+import RowActions from '@/components/RowActions'; // [แก้ไข] ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
+import { inputClass } from '@/components/formStyles'; // [แก้ไข] class ช่องกรอกกลาง
+import { ModalShell } from '@/components/Modal';
+import FieldError from '@/components/FieldError';
 
 /* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) ลบตัวช่วยตรวจที่เขียนซ้ำในไฟล์ (cleanText/cleanNumber/isNumeric/isNumberOnlyText)
@@ -135,41 +138,7 @@ const rowToCond = (c: CondRow): CondForm => ({
 });
 
 // ---------- component ย่อย ----------
-function Dialog({
-  title,
-  onClose,
-  wide,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  wide?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className={`max-h-[90vh] max-w-full overflow-y-auto rounded-xl bg-white p-6 ${
-          wide ? 'w-[860px]' : 'w-[440px]'
-        }`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-4 text-lg font-bold">{title}</h3>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function Err({ m }: { m?: string }) {
-  return m ? <p className="mt-1 text-xs text-red-600">{m}</p> : null;
-}
-
-const inputCls = (bad?: boolean) =>
-  `w-full border rounded-lg px-3 py-2 text-sm ${bad ? 'border-red-500' : ''}`;
+/* [แก้ไข] Dialog / Err ที่เคยเขียนไว้ในไฟล์นี้ ย้ายไปใช้ ModalShell (components/Modal) และ FieldError กลางแทน */
 
 // ตัวเลือก 1 ค่า (ตัวตั้ง หรือ ตัวหาร)
 function OperandPicker({
@@ -727,22 +696,7 @@ export default function OfficeRecommendationClient({
                   <td className="px-5 py-4 text-[#64748B]">{i.unit ?? '-'}</td>
                   <td className="px-5 py-4 text-[#64748B] whitespace-pre-line">{i.info_detail ?? '-'}</td>
                   <td className="px-5 py-4 text-center space-x-2 whitespace-nowrap">
-                    <button
-                      onClick={() => openInfoModal(i)}
-                      className="text-[#94A3B8] hover:text-[#266955]"
-                      title="แก้ไข"
-                    aria-label="แก้ไข"
-                    >
-                      <PencilIcon />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteInfo(i.info_id)}
-                      className="text-[#94A3B8] hover:text-red-500"
-                      title="ลบ"
-                    aria-label="ลบ"
-                    >
-                      <TrashIcon />
-                    </button>
+                    <RowActions onEdit={() => openInfoModal(i)} onDelete={() => handleDeleteInfo(i.info_id)} />
                   </td>
                 </tr>
               ))}
@@ -812,22 +766,7 @@ export default function OfficeRecommendationClient({
                     </td>
                     {/* [ลบ] คอลัมน์สถานะ (ร่าง/เผยแพร่แล้ว) บันทึกแล้วใช้งานทันที */}
                     <td className="px-5 py-4 text-center space-x-2 whitespace-nowrap">
-                      <button
-                        onClick={() => openRecModal(r)}
-                        className="text-[#94A3B8] hover:text-[#266955]"
-                        title="แก้ไข"
-                      aria-label="แก้ไข"
-                      >
-                        <PencilIcon />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteRec(r.rec_uid)}
-                        className="text-[#94A3B8] hover:text-red-500"
-                        title="ลบ"
-                      aria-label="ลบ"
-                      >
-                        <TrashIcon />
-                      </button>
+                      <RowActions onEdit={() => openRecModal(r)} onDelete={() => handleDeleteRec(r.rec_uid)} />
                     </td>
                   </tr>
                 );
@@ -839,42 +778,42 @@ export default function OfficeRecommendationClient({
 
       {/* ============ Popup: เพิ่มหัวข้อข้อมูลสำนักงาน ============ */}
       {showInfoModal && (
-        <Dialog
+        <ModalShell
           title={editInfoId ? 'แก้ไขหัวข้อข้อมูลสำนักงาน' : 'เพิ่มหัวข้อข้อมูลสำนักงาน'}
           onClose={() => setShowInfoModal(false)}
         >
           <form onSubmit={handleSaveInfo} noValidate className="space-y-4">
             <div>
               <input
-                className={inputCls(!!infoErrors.info_name)}
+                className={inputClass(!!infoErrors.info_name)}
                 placeholder="ชื่อหัวข้อ เช่น จำนวนพนักงาน"
                 maxLength={150}
                 value={infoForm.info_name}
                 onChange={(e) => setInfoForm({ ...infoForm, info_name: e.target.value })}
               />
-              <Err m={infoErrors.info_name} />
+              <FieldError message={infoErrors.info_name} />
             </div>
             {/* [แก้ไข] เดิมหน่วยและคำอธิบายไม่มีการตรวจ/ไม่แสดง error */}
             <div>
               <input
-                className={inputCls(!!infoErrors.unit)}
+                className={inputClass(!!infoErrors.unit)}
                 placeholder="หน่วย เช่น คน, ตร.ม., kWh/ปี, % (เว้นว่างได้ = ช่องข้อความ)"
                 maxLength={50}
                 value={infoForm.unit}
                 onChange={(e) => setInfoForm({ ...infoForm, unit: e.target.value })}
               />
-              <Err m={infoErrors.unit} />
+              <FieldError message={infoErrors.unit} />
             </div>
             <div>
               <textarea
-                className={inputCls(!!infoErrors.info_detail)}
+                className={inputClass(!!infoErrors.info_detail)}
                 rows={3}
                 maxLength={1000}
                 placeholder="คำอธิบายที่จะแสดงให้บริษัทเห็น (ไม่บังคับ) เช่น ให้กรอกค่าเฉลี่ยของทั้งอาคาร"
                 value={infoForm.info_detail}
                 onChange={(e) => setInfoForm({ ...infoForm, info_detail: e.target.value })}
               />
-              <Err m={infoErrors.info_detail} />
+              <FieldError message={infoErrors.info_detail} />
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button
@@ -892,12 +831,12 @@ export default function OfficeRecommendationClient({
               </button>
             </div>
           </form>
-        </Dialog>
+        </ModalShell>
       )}
 
       {/* ============ Popup: เพิ่มแนวทางลดคาร์บอน ============ */}
       {showRecModal && (
-        <Dialog
+        <ModalShell
           title={editRecId ? 'แก้ไขแนวทางลดคาร์บอน' : 'เพิ่มแนวทางลดคาร์บอน'}
           onClose={() => setShowRecModal(false)}
           wide
@@ -906,13 +845,13 @@ export default function OfficeRecommendationClient({
             <div>
               <label className="mb-1 block text-xs font-semibold text-[#374151]">ชื่อแนวทาง</label>
               <input
-                className={inputCls(!!recErrors.recommendation)}
+                className={inputClass(!!recErrors.recommendation)}
                 placeholder="เช่น เปลี่ยนมาใช้เครื่องปรับอากาศระบบ Inverter"
                 maxLength={255}
                 value={recForm.recommendation}
                 onChange={(e) => setRecForm({ ...recForm, recommendation: e.target.value })}
               />
-              <Err m={recErrors.recommendation} />
+              <FieldError message={recErrors.recommendation} />
             </div>
 
             <div>
@@ -920,7 +859,7 @@ export default function OfficeRecommendationClient({
                 กิจกรรมที่เกี่ยวข้อง (ฐานที่ใช้คำนวณ %)
               </label>
               <select
-                className={inputCls(!!recErrors.scopedetail_id)}
+                className={inputClass(!!recErrors.scopedetail_id)}
                 value={recForm.scopedetail_id}
                 onChange={(e) => setRecForm({ ...recForm, scopedetail_id: e.target.value })}
               >
@@ -931,7 +870,7 @@ export default function OfficeRecommendationClient({
                   </option>
                 ))}
               </select>
-              <Err m={recErrors.scopedetail_id} />
+              <FieldError message={recErrors.scopedetail_id} />
               <p className="mt-1 text-xs text-[#94A3B8]">
                 % ที่กรอกด้านล่างต้องนิยามเทียบกับกิจกรรมนี้เท่านั้น (เช่น % ของก๊าซจากไฟฟ้า)
               </p>
@@ -943,26 +882,26 @@ export default function OfficeRecommendationClient({
                   ลดได้ต่ำสุด (%)
                 </label>
                 <input
-                  className={inputCls(!!recErrors.percent_min)}
+                  className={inputClass(!!recErrors.percent_min)}
                   inputMode="decimal"
                   placeholder="เช่น 5"
                   value={recForm.percent_min}
                   onChange={(e) => setRecForm({ ...recForm, percent_min: e.target.value })}
                 />
-                <Err m={recErrors.percent_min} />
+                <FieldError message={recErrors.percent_min} />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-semibold text-[#374151]">
                   ลดได้สูงสุด (%) (เว้นว่าง = ค่าเดียว)
                 </label>
                 <input
-                  className={inputCls(!!recErrors.percent_max)}
+                  className={inputClass(!!recErrors.percent_max)}
                   inputMode="decimal"
                   placeholder="เช่น 10"
                   value={recForm.percent_max}
                   onChange={(e) => setRecForm({ ...recForm, percent_max: e.target.value })}
                 />
-                <Err m={recErrors.percent_max} />
+                <FieldError message={recErrors.percent_max} />
               </div>
             </div>
 
@@ -1073,7 +1012,7 @@ export default function OfficeRecommendationClient({
                   </div>
                 ))}
               </div>
-              <Err m={recErrors.conds} />
+              <FieldError message={recErrors.conds} />
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
@@ -1093,7 +1032,7 @@ export default function OfficeRecommendationClient({
               </button>
             </div>
           </form>
-        </Dialog>
+        </ModalShell>
       )}
     </div>
   );
