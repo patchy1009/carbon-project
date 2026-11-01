@@ -25,25 +25,19 @@ export default function OrganizationLayout({
   const [email, setEmail] = useState<string | null>(null);
   const router = useRouter();
 
-useEffect(() => {
-  // 1. ดึงอีเมลของผู้ใช้ปัจจุบัน
-  supabase.auth.getUser().then(({ data }: { data: any }) => {
-    setEmail(data?.user?.email ?? null);
-  });
+  useEffect(() => {
+    // 1. ดึงอีเมลของผู้ใช้ปัจจุบัน
+    supabase.auth.getUser().then(({ data }: { data: any }) => {
+      setEmail(data?.user?.email ?? null);
+    });
 
-  // 2. ติดตามการเปลี่ยนแปลงสถานะ Auth
-  const { data: sub } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
-    setEmail(session?.user?.email ?? null);
-  });
+    // 2. ติดตามการเปลี่ยนแปลงสถานะ Auth
+    const { data: sub } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
+      setEmail(session?.user?.email ?? null);
+    });
 
-  return () => sub.subscription.unsubscribe();
-}, []);
-
-  async function handleLogout() {
-    await supabase.auth.signOut(); // ลบ session ใน cookie
-    router.replace('/organization/login');
-    router.refresh();
-  }
+    return () => sub.subscription.unsubscribe();
+  }, []);
 
   return (
     <div className="min-h-screen bg-white text-gray-800 font-sans">
@@ -77,38 +71,46 @@ useEffect(() => {
           ))}
         </div>
 
-        {/* ปุ่มขวาสุด — ล็อกอินแล้วแสดงอีเมล + ออกจากระบบ / ยังไม่ล็อกอินเปิด Pop-up */}
+        {/* ปุ่มขวาสุด — รูปคน (คลิกไปหน้า account_user หากล็อกอินแล้ว / เปิด Pop-up หากยังไม่ล็อกอิน) */}
         <div className="flex items-center gap-3">
-        {email && (
-          <>
-            <span className="text-white text-sm hidden md:inline">{email}</span>
+          {email ? (
+            <Link
+              href="/organization/account_user"
+              aria-label="บัญชีผู้ใช้"
+              className="w-[55px] h-[55px] rounded-full bg-white border-[3px] border-[#6FB898] shadow-[0px_1px_6px_rgba(0,0,0,0.25)] flex items-center justify-center hover:bg-gray-50 transition"
+            >
+              <svg
+                width="20"
+                height="21"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#6FB898"
+                strokeWidth="2"
+              >
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
+              </svg>
+            </Link>
+          ) : (
             <button
               type="button"
-              onClick={handleLogout}
-              className="text-white text-sm underline hover:opacity-80"
+              onClick={() => setIsAuthOpen(true)}
+              aria-label="เข้าสู่ระบบ"
+              className="w-[55px] h-[55px] rounded-full bg-white border-[3px] border-[#6FB898] shadow-[0px_1px_6px_rgba(0,0,0,0.25)] flex items-center justify-center hover:bg-gray-50 transition"
             >
-              ออกจากระบบ
+              <svg
+                width="20"
+                height="21"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#6FB898"
+                strokeWidth="2"
+              >
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
+              </svg>
             </button>
-          </>
-        )}
-        <button
-          type="button"
-          onClick={() => !email && setIsAuthOpen(true)}
-          aria-label={email ? 'บัญชีผู้ใช้' : 'เข้าสู่ระบบ'}
-          className="w-[55px] h-[55px] rounded-full bg-white border-[3px] border-[#6FB898] shadow-[0px_1px_6px_rgba(0,0,0,0.25)] flex items-center justify-center"
-        >
-          <svg
-            width="20"
-            height="21"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="#6FB898"
-            strokeWidth="2"
-          >
-            <circle cx="12" cy="8" r="4" />
-            <path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
-          </svg>
-        </button>
+          )}
         </div>
       </nav>
 
