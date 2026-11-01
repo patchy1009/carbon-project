@@ -1,9 +1,11 @@
+
 import Link from 'next/link';
 
-export default function FootprintStepper({ current }: { current: 1 | 2 }) {
+export default function FootprintStepper({ current }: { current: 1 | 2 | 3 }) {
   const steps = [
     { n: 1, label: 'ข้อมูลสำนักงาน', href: '/organization/footprint' },
     { n: 2, label: 'ข้อมูลการดำเนินกิจกรรม', href: '/organization/footprint/activity' },
+    { n: 3, label: 'ข้อมูลการดำเนินกิจกรรมพิเศษ', href: '/organization/footprint/special' },
   ];
 
   return (

@@ -1,3 +1,4 @@
+
 export const dynamic = 'force-dynamic';
 
 import { createSupabaseServer } from '@/lib/supabaseServer';
@@ -22,8 +23,13 @@ export default async function FootprintOfficePage({
     // ค่าที่บริษัทนี้เคยกรอกไว้
     supabase
       .from('org_office_info')
-      .select('orginfo_id, info_id, amount')
-      .eq('org_id', orgId),
+      .select(`
+        orginfo_id,
+        info_id,
+        amount,
+        org_activity_list!inner(org_id)
+      `)
+      .eq('org_activity_list.org_id', orgId),
   ]);
 
   if (typesRes.error) console.error('office_info_type error:', typesRes.error.message);

@@ -256,6 +256,7 @@ export default function OfficeInfoClient({
         <Link href={nextHref} className="text-sm text-[#6B7280] underline">
           ข้ามขั้นตอนนี้
         </Link>
+        
       </div>
     </form>
   );
