@@ -16,11 +16,8 @@ type TravelFormProps = {
 
 const transportOptions = [
   { value: "car", label: "รถยนต์ส่วนบุคคล" },
-  { value: "motorcycle", label: "รถจักรยานยนต์" },
   { value: "van", label: "รถตู้" },
-  { value: "bus", label: "รถโดยสารประจำทาง" },
-  { value: "train", label: "รถไฟ" },
-  { value: "airplane", label: "เครื่องบิน" }
+  { value: "bus", label: "รถโดยสารประจำทาง" }
 ];
 
 export default function TravelForm({ onSubmit }: TravelFormProps) {
