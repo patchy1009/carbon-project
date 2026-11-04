@@ -13,6 +13,7 @@ import {
   UserCheck,
   RefreshCw,
   User,
+  ArrowLeft,
 } from "lucide-react";
 import Modal from "./Modal";
 import { supabase } from "@/lib/supabaseClient";
@@ -51,13 +52,18 @@ export default function AuthModal({
   initialMode = "login",
 }: AuthModalProps) {
   const router = useRouter();
-  // ควบคุมสเตปภายใน Modal ("login" | "register" | "otp" | "success")
-  const [step, setStep] = useState<"login" | "register" | "otp" | "success">(initialMode);
+  // เพิ่มสเตป "forgot" สำหรับหน้าลืมรหัสผ่าน
+  const [step, setStep] = useState<"login" | "register" | "otp" | "success" | "forgot">(initialMode);
 
   // State ฝั่ง Login
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginErrorMessage, setLoginErrorMessage] = useState("");
+
+  // State ฝั่ง Forgot Password
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotMessage, setForgotMessage] = useState("");
+  const [forgotError, setForgotError] = useState("");
 
   // State ฝั่ง Register
   const [username, setUsername] = useState("");
@@ -88,6 +94,9 @@ export default function AuthModal({
       setLoginErrorMessage("");
       setErrorMessage("");
       setSuccessMessage("");
+      setForgotEmail("");
+      setForgotMessage("");
+      setForgotError("");
       setFieldErrors({ username: "", email: "", password: "", companyName: "" });
     }
   }, [isOpen, initialMode]);
@@ -147,6 +156,32 @@ export default function AuthModal({
       }
     } catch (err: unknown) {
       setLoginErrorMessage(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 1.1 ฟังก์ชันส่งลิงก์รีเซ็ตรหัสผ่าน (Forgot Password)
+  const handleForgotPasswordSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setForgotError("");
+    setForgotMessage("");
+
+    const cleanEmail = forgotEmail.trim().toLowerCase();
+    if (!cleanEmail || !EMAIL_REGEX.test(cleanEmail)) {
+      setForgotError("กรุณากรอกรูปแบบอีเมลให้ถูกต้อง");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: `${window.location.origin}/organization/reset-password`,
+      });
+      if (error) throw error;
+      setForgotMessage("ส่งลิงก์สำหรับรีเซ็ตรหัสผ่านไปยังอีเมลของคุณแล้ว กรุณาตรวจสอบกล่องข้อความ");
+    } catch (err: unknown) {
+      setForgotError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -253,7 +288,6 @@ export default function AuthModal({
 
     setLoading(true);
     try {
-      // ก. ยืนยัน OTP กับ Supabase Auth
       const { data: authData, error: verifyError } = await supabase.auth.verifyOtp({
         email: email.trim().toLowerCase(),
         token,
@@ -261,14 +295,12 @@ export default function AuthModal({
       });
       if (verifyError) throw verifyError;
 
-      // ข. เมื่อยืนยันสำเร็จ บันทึกข้อมูลเข้า Database
       if (authData.user) {
         const userId = authData.user.id;
         const cleanUsername = username.trim();
         const cleanEmail = email.trim().toLowerCase();
         const cleanCompanyName = companyName.trim();
 
-        // บันทึกตาราง user
         const { error: userInsertError } = await supabase.from("user").insert({
           acc_id: userId,
           email: cleanEmail,
@@ -278,7 +310,6 @@ export default function AuthModal({
         });
         if (userInsertError) throw userInsertError;
 
-        // บันทึกตาราง organization
         const { error: orgInsertError } = await supabase.from("organization").insert({
           acc_id: userId,
           org_name: cleanCompanyName,
@@ -371,14 +402,11 @@ export default function AuthModal({
                   />
                   <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
                 </div>
-                {/* ปุ่มลืมรหัสผ่าน สีเขียวตามตีมแอป ชิดขวาล่างใต้ช่องกรอกรหัสผ่าน */}
+                {/* เปลี่ยนมาใช้การเปลี่ยนสเตปใน Modal เป็น "forgot" */}
                 <div className="mt-1.5 text-right">
                   <button
                     type="button"
-                    onClick={() => {
-                      onClose();
-                      router.push("/organization/forgot_password");
-                    }}
+                    onClick={() => setStep("forgot")}
                     className="text-xs text-[#2C7A59] hover:underline font-semibold transition"
                   >
                     ลืมรหัสผ่าน?
@@ -405,6 +433,63 @@ export default function AuthModal({
                 สมัครสมาชิก
               </button>
             </p>
+          </div>
+        )}
+
+        {/* ================= STEP FORGOT PASSWORD ================= */}
+        {step === "forgot" && (
+          <div>
+            <div className="text-center space-y-1 mb-6">
+              <h2 className="text-2xl font-bold text-slate-800">ลืมรหัสผ่าน</h2>
+              <p className="text-xs text-slate-500">กรอกอีเมลของคุณเพื่อรับลิงก์รีเซ็ตรหัสผ่าน</p>
+            </div>
+
+            {forgotError && (
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 text-center">
+                {forgotError}
+              </div>
+            )}
+            {forgotMessage && (
+              <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-700 text-center">
+                {forgotMessage}
+              </div>
+            )}
+
+            <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-600">อีเมลองค์กร</label>
+                <div className="relative">
+                  <input
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    className="w-full px-4 py-3 pl-10 rounded-2xl border text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800 placeholder:text-slate-400 border-slate-200"
+                    placeholder="name@company.com"
+                    required
+                  />
+                  <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-2xl bg-[#2C7A59] px-4 py-3.5 text-sm font-semibold text-white shadow-md transition hover:bg-[#1f5a41] disabled:opacity-60 mt-2"
+              >
+                {loading ? "กำลังส่งคำขอ..." : "ส่งลิงก์รีเซ็ตรหัสผ่าน"}
+              </button>
+            </form>
+
+            <div className="mt-5 text-center">
+              <button
+                type="button"
+                onClick={() => setStep("login")}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[#2C7A59] hover:underline"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                กลับไปหน้าเข้าสู่ระบบ
+              </button>
+            </div>
           </div>
         )}
 
@@ -525,7 +610,6 @@ export default function AuthModal({
                 <ChevronDown className="w-4 h-4 text-slate-400" />
               </button>
               
-              {/* ดรอปดาวน์แก้ปัญหาจม/ล้นขอบด้วย max-h-48 overflow-y-auto */}
               {isDropdownOpen && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-lg z-30 py-1 max-h-48 overflow-y-auto">
                   {industries.map((item) => (
