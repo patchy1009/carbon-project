@@ -85,7 +85,7 @@ export default function MeetingForm({ onSubmit }: MeetingFormProps) {
             />
           </div>
 
-          {/* รูปแบบการประชุม (เฉพาะ Onsite และ Online) */}
+          {/* รูปแบบการประชุม */}
           <div>
             <label className="mb-2 block text-sm font-medium text-gray-700">
               รูปแบบการประชุม <span className="text-red-500">*</span>
@@ -103,6 +103,7 @@ export default function MeetingForm({ onSubmit }: MeetingFormProps) {
           </div>
 
           {/* จำนวนผู้เข้าร่วม */}
+          {meetingType === "onsite" && (
           <div>
             <label className="mb-2 block text-sm font-medium text-gray-700">
               จำนวนผู้เข้าร่วม (คน) <span className="text-red-500">*</span>
@@ -116,6 +117,7 @@ export default function MeetingForm({ onSubmit }: MeetingFormProps) {
               required
             />
           </div>
+          )}
 
           {/* ระยะเวลาประชุม */}
           <div>
@@ -134,10 +136,9 @@ export default function MeetingForm({ onSubmit }: MeetingFormProps) {
           </div>
 
           {/* ปริมาณไฟฟ้า (แสดงเฉพาะกรณีที่เป็น Online) */}
-          {meetingType === "online" && (
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">
-                ปริมาณไฟฟ้าที่ใช้ประมาณการ (kWh) <span className="text-red-500">*</span>
+                ปริมาณไฟฟ้าที่ใช้(kWh) <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
@@ -152,7 +153,6 @@ export default function MeetingForm({ onSubmit }: MeetingFormProps) {
                 หากไม่มีข้อมูล สามารถกรอก 0 ได้
               </p>
             </div>
-          )}
 
           <button
             type="submit"

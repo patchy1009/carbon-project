@@ -6,14 +6,6 @@ import { useRouter } from 'next/navigation';
 import AuthModal from '@/components/AuthModal';
 import { supabase } from '@/lib/supabaseClient';
 
-const navItems = [
-  { label: 'หน้าหลัก', href: '/organization/dashboard' },
-  { label: 'คาร์บอนฟุตพรินท์', href: '/organization/footprint' },
-  { label: 'จำลองโครงการ T-VER', href: '/organization/tver-simulation' },
-  { label: 'คำนวณภาษี', href: '/organization/tax_calculator' },
-  { label: 'เอกสาร', href: '/organization/documents' },
-];
-
 export default function OrganizationLayout({
   children,
 }: {
@@ -38,6 +30,18 @@ export default function OrganizationLayout({
 
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  // กำหนดรายการเมนูตรงกลาง โดยเปลี่ยนตามสถานะการล็อกอินของ email
+  const navItems = [
+    { 
+      label: email ? 'แดชบอร์ด' : 'หน้าหลัก', 
+      href: email ? '/organization/dashboard' : '/' // ปรับลิงก์หน้าหลักตามต้องการ เช่น '/' หรือหน้า Home ทั่วไป
+    },
+    { label: 'คาร์บอนฟุตพรินท์', href: '/organization/footprint' },
+    { label: 'จำลองโครงการ T-VER', href: '/organization/tver-simulation' },
+    { label: 'คำนวณภาษี', href: '/organization/tax_calculator' },
+    { label: 'เอกสาร', href: '/organization/documents' },
+  ];
 
   return (
     <div className="min-h-screen bg-white text-gray-800 font-sans">

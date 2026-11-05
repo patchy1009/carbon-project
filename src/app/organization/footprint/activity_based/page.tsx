@@ -14,7 +14,7 @@ import {
 import FootprintStepper from "@/components/FootprintStepper";
 import { supabase } from "@/lib/supabaseClient";
 
-export default function SpecialFootprintPage() {
+export default function ActivityBasedFootprintPage() {
   const [meeting, setMeeting] = useState<MeetingData | null>(null);
   const [travel, setTravel] = useState<TravelData | null>(null);
   const [resources, setResources] = useState<ResourceData[]>([]);
@@ -113,7 +113,7 @@ export default function SpecialFootprintPage() {
         recordsToInsert.push({
           org_id: orgId,
           categoryact_id: electricityDetail.activity_id,
-          activity_name: "กิจกรรมการประชุม (Special Project)",
+          activity_name: "กิจกรรมการประชุม",
           unit: electricityDetail.unit || "kWh",
           fuel: null,
           water: null,

@@ -52,7 +52,6 @@ export default function AuthModal({
   initialMode = "login",
 }: AuthModalProps) {
   const router = useRouter();
-  // เพิ่มสเตป "forgot" สำหรับหน้าลืมรหัสผ่าน
   const [step, setStep] = useState<"login" | "register" | "otp" | "success" | "forgot">(initialMode);
 
   // State ฝั่ง Login
@@ -364,7 +363,7 @@ export default function AuthModal({
         {step === "login" && (
           <div>
             <h2 className="mb-6 text-center text-2xl font-bold text-slate-800">
-              เข้าสู่ระบบองค์กร
+              เข้าสู่ระบบ
             </h2>
 
             {loginErrorMessage && (
@@ -424,7 +423,7 @@ export default function AuthModal({
             </form>
 
             <p className="mt-5 text-center text-xs text-slate-600">
-              ยังไม่มีบัญชีองค์กร?{" "}
+              ยังไม่มีบัญชี?{" "}
               <button
                 type="button"
                 onClick={() => setStep("register")}

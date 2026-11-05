@@ -34,7 +34,7 @@ export default function CalculationResult({
   // 1. คำนวณการประชุม
   let meetingProjected = 0;
   let meetingDiff = 0;
-  const isMeetingOnsite = meetingData?.meetingType === "onsite" || meetingData?.meetingType === "hybrid";
+  const isMeetingOnsite = meetingData?.meetingType === "onsite";
 
   if (meetingData) {
     if (isMeetingOnsite) {
