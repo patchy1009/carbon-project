@@ -6,28 +6,37 @@ export type ResourceData = {
   resourceName: string;
   amount: number;
   unit: string;
+  activity_id?: string; // ปรับจาก categoryact_id เป็น activity_id
 };
 
 type ResourceFormProps = {
   onSubmit: (data: ResourceData[]) => void;
+  adminActivities?: any[]; // รับข้อมูล Master Data จากแอดมิน
 };
 
-const resourceOptions = [
-  { value: "electricity", label: "ไฟฟ้า", unit: "kWh" },
-  { value: "paper", label: "กระดาษ", unit: "kg" },
-  { value: "water", label: "น้ำประปา", unit: "m³" },
-  { value: "fuel", label: "เชื้อเพลิง", unit: "L" },
-];
+export default function ResourceForm({ onSubmit, adminActivities = [] }: ResourceFormProps) {
+  // หากมีข้อมูลจากแอดมิน ให้ใช้รายการแรกเป็นค่าเริ่มต้น
+  const defaultOption = adminActivities.length > 0 ? adminActivities[0] : null;
 
-export default function ResourceForm({ onSubmit }: ResourceFormProps) {
   const [resources, setResources] = useState<ResourceData[]>([
-    { resourceName: "electricity", amount: 0, unit: "kWh" },
+    { 
+      resourceName: defaultOption ? defaultOption.sub_category : "ไฟฟ้า", 
+      amount: 0, 
+      unit: defaultOption ? defaultOption.unit || "-" : "kWh",
+      activity_id: defaultOption ? defaultOption.activity_id : undefined
+    },
   ]);
 
   const addResource = () => {
+    const nextOption = adminActivities.length > 0 ? adminActivities[0] : null;
     setResources([
       ...resources,
-      { resourceName: "paper", amount: 0, unit: "kg" },
+      { 
+        resourceName: nextOption ? nextOption.sub_category : "กระดาษ", 
+        amount: 0, 
+        unit: nextOption ? nextOption.unit || "-" : "kg",
+        activity_id: nextOption ? nextOption.activity_id : undefined
+      },
     ]);
   };
 
@@ -56,11 +65,12 @@ export default function ResourceForm({ onSubmit }: ResourceFormProps) {
       (resource) =>
         !Number.isFinite(resource.amount) ||
         resource.amount < 0 ||
-        !resource.unit.trim()
+        !resource.unit.trim() ||
+        !resource.activity_id
     );
 
     if (resources.length === 0 || hasInvalidData) {
-      alert("กรุณากรอกข้อมูลทรัพยากรให้ถูกต้อง");
+      alert("กรุณากรอกข้อมูลทรัพยากรและเลือกประเภทให้ถูกต้องครบถ้วน");
       return;
     }
 
@@ -77,7 +87,7 @@ export default function ResourceForm({ onSubmit }: ResourceFormProps) {
               ข้อมูลการใช้ทรัพยากร
             </h2>
             <p className="text-xs text-gray-500">
-              ระบุทรัพยากรที่ใช้ในการจัดกิจกรรมขององค์กร
+              ระบุทรัพยากรที่ใช้ในการจัดกิจกรรม (เชื่อมโยงกับฐานข้อมูลกลางของแอดมิน)
             </p>
           </div>
         </div>
@@ -113,20 +123,22 @@ export default function ResourceForm({ onSubmit }: ResourceFormProps) {
                   </label>
 
                   <select
-                    value={resource.resourceName}
+                    value={resource.activity_id || ""}
                     onChange={(e) => {
-                      const selected = resourceOptions.find(
-                        (option) => option.value === e.target.value
+                      const selectedId = e.target.value;
+                      const matchedOpt = adminActivities.find(
+                        (opt) => opt.activity_id === selectedId
                       );
 
-                      if (selected) {
+                      if (matchedOpt) {
                         setResources((previous) =>
                           previous.map((item, i) =>
                             i === index
                               ? {
                                   ...item,
-                                  resourceName: selected.value,
-                                  unit: selected.unit,
+                                  resourceName: matchedOpt.sub_category,
+                                  unit: matchedOpt.unit || "-",
+                                  activity_id: matchedOpt.activity_id,
                                 }
                               : item
                           )
@@ -135,11 +147,15 @@ export default function ResourceForm({ onSubmit }: ResourceFormProps) {
                     }}
                     className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#32885F]"
                   >
-                    {resourceOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
+                    {adminActivities.length === 0 ? (
+                      <option value="">กำลังโหลดรายการจากแอดมิน...</option>
+                    ) : (
+                      adminActivities.map((option) => (
+                        <option key={option.activity_id} value={option.activity_id}>
+                          {option.category_name} {option.sub_category ? `- ${option.sub_category}` : ""} ({option.unit || "-"})
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
 
