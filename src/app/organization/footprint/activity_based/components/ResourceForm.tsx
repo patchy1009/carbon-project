@@ -5,187 +5,135 @@ import React, { useState } from "react";
 export type ResourceData = {
   resourceName: string;
   amount: number;
-  unit: string;
-  activity_id?: string; // ปรับจาก categoryact_id เป็น activity_id
+  activity_id?: string;
 };
 
 type ResourceFormProps = {
   onSubmit: (data: ResourceData[]) => void;
-  adminActivities?: any[]; // รับข้อมูล Master Data จากแอดมิน
+  adminActivities?: any[];
 };
 
 export default function ResourceForm({ onSubmit, adminActivities = [] }: ResourceFormProps) {
-  // หากมีข้อมูลจากแอดมิน ให้ใช้รายการแรกเป็นค่าเริ่มต้น
-  const defaultOption = adminActivities.length > 0 ? adminActivities[0] : null;
+  // กรองเฉพาะรายการที่เป็น กระดาษ, น้ำประปา, ไฟฟ้า, เชื้อเพลิง หรือพลังงานและทรัพยากร
+  const resourceActivities = adminActivities.filter((item) => {
+    const text = `${item.category_name || ""} ${item.sub_category || ""}`.toLowerCase();
+    return (
+      text.includes("กระดาษ") ||
+      text.includes("น้ำ") ||
+      text.includes("ไฟฟ้า") ||
+      text.includes("เชื้อเพลิง") ||
+      text.includes("ทรัพยากร") ||
+      text.includes("พลังงาน") ||
+      text.includes("paper") ||
+      text.includes("water") ||
+      text.includes("electricity") ||
+      text.includes("fuel")
+    );
+  });
+
+  const availableActivities = resourceActivities.length > 0 ? resourceActivities : adminActivities;
+  const defaultOpt = availableActivities[0];
 
   const [resources, setResources] = useState<ResourceData[]>([
-    { 
-      resourceName: defaultOption ? defaultOption.sub_category : "ไฟฟ้า", 
-      amount: 0, 
-      unit: defaultOption ? defaultOption.unit || "-" : "kWh",
-      activity_id: defaultOption ? defaultOption.activity_id : undefined
+    {
+      resourceName: defaultOpt ? defaultOpt.sub_category : "ไฟฟ้า",
+      amount: 0,
+      activity_id: defaultOpt ? defaultOpt.activity_id : undefined,
     },
   ]);
 
   const addResource = () => {
-    const nextOption = adminActivities.length > 0 ? adminActivities[0] : null;
     setResources([
       ...resources,
-      { 
-        resourceName: nextOption ? nextOption.sub_category : "กระดาษ", 
-        amount: 0, 
-        unit: nextOption ? nextOption.unit || "-" : "kg",
-        activity_id: nextOption ? nextOption.activity_id : undefined
+      {
+        resourceName: defaultOpt ? defaultOpt.sub_category : "ทรัพยากร",
+        amount: 0,
+        activity_id: defaultOpt ? defaultOpt.activity_id : undefined,
       },
     ]);
   };
 
-  const updateResource = (
-    index: number,
-    field: keyof ResourceData,
-    value: string | number
-  ) => {
-    setResources((previous) =>
-      previous.map((resource, i) =>
-        i === index ? { ...resource, [field]: value } : resource
-      )
+  const updateResource = (index: number, field: keyof ResourceData, value: any) => {
+    setResources(
+      resources.map((item, i) => (i === index ? { ...item, [field]: value } : item))
     );
   };
 
   const removeResource = (index: number) => {
-    setResources((previous) =>
-      previous.filter((_, i) => i !== index)
-    );
+    setResources(resources.filter((_, i) => i !== index));
   };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-
-    const hasInvalidData = resources.some(
-      (resource) =>
-        !Number.isFinite(resource.amount) ||
-        resource.amount < 0 ||
-        !resource.unit.trim() ||
-        !resource.activity_id
-    );
-
-    if (resources.length === 0 || hasInvalidData) {
-      alert("กรุณากรอกข้อมูลทรัพยากรและเลือกประเภทให้ถูกต้องครบถ้วน");
+    if (resources.length === 0 || resources.some(r => !r.activity_id)) {
+      alert("กรุณากรอกข้อมูลและเลือกกิจกรรมทรัพยากรให้ถูกต้อง");
       return;
     }
-
     onSubmit(resources);
+    alert("บันทึกข้อมูลทรัพยากรชั่วคราวแล้ว");
   };
+
+  const currentAct = adminActivities.find(a => a.activity_id === resources[0]?.activity_id);
+  const unit = currentAct?.unit || "-";
 
   return (
     <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
       <div className="border-b border-gray-200 bg-gray-50/70 px-6 py-4">
-        <div className="flex items-center space-x-3">
-          <div className="h-3 w-3 rounded-full bg-[#32885F]"></div>
-          <div>
-            <h2 className="text-base font-semibold text-gray-800">
-              ข้อมูลการใช้ทรัพยากร
-            </h2>
-            <p className="text-xs text-gray-500">
-              ระบุทรัพยากรที่ใช้ในการจัดกิจกรรม (เชื่อมโยงกับฐานข้อมูลกลางของแอดมิน)
-            </p>
-          </div>
-        </div>
+        <h2 className="text-base font-semibold text-gray-800">ข้อมูลพลังงานและทรัพยากร (Resources)</h2>
       </div>
 
       <div className="p-6">
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {resources.map((resource, index) => (
-            <div
-              key={index}
-              className="rounded-xl border border-gray-200 bg-gray-50/50 p-4"
-            >
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="font-medium text-gray-700">
-                  ทรัพยากรรายการที่ {index + 1}
-                </h3>
-
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {resources.map((res, index) => (
+            <div key={index} className="rounded-xl border border-gray-200 bg-gray-50/50 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-700">รายการที่ {index + 1}</span>
                 {resources.length > 1 && (
                   <button
                     type="button"
                     onClick={() => removeResource(index)}
-                    className="text-sm font-medium text-red-600 hover:text-red-800"
+                    className="text-xs text-red-500 hover:text-red-700"
                   >
                     ลบรายการ
                   </button>
                 )}
               </div>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    ประเภททรัพยากร <span className="text-red-500">*</span>
-                  </label>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700">ประเภททรัพยากร/พลังงาน *</label>
+                <select
+                  value={res.activity_id || ""}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const matched = adminActivities.find(a => a.activity_id === id);
+                    updateResource(index, "activity_id", id);
+                    if (matched) updateResource(index, "resourceName", matched.sub_category || matched.category_name);
+                  }}
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
+                >
+                  {availableActivities.length === 0 ? (
+                    <option value="">ไม่พบข้อมูลทรัพยากรมาตรฐาน</option>
+                  ) : (
+                    availableActivities.map((opt, idx) => (
+                      <option key={`${opt.activity_id}-${idx}`} value={opt.activity_id}>
+                        {opt.sub_category || opt.category_name} ({opt.unit || "-"})
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
 
-                  <select
-                    value={resource.activity_id || ""}
-                    onChange={(e) => {
-                      const selectedId = e.target.value;
-                      const matchedOpt = adminActivities.find(
-                        (opt) => opt.activity_id === selectedId
-                      );
-
-                      if (matchedOpt) {
-                        setResources((previous) =>
-                          previous.map((item, i) =>
-                            i === index
-                              ? {
-                                  ...item,
-                                  resourceName: matchedOpt.sub_category,
-                                  unit: matchedOpt.unit || "-",
-                                  activity_id: matchedOpt.activity_id,
-                                }
-                              : item
-                          )
-                        );
-                      }
-                    }}
-                    className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#32885F]"
-                  >
-                    {adminActivities.length === 0 ? (
-                      <option value="">กำลังโหลดรายการจากแอดมิน...</option>
-                    ) : (
-                      adminActivities.map((option) => (
-                        <option key={option.activity_id} value={option.activity_id}>
-                          {option.category_name} {option.sub_category ? `- ${option.sub_category}` : ""} ({option.unit || "-"})
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    ปริมาณที่ใช้ <span className="text-red-500">*</span>
-                  </label>
-
-                  <div className="flex gap-3">
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={resource.amount}
-                      onChange={(e) =>
-                        updateResource(
-                          index,
-                          "amount",
-                          Number(e.target.value)
-                        )
-                      }
-                      className="min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#32885F]"
-                      required
-                    />
-
-                    <div className="flex min-w-20 items-center justify-center rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-600">
-                      {resource.unit}
-                    </div>
-                  </div>
-                </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700">ปริมาณที่ใช้ ({unit}) *</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={res.amount}
+                  onChange={(e) => updateResource(index, "amount", Number(e.target.value))}
+                  className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
+                  required
+                />
               </div>
             </div>
           ))}
@@ -193,14 +141,14 @@ export default function ResourceForm({ onSubmit, adminActivities = [] }: Resourc
           <button
             type="button"
             onClick={addResource}
-            className="w-full rounded-xl border border-[#32885F] px-5 py-3 font-semibold text-[#32885F] transition hover:bg-green-50"
+            className="w-full rounded-xl border-2 border-dashed border-[#32885F] py-2.5 text-xs font-semibold text-[#32885F] hover:bg-emerald-50"
           >
-            + เพิ่มทรัพยากร
+            + เพิ่มรายการทรัพยากร
           </button>
 
           <button
             type="submit"
-            className="rounded-xl bg-[#32885F] px-6 py-3 font-semibold text-white transition hover:bg-[#286e4d]"
+            className="rounded-xl bg-[#32885F] px-6 py-2.5 font-semibold text-white text-sm transition hover:bg-[#286e4d]"
           >
             บันทึกข้อมูลทรัพยากร
           </button>

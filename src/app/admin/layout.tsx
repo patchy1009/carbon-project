@@ -9,7 +9,6 @@ import { supabase } from '@/lib/supabaseClient';
 const navItems = [
   { label: 'EF & GWP Value', href: '/admin/ef-gwp' },
   { label: 'Activity Management', href: '/admin/activities' },
-  { label: 'Activity-Based Management', href: '/admin/activity_based' }, // <-- เพิ่มเมนูใหม่ตรงนี้เรียงต่อกัน
   { label: 'สำนักงาน & คำแนะนำ', href: '/admin/officerec' },
   { label: 'T-VER Project', href: '/admin/tver' },
   { label: 'Allocation & TAX & Doc', href: '/admin/allotaxdoc' },

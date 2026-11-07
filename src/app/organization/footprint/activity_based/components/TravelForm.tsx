@@ -4,137 +4,106 @@ import React, { useState, useEffect } from "react";
 
 export type TravelData = {
   travelName: string;
-  transportType: string;
   distanceKm: number;
   trips: number;
   passengers: number;
-  activity_id?: string; // ปรับจาก categoryact_id เป็น activity_id
+  activity_id?: string;
 };
 
 type TravelFormProps = {
   onSubmit: (data: TravelData) => void;
-  adminActivities?: any[]; // รับรายการกิจกรรมที่แอดมินสร้างไว้จากฐานข้อมูล
+  adminActivities?: any[];
 };
 
 export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFormProps) {
-  // กรองเฉพาะรายการที่แอดมินตั้งค่าไว้ในหมวดการเดินทาง
+  // กรองเฉพาะรายการที่เกี่ยวข้องกับการเดินทาง
   const travelActivities = adminActivities.filter((item) => {
-    const catName = item.category_name?.toLowerCase() || "";
-    const subCat = item.sub_category?.toLowerCase() || "";
+    const text = `${item.category_name || ""} ${item.sub_category || ""}`.toLowerCase();
     return (
-      catName.includes("travel") ||
-      catName.includes("เดินทาง") ||
-      subCat.includes("car") ||
-      subCat.includes("van") ||
-      subCat.includes("bus") ||
-      subCat.includes("รถ")
+      text.includes("เดินทาง") ||
+      text.includes("รถยนต์") ||
+      text.includes("รถตู้") ||
+      text.includes("รถจักรยานยนต์") ||
+      text.includes("รถประจำทาง") ||
+      text.includes("travel") ||
+      text.includes("car") ||
+      text.includes("van") ||
+      text.includes("bus")
     );
   });
 
-  const optionsToRender = travelActivities.length > 0 ? travelActivities : adminActivities;
-  const defaultAct = optionsToRender[0];
+  // ถ้าไม่มีการกรองที่ตรง ให้ใช้รายการทั้งหมดกันพลาด
+  const availableActivities = travelActivities.length > 0 ? travelActivities : adminActivities;
+  const defaultAct = availableActivities[0];
 
   const [travelName, setTravelName] = useState("");
   const [selectedActivityId, setSelectedActivityId] = useState(defaultAct?.activity_id || "");
-  const [transportType, setTransportType] = useState(defaultAct?.sub_category || "");
   const [distanceKm, setDistanceKm] = useState("0");
   const [trips, setTrips] = useState("1");
   const [passengers, setPassengers] = useState("1");
 
   useEffect(() => {
-    if (optionsToRender.length > 0 && !selectedActivityId) {
-      setSelectedActivityId(optionsToRender[0].activity_id);
-      setTransportType(optionsToRender[0].sub_category);
+    if (availableActivities.length > 0 && !selectedActivityId) {
+      setSelectedActivityId(availableActivities[0].activity_id);
     }
-  }, [optionsToRender, selectedActivityId]);
+  }, [availableActivities, selectedActivityId]);
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-
     const distance = Number(distanceKm);
     const tripCount = Number(trips);
     const passengerCount = Number(passengers);
 
-    if (
-      !travelName.trim() ||
-      !Number.isFinite(distance) ||
-      distance <= 0 ||
-      !Number.isFinite(tripCount) ||
-      tripCount <= 0 ||
-      !Number.isFinite(passengerCount) ||
-      passengerCount <= 0 ||
-      !selectedActivityId
-    ) {
-      alert("กรุณากรอกข้อมูลการเดินทางและเลือกประเภทให้ถูกต้อง");
+    if (!travelName.trim() || distance <= 0 || !selectedActivityId) {
+      alert("กรุณากรอกข้อมูลการเดินทางให้ถูกต้อง");
       return;
     }
 
     onSubmit({
       travelName: travelName.trim(),
-      transportType,
       distanceKm: distance,
       trips: tripCount,
       passengers: passengerCount,
       activity_id: selectedActivityId,
     });
+    alert("บันทึกข้อมูลการเดินทางชั่วคราวแล้ว");
   };
 
-  const activeActivity = adminActivities.find((a) => a.activity_id === selectedActivityId);
+  const activeAct = availableActivities.find((a) => a.activity_id === selectedActivityId);
 
   return (
     <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
       <div className="border-b border-gray-200 bg-gray-50/70 px-6 py-4">
-        <div className="flex items-center space-x-3">
-          <div className="h-3 w-3 rounded-full bg-[#32885F]"></div>
-          <div>
-            <h2 className="text-base font-semibold text-gray-800">
-              ข้อมูลการเดินทาง
-            </h2>
-            <p className="text-xs text-gray-500">
-              เลือกประเภทการเดินทางจากรายการที่แอดมินกำหนดไว้ในระบบ
-            </p>
-          </div>
-        </div>
+        <h2 className="text-base font-semibold text-gray-800">ข้อมูลการเดินทาง (Travel)</h2>
       </div>
 
       <div className="p-6">
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">
-              รายละเอียดการเดินทาง <span className="text-red-500">*</span>
-            </label>
+            <label className="mb-1 block text-xs font-medium text-gray-700">รายละเอียดการเดินทาง *</label>
             <input
               type="text"
               value={travelName}
               onChange={(e) => setTravelName(e.target.value)}
-              placeholder="เช่น การเดินทางเข้าร่วมสัมมนา"
-              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-[#32885F]"
+              placeholder="เช่น เดินทางไปพบลูกค้า"
+              className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
               required
             />
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">
-              ประเภทการเดินทาง (จากระบบแอดมิน) <span className="text-red-500">*</span>
-            </label>
+            <label className="mb-1 block text-xs font-medium text-gray-700">ประเภทยานพาหนะ *</label>
             <select
               value={selectedActivityId}
-              onChange={(e) => {
-                const id = e.target.value;
-                setSelectedActivityId(id);
-                const found = adminActivities.find((item) => item.activity_id === id);
-                if (found) {
-                  setTransportType(found.sub_category);
-                }
-              }}
-              className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#32885F]"
+              onChange={(e) => setSelectedActivityId(e.target.value)}
+              className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
             >
-              {optionsToRender.length === 0 ? (
-                <option value="">ไม่มีข้อมูลประเภทการเดินทางจากแอดมิน</option>
+              {availableActivities.length === 0 ? (
+                <option value="">ไม่พบข้อมูลประเภทยานพาหนะ</option>
               ) : (
-                optionsToRender.map((option) => (
-                  <option key={option.activity_id} value={option.activity_id}>
-                    {option.category_name} {option.sub_category ? `- ${option.sub_category}` : ""} ({option.unit || "km"})
+                availableActivities.map((opt, idx) => (
+                  <option key={`${opt.activity_id}-${idx}`} value={opt.activity_id}>
+                    {opt.sub_category || opt.category_name} ({opt.unit || "กิโลเมตร"})
                   </option>
                 ))
               )}
@@ -142,8 +111,8 @@ export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFor
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">
-              ระยะทาง ({activeActivity?.unit || "กิโลเมตร"}) <span className="text-red-500">*</span>
+            <label className="mb-1 block text-xs font-medium text-gray-700">
+              ระยะทาง ({activeAct?.unit || "กิโลเมตร"}) *
             </label>
             <input
               type="number"
@@ -151,37 +120,31 @@ export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFor
               step="0.1"
               value={distanceKm}
               onChange={(e) => setDistanceKm(e.target.value)}
-              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-[#32885F]"
+              className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
               required
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">
-                จำนวนเที่ยว <span className="text-red-500">*</span>
-              </label>
+              <label className="mb-1 block text-xs font-medium text-gray-700">จำนวนเที่ยว *</label>
               <input
                 type="number"
                 min="1"
-                step="1"
                 value={trips}
                 onChange={(e) => setTrips(e.target.value)}
-                className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-[#32885F]"
+                className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
                 required
               />
             </div>
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">
-                จำนวนผู้เดินทาง (คน) <span className="text-red-500">*</span>
-              </label>
+              <label className="mb-1 block text-xs font-medium text-gray-700">จำนวนผู้เดินทาง (คน) *</label>
               <input
                 type="number"
                 min="1"
-                step="1"
                 value={passengers}
                 onChange={(e) => setPassengers(e.target.value)}
-                className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-[#32885F]"
+                className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
                 required
               />
             </div>
@@ -189,7 +152,7 @@ export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFor
 
           <button
             type="submit"
-            className="rounded-xl bg-[#32885F] px-6 py-3 font-semibold text-white transition hover:bg-[#286e4d]"
+            className="rounded-xl bg-[#32885F] px-6 py-2.5 font-semibold text-white text-sm transition hover:bg-[#286e4d]"
           >
             บันทึกข้อมูลการเดินทาง
           </button>
