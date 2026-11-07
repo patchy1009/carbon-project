@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from "react";
 import MeetingForm, { MeetingData } from "./components/MeetingForm";
 import TravelForm, { TravelData } from "./components/TravelForm";
-import ResourceForm, { ResourceData } from "./components/ResourceForm";
 import CalculationResult from "./components/CalculationResult";
 import { executeCarbonCalculation } from "./calculation";
 import FootprintStepper from "@/components/FootprintStepper";
@@ -13,19 +12,16 @@ import { Sparkles, Calculator } from "lucide-react";
 export default function ActivityBasedFootprintPage() {
   const [meeting, setMeeting] = useState<MeetingData | null>(null);
   const [travel, setTravel] = useState<TravelData | null>(null);
-  const [resources, setResources] = useState<ResourceData[]>([]);
 
   const [adminActivities, setAdminActivities] = useState<any[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(true);
 
-  const [isCalculated, setIsCalculated] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const [meetingRes, setMeetingRes] = useState<number>(0);
   const [travelRes, setTravelRes] = useState<number>(0);
-  const [resourceRes, setResourceRes] = useState<number>(0);
 
-  // ดึงข้อมูล Master Data และ Emission Factor
+  // ดึงข้อมูล Master Data และ Emission Factor จาก Supabase DB
   useEffect(() => {
     async function fetchMasterData() {
       try {
@@ -40,14 +36,15 @@ export default function ActivityBasedFootprintPage() {
             const matchedEf = efData?.find((ef: any) => ef.ef_id === item.ef_id);
             return {
               ...item,
-              emission_factor: matchedEf ? matchedEf.ef_value : 0,
+              emission_factor: matchedEf ? matchedEf.ef_value : 0, // ค่า EF จริงจาก DB
               ef_name: matchedEf ? matchedEf.ef_name : '',
+              ef_id: matchedEf ? matchedEf.ef_id : item.ef_id,
             };
           });
           setAdminActivities(formatted);
         }
       } catch (err) {
-        console.error("ไม่สามารถดึงข้อมูลได้:", err);
+        console.error("ไม่สามารถดึงข้อมูล Master Data ได้:", err);
       } finally {
         setLoadingActivities(false);
       }
@@ -57,12 +54,11 @@ export default function ActivityBasedFootprintPage() {
   }, []);
 
   const handleCalculateAndSave = async () => {
-    if (!meeting && !travel && resources.length === 0) {
-      alert("กรุณากรอกข้อมูลอย่างน้อย 1 หมวดก่อนทำการคำนวณและบันทึก");
+    if (!meeting && !travel) {
+      alert("กรุณากรอกข้อมูลการประชุม หรือข้อมูลการเดินทางอย่างน้อย 1 หมวดก่อนทำการคำนวณและบันทึก");
       return;
     }
 
-    setIsCalculated(true);
     setIsSaving(true);
 
     try {
@@ -76,91 +72,108 @@ export default function ActivityBasedFootprintPage() {
       const orgId = user.id;
       let mTotal = 0;
       let tTotal = 0;
-      let rTotal = 0;
 
       const recordsToInsert = [];
 
-      // 1. หมวดการประชุม
-      if (meeting && meeting.activity_id) {
-        const actInfo = adminActivities.find(a => a.activity_id === meeting.activity_id);
-        const ef = Number(actInfo?.emission_factor) || 0.5;
-        const totalAmount = meeting.durationHours * meeting.participants;
-        const res = executeCarbonCalculation({ emissionFactor: ef, amount: totalAmount });
+      // 1. หมวดการประชุม (Meeting & Resources) - ดึง EF จาก DB
+      if (meeting) {
+        // ค้นหาแถว Master Data จาก DB ด้วย activity_id หรือ ef_id ที่ส่งมาจากฟอร์ม
+        const meetingActivityId = (meeting as any).activity_id || (meeting as any).ef_id;
+        const actInfo = adminActivities.find(a => 
+          a.activity_id === meetingActivityId || 
+          a.ef_id === meetingActivityId ||
+          a.sub_category === (meeting as any).meetingType
+        );
+
+        // ดึง ef_value จาก DB (ถ้าหาไม่เจอให้ใช้ 0)
+        const dbEfValue = Number(actInfo?.emission_factor) || 0;
+        const participants = (meeting as any).participantsOrDevices || (meeting as any).participants || 1;
+        
+        let totalAmount = 0;
+        if (meeting.electricityKwh && meeting.electricityKwh > 0) {
+          totalAmount = meeting.electricityKwh; 
+        } else {
+          totalAmount = (meeting.durationHours || 0) * participants; 
+        }
+
+        // คำนวณคาร์บอนด้วย EF จาก Database
+        const res = executeCarbonCalculation({ 
+          emissionFactor: dbEfValue, 
+          amount: totalAmount 
+        });
+        
         mTotal = res.totalCalculated;
         setMeetingRes(mTotal);
 
         recordsToInsert.push({
-          category_name: actInfo?.category_name || "การประชุม",
-          sub_category: actInfo?.sub_category || "ประชุมทั่วไป",
-          ef_id: actInfo?.ef_id || null,
-          unit: actInfo?.unit || "hours",
+          category_name: actInfo?.category_name || "การประชุม อบรม และจัดอีเวนต์",
+          sub_category: actInfo?.sub_category || actInfo?.ef_name || "กิจกรรมการประชุม",
+          ef_id: actInfo?.ef_id || null, // FK ที่ผูกกับตาราง emission_factor
+          unit: actInfo?.unit || "หน่วย",
           org_id: orgId,
           activity_name: meeting.meetingName,
-          persons: meeting.participants,
+          persons: participants,
           hours: meeting.durationHours,
           trips: null,
-          distance: null,
-          fuel: null,
+          distance: meeting.distanceKm || null,
+          fuel: meeting.electricityKwh || null,
           water: null,
           total_calculated: mTotal,
         });
       }
 
-      // 2. หมวดการเดินทาง
-      if (travel && travel.activity_id) {
-        const actInfo = adminActivities.find(a => a.activity_id === travel.activity_id);
-        const ef = Number(actInfo?.emission_factor) || 0.2;
-        const totalAmount = travel.distanceKm * travel.trips * travel.passengers;
-        const res = executeCarbonCalculation({ emissionFactor: ef, amount: totalAmount });
+      // 2. หมวดการเดินทาง (Travel) - ดึง EF จาก DB
+      if (travel) {
+        // ค้นหาแถว Master Data จาก DB ด้วย activity_id, ef_id หรือ vehicleType ที่ส่งมาจากฟอร์ม
+        const travelActivityId = (travel as any).activity_id || (travel as any).ef_id;
+        const actInfo = adminActivities.find(a => 
+          a.activity_id === travelActivityId || 
+          a.ef_id === travelActivityId ||
+          a.sub_category === travel.vehicleType ||
+          a.activity_name === travel.vehicleType
+        );
+
+        // ดึง ef_value จาก DB (ถ้าหาไม่เจอให้ใช้ 0)
+        const dbEfValue = Number(actInfo?.emission_factor) || 0;
+        const passengers = travel.passengers || 1;
+        const trips = travel.trips || 1;
+        const distance = travel.distanceKm || 0;
+
+        let totalAmount = 0;
+        if (travel.electricityKwh && travel.electricityKwh > 0) {
+          totalAmount = travel.electricityKwh; 
+        } else {
+          // คำนวณปริมาณการใช้งานตามระยะทางและเที่ยว
+          totalAmount = distance * trips;
+        }
+
+        // คำนวณคาร์บอนด้วย EF จาก Database
+        const res = executeCarbonCalculation({ 
+          emissionFactor: dbEfValue, 
+          amount: totalAmount 
+        });
+
         tTotal = res.totalCalculated;
         setTravelRes(tTotal);
 
         recordsToInsert.push({
-          category_name: actInfo?.category_name || "การเดินทาง",
-          sub_category: actInfo?.sub_category || "เดินทางทั่วไป",
-          ef_id: actInfo?.ef_id || null,
+          category_name: actInfo?.category_name || "การเดินทาง และขนส่ง",
+          sub_category: actInfo?.sub_category || travel.vehicleType || "ยานพาหนะ",
+          ef_id: actInfo?.ef_id || null, // FK ที่ผูกกับตาราง emission_factor
           unit: actInfo?.unit || "km",
           org_id: orgId,
           activity_name: travel.travelName,
-          persons: travel.passengers,
+          persons: passengers,
           hours: null,
-          trips: travel.trips,
-          distance: travel.distanceKm,
-          fuel: null,
+          trips: trips,
+          distance: distance || null,
+          fuel: travel.electricityKwh || null,
           water: null,
           total_calculated: tTotal,
         });
       }
 
-      // 3. หมวดทรัพยากร
-      if (resources.length > 0) {
-        resources.forEach(resItem => {
-          if (!resItem.activity_id) return;
-          const actInfo = adminActivities.find(a => a.activity_id === resItem.activity_id);
-          const ef = Number(actInfo?.emission_factor) || 0.1;
-          const res = executeCarbonCalculation({ emissionFactor: ef, amount: resItem.amount });
-          rTotal += res.totalCalculated;
-
-          recordsToInsert.push({
-            category_name: actInfo?.category_name || "พลังงานและทรัพยากร",
-            sub_category: actInfo?.sub_category || "ทรัพยากรทั่วไป",
-            ef_id: actInfo?.ef_id || null,
-            unit: actInfo?.unit || "-",
-            org_id: orgId,
-            activity_name: resItem.resourceName,
-            persons: null,
-            hours: null,
-            trips: null,
-            distance: null,
-            fuel: resItem.amount,
-            water: null,
-            total_calculated: res.totalCalculated,
-          });
-        });
-        setResourceRes(rTotal);
-      }
-
-      // บันทึกลงตาราง activity_based โดยตรง
+      // บันทึกลงตาราง activity_based ใน Supabase Direct
       if (recordsToInsert.length > 0) {
         const { error: insertError } = await supabase
           .from('activity_based')
@@ -169,7 +182,7 @@ export default function ActivityBasedFootprintPage() {
         if (insertError) throw insertError;
       }
 
-      alert("คำนวณและบันทึกข้อมูลลงตาราง activity_based สำเร็จ!");
+      alert("คำนวณและบันทึกข้อมูลคาร์บอนฟุตพริ้นท์เรียบร้อยแล้ว!");
     } catch (error: any) {
       console.error("เกิดข้อผิดพลาดในการบันทึก:", error.message || error);
       alert(`เกิดข้อผิดพลาด: ${error.message || "กรุณาตรวจสอบ Console"}`);
@@ -193,14 +206,19 @@ export default function ActivityBasedFootprintPage() {
           <div className="flex items-start gap-3 bg-emerald-50 p-4 rounded-xl border border-emerald-100">
             <Sparkles className="w-5 h-5 text-emerald-700 mt-0.5 flex-shrink-0" />
             <p className="text-xs text-emerald-800">
-              บันทึกกิจกรรมขององค์กร ระบบจะคำนวณและจัดเก็บข้อมูลลงตาราง activity_based โดยอัตโนมัติ
+              บันทึกกิจกรรมการประชุม การเดินทาง และการใช้ทรัพยากรขององค์กร ระบบจะคำนวณและจัดเก็บข้อมูลลงระบบโดยอัตโนมัติ
             </p>
           </div>
 
           <div className="grid grid-cols-1 gap-6">
-            <MeetingForm onSubmit={(data) => { setMeeting(data); setIsCalculated(false); }} adminActivities={adminActivities} />
-            <TravelForm onSubmit={(data) => { setTravel(data); setIsCalculated(false); }} adminActivities={adminActivities} />
-            <ResourceForm onSubmit={(data) => { setResources(data); setIsCalculated(false); }} adminActivities={adminActivities} />
+            <MeetingForm 
+              onSubmit={(data) => setMeeting(data)} 
+              adminActivities={adminActivities} 
+            />
+            <TravelForm 
+              onSubmit={(data) => setTravel(data)} 
+              adminActivities={adminActivities} 
+            />
           </div>
 
           <div>
@@ -214,13 +232,11 @@ export default function ActivityBasedFootprintPage() {
             </button>
           </div>
 
-          {isCalculated && (
-            <CalculationResult
-              meetingEmission={meetingRes}
-              travelEmission={travelRes}
-              resourceEmission={resourceRes}
-            />
-          )}
+          <CalculationResult
+            meetingEmission={meetingRes}
+            travelEmission={travelRes}
+            resourceEmission={0}
+          />
         </div>
       )}
     </div>

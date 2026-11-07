@@ -5,13 +5,13 @@ import React from "react";
 type CalculationResultProps = {
   meetingEmission: number;
   travelEmission: number;
-  resourceEmission: number;
+  resourceEmission?: number;
 };
 
 export default function CalculationResult({
   meetingEmission,
   travelEmission,
-  resourceEmission,
+  resourceEmission = 0,
 }: CalculationResultProps) {
   const totalEmission = meetingEmission + travelEmission + resourceEmission;
 
@@ -39,11 +39,15 @@ export default function CalculationResult({
       </div>
 
       <div className="p-6 space-y-5">
-        {/* หมวดการประชุม */}
+        {/* หมวดการประชุมและทรัพยากรสนับสนุน */}
         <div className="rounded-xl border border-gray-200 bg-white p-5 flex items-center justify-between">
           <div>
-            <h3 className="font-semibold text-gray-800 text-base">หมวดการประชุม (Meeting)</h3>
-            <p className="text-xs text-gray-500 mt-0.5">คำนวณจากระยะเวลาและจำนวนผู้เข้าร่วม</p>
+            <h3 className="font-semibold text-gray-800 text-base">
+              หมวดการประชุม อบรม และจัดอีเวนต์
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              คำนวณจากการประชุม Online (kWh) และการเดินทางมาร่วมประชุม
+            </p>
           </div>
           <div className="text-right">
             <span className="font-bold text-gray-900 text-lg">
@@ -56,26 +60,16 @@ export default function CalculationResult({
         {/* หมวดการเดินทาง */}
         <div className="rounded-xl border border-gray-200 bg-white p-5 flex items-center justify-between">
           <div>
-            <h3 className="font-semibold text-gray-800 text-base">หมวดการเดินทาง (Travel)</h3>
-            <p className="text-xs text-gray-500 mt-0.5">คำนวณจากระยะทาง เที่ยว และจำนวนผู้เดินทาง</p>
+            <h3 className="font-semibold text-gray-800 text-base">
+              หมวดการเดินทาง และขนส่ง
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              คำนวณจากระยะทาง เชื้อเพลิง (Gasohol, Diesel, LPG, CNG) หรือกระแสไฟฟ้าชาร์จรถ EV
+            </p>
           </div>
           <div className="text-right">
             <span className="font-bold text-gray-900 text-lg">
               {formatEmission(travelEmission)}{" "}
-            </span>
-            <span className="text-xs font-normal text-gray-500">kgCO₂e</span>
-          </div>
-        </div>
-
-        {/* หมวดทรัพยากรและพลังงาน */}
-        <div className="rounded-xl border border-gray-200 bg-white p-5 flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-gray-800 text-base">หมวดพลังงานและทรัพยากร (Resources)</h3>
-            <p className="text-xs text-gray-500 mt-0.5">คำนวณจากปริมาณการใช้จริงตามหน่วยมาตรฐาน</p>
-          </div>
-          <div className="text-right">
-            <span className="font-bold text-gray-900 text-lg">
-              {formatEmission(resourceEmission)}{" "}
             </span>
             <span className="text-xs font-normal text-gray-500">kgCO₂e</span>
           </div>

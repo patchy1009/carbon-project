@@ -1,13 +1,16 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 
 export type TravelData = {
   travelName: string;
   distanceKm: number;
   trips: number;
   passengers: number;
-  activity_id?: string;
+  vehicleType: string;
+  fuelType: string;
+  electricityKwh?: number;
+  ef_id?: string | null; // เพิ่ม ef_id เพื่อส่งกลับไปผูก Foreign Key ใน DB
 };
 
 type TravelFormProps = {
@@ -15,61 +18,107 @@ type TravelFormProps = {
   adminActivities?: any[];
 };
 
+const VEHICLE_OPTIONS = [
+  { id: "car", label: "รถยนต์" },
+  { id: "motorcycle", label: "รถจักรยานยนต์" },
+  { id: "van", label: "รถตู้" },
+  { id: "bus", label: "รถประจำทาง" },
+  { id: "ev", label: "รถไฟฟ้า" },
+];
+
+const FUEL_OPTIONS_MAP: Record<string, { id: string; label: string; unit: string }[]> = {
+  car: [
+    { id: "gasohol_e10", label: "Gasohol E10", unit: "กิโลเมตร" },
+    { id: "gasohol_e20", label: "Gasohol E20", unit: "กิโลเมตร" },
+    { id: "gasohol_e85", label: "Gasohol E85", unit: "กิโลเมตร" },
+    { id: "diesel_b7", label: "Diesel B7", unit: "กิโลเมตร" },
+    { id: "diesel_b20", label: "Diesel B20", unit: "กิโลเมตร" },
+    { id: "lpg", label: "LPG", unit: "กิโลเมตร" },
+    { id: "cng", label: "CNG", unit: "กิโลเมตร" },
+  ],
+  motorcycle: [
+    { id: "gasohol_e10", label: "Gasohol E10", unit: "กิโลเมตร" },
+    { id: "gasohol_e20", label: "Gasohol E20", unit: "กิโลเมตร" },
+  ],
+  van: [
+    { id: "diesel_b7", label: "Diesel B7", unit: "กิโลเมตร" },
+    { id: "diesel_b20", label: "Diesel B20", unit: "กิโลเมตร" },
+    { id: "cng", label: "CNG", unit: "กิโลเมตร" },
+  ],
+  bus: [
+    { id: "diesel_b7", label: "Diesel B7", unit: "กิโลเมตร" },
+  ],
+  ev: [
+    { id: "ev_kwh", label: "กระแสไฟฟ้า (EV)", unit: "kWh" },
+  ],
+};
+
 export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFormProps) {
-  // กรองเฉพาะรายการที่เกี่ยวข้องกับการเดินทาง
-  const travelActivities = adminActivities.filter((item) => {
-    const text = `${item.category_name || ""} ${item.sub_category || ""}`.toLowerCase();
-    return (
-      text.includes("เดินทาง") ||
-      text.includes("รถยนต์") ||
-      text.includes("รถตู้") ||
-      text.includes("รถจักรยานยนต์") ||
-      text.includes("รถประจำทาง") ||
-      text.includes("travel") ||
-      text.includes("car") ||
-      text.includes("van") ||
-      text.includes("bus")
-    );
-  });
-
-  // ถ้าไม่มีการกรองที่ตรง ให้ใช้รายการทั้งหมดกันพลาด
-  const availableActivities = travelActivities.length > 0 ? travelActivities : adminActivities;
-  const defaultAct = availableActivities[0];
-
   const [travelName, setTravelName] = useState("");
-  const [selectedActivityId, setSelectedActivityId] = useState(defaultAct?.activity_id || "");
+  const [vehicleType, setVehicleType] = useState("car");
+  
+  const availableFuels = FUEL_OPTIONS_MAP["car"];
+  const [fuelType, setFuelType] = useState(availableFuels[0].id);
+
   const [distanceKm, setDistanceKm] = useState("0");
+  const [electricityKwh, setElectricityKwh] = useState("0");
   const [trips, setTrips] = useState("1");
   const [passengers, setPassengers] = useState("1");
 
-  useEffect(() => {
-    if (availableActivities.length > 0 && !selectedActivityId) {
-      setSelectedActivityId(availableActivities[0].activity_id);
+  const handleVehicleChange = (newVehicle: string) => {
+    setVehicleType(newVehicle);
+    const fuels = FUEL_OPTIONS_MAP[newVehicle] || [];
+    if (fuels.length > 0) {
+      setFuelType(fuels[0].id);
     }
-  }, [availableActivities, selectedActivityId]);
+  };
+
+  const currentFuels = FUEL_OPTIONS_MAP[vehicleType] || [];
+  const isEvSelected = vehicleType === "ev";
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const distance = Number(distanceKm);
+    const kwh = Number(electricityKwh);
     const tripCount = Number(trips);
     const passengerCount = Number(passengers);
 
-    if (!travelName.trim() || distance <= 0 || !selectedActivityId) {
-      alert("กรุณากรอกข้อมูลการเดินทางให้ถูกต้อง");
+    if (!travelName.trim()) {
+      alert("กรุณากรอกรายละเอียดการเดินทาง");
       return;
     }
 
+    if (isEvSelected && kwh <= 0) {
+      alert("กรุณาระบุปริมาณกระแสไฟฟ้า (kWh) ให้ถูกต้อง");
+      return;
+    }
+
+    if (!isEvSelected && distance <= 0) {
+      alert("กรุณาระบุระยะทางให้ถูกต้อง");
+      return;
+    }
+
+    // ค้นหา ef_id ที่ตรงกับประเภทเชื้อเพลิงหรือยานพาหนะจาก adminActivities (Master Data ใน DB)
+    const foundAct = adminActivities.find(a => 
+      a.ef_name?.toLowerCase().includes(fuelType.toLowerCase()) ||
+      a.sub_category?.toLowerCase().includes(fuelType.toLowerCase()) ||
+      a.sub_category?.toLowerCase().includes(vehicleType.toLowerCase()) ||
+      a.activity_name?.toLowerCase().includes(vehicleType.toLowerCase())
+    );
+    const matchedEfId = foundAct ? foundAct.ef_id : (adminActivities[0]?.ef_id || null);
+
     onSubmit({
       travelName: travelName.trim(),
-      distanceKm: distance,
+      distanceKm: isEvSelected ? 0 : distance,
+      electricityKwh: isEvSelected ? kwh : undefined,
       trips: tripCount,
       passengers: passengerCount,
-      activity_id: selectedActivityId,
+      vehicleType,
+      fuelType,
+      ef_id: matchedEfId, // แนบ ef_id ส่งกลับไปหน้าแม่
     });
     alert("บันทึกข้อมูลการเดินทางชั่วคราวแล้ว");
   };
-
-  const activeAct = availableActivities.find((a) => a.activity_id === selectedActivityId);
 
   return (
     <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
@@ -85,45 +134,77 @@ export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFor
               type="text"
               value={travelName}
               onChange={(e) => setTravelName(e.target.value)}
-              placeholder="เช่น เดินทางไปพบลูกค้า"
+              placeholder="เช่น เดินทางไปพบลูกค้า หรือปฏิบัติงานนอกสถานที่"
               className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
               required
             />
           </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">ประเภทยานพาหนะ *</label>
-            <select
-              value={selectedActivityId}
-              onChange={(e) => setSelectedActivityId(e.target.value)}
-              className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
-            >
-              {availableActivities.length === 0 ? (
-                <option value="">ไม่พบข้อมูลประเภทยานพาหนะ</option>
-              ) : (
-                availableActivities.map((opt, idx) => (
-                  <option key={`${opt.activity_id}-${idx}`} value={opt.activity_id}>
-                    {opt.sub_category || opt.category_name} ({opt.unit || "กิโลเมตร"})
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-700">ประเภทยานพาหนะ *</label>
+              <select
+                value={vehicleType}
+                onChange={(e) => handleVehicleChange(e.target.value)}
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-[#32885F]"
+              >
+                {VEHICLE_OPTIONS.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
                   </option>
-                ))
-              )}
-            </select>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-700">ประเภทน้ำมัน / เชื้อเพลิง *</label>
+              <select
+                value={fuelType}
+                onChange={(e) => setFuelType(e.target.value)}
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-[#32885F]"
+              >
+                {currentFuels.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">
-              ระยะทาง ({activeAct?.unit || "กิโลเมตร"}) *
-            </label>
-            <input
-              type="number"
-              min="0.1"
-              step="0.1"
-              value={distanceKm}
-              onChange={(e) => setDistanceKm(e.target.value)}
-              className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
-              required
-            />
-          </div>
+          {isEvSelected ? (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-700">
+                ปริมาณกระแสไฟฟ้าที่ใช้ชาร์จ (kWh) *
+              </label>
+              <input
+                type="number"
+                min="0.1"
+                step="0.01"
+                value={electricityKwh}
+                onChange={(e) => setElectricityKwh(e.target.value)}
+                placeholder="ระบุหน่วย kWh"
+                className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
+                required
+              />
+              <p className="text-[11px] text-gray-500 mt-1">ระบบจะคำนวณอัตโนมัติด้วยค่า EF ไฟฟ้า (CFO Scope 2)</p>
+            </div>
+          ) : (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-700">
+                ระยะทาง (กิโลเมตร) *
+              </label>
+              <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                value={distanceKm}
+                onChange={(e) => setDistanceKm(e.target.value)}
+                className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
+                required
+              />
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
