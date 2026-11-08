@@ -6,11 +6,10 @@ export type TravelData = {
   travelName: string;
   distanceKm: number;
   trips: number;
-  passengers: number;
   vehicleType: string;
   fuelType: string;
   electricityKwh?: number;
-  ef_id?: string | null; // เพิ่ม ef_id เพื่อส่งกลับไปผูก Foreign Key ใน DB
+  ef_id?: string | null;
 };
 
 type TravelFormProps = {
@@ -21,35 +20,40 @@ type TravelFormProps = {
 const VEHICLE_OPTIONS = [
   { id: "car", label: "รถยนต์" },
   { id: "motorcycle", label: "รถจักรยานยนต์" },
-  { id: "van", label: "รถตู้" },
-  { id: "bus", label: "รถประจำทาง" },
-  { id: "ev", label: "รถไฟฟ้า" },
+  { id: "van", label: "รถตู้โดยสาร" },
+  { id: "bus", label: "รถโดยสารประจำทาง" },
+  { id: "ev", label: "รถไฟฟ้า (EV)" },
 ];
 
-const FUEL_OPTIONS_MAP: Record<string, { id: string; label: string; unit: string }[]> = {
+const FUEL_OPTIONS_MAP: Record<string, { id: string; label: string }[]> = {
   car: [
-    { id: "gasohol_e10", label: "Gasohol E10", unit: "กิโลเมตร" },
-    { id: "gasohol_e20", label: "Gasohol E20", unit: "กิโลเมตร" },
-    { id: "gasohol_e85", label: "Gasohol E85", unit: "กิโลเมตร" },
-    { id: "diesel_b7", label: "Diesel B7", unit: "กิโลเมตร" },
-    { id: "diesel_b20", label: "Diesel B20", unit: "กิโลเมตร" },
-    { id: "lpg", label: "LPG", unit: "กิโลเมตร" },
-    { id: "cng", label: "CNG", unit: "กิโลเมตร" },
+    { id: "Gasohol_E10", label: "Gasohol E10 (ค่าเริ่มต้น)" },
+    { id: "Gasohol_E20", label: "Gasohol E20" },
+    { id: "Gasohol_E85", label: "Gasohol E85" },
+    { id: "Diesel_B7", label: "Diesel B7" },
+    { id: "Diesel_B20", label: "Diesel B20" },
+    { id: "CNG", label: "CNG" },
+    { id: "LPG", label: "LPG" },
   ],
   motorcycle: [
-    { id: "gasohol_e10", label: "Gasohol E10", unit: "กิโลเมตร" },
-    { id: "gasohol_e20", label: "Gasohol E20", unit: "กิโลเมตร" },
+    { id: "Gasohol_E10", label: "Gasohol E10" },
+    { id: "Gasohol_E20", label: "Gasohol E20" },
+    { id: "Gasohol_E85", label: "Gasohol E85" },
   ],
   van: [
-    { id: "diesel_b7", label: "Diesel B7", unit: "กิโลเมตร" },
-    { id: "diesel_b20", label: "Diesel B20", unit: "กิโลเมตร" },
-    { id: "cng", label: "CNG", unit: "กิโลเมตร" },
+    { id: "Diesel_B7", label: "Diesel B7" },
+    { id: "Diesel_B20", label: "Diesel B20" },
+    { id: "CNG", label: "CNG" },
+    { id: "LPG", label: "LPG" },
   ],
   bus: [
-    { id: "diesel_b7", label: "Diesel B7", unit: "กิโลเมตร" },
+    { id: "Diesel_B7", label: "Diesel B7" },
+    { id: "Diesel_B20", label: "Diesel B20" },
+    { id: "CNG", label: "CNG" },
+    { id: "LPG", label: "LPG" },
   ],
   ev: [
-    { id: "ev_kwh", label: "กระแสไฟฟ้า (EV)", unit: "kWh" },
+    { id: "Electricity", label: "กระแสไฟฟ้า (kWh)" },
   ],
 };
 
@@ -63,7 +67,6 @@ export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFor
   const [distanceKm, setDistanceKm] = useState("0");
   const [electricityKwh, setElectricityKwh] = useState("0");
   const [trips, setTrips] = useState("1");
-  const [passengers, setPassengers] = useState("1");
 
   const handleVehicleChange = (newVehicle: string) => {
     setVehicleType(newVehicle);
@@ -81,10 +84,14 @@ export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFor
     const distance = Number(distanceKm);
     const kwh = Number(electricityKwh);
     const tripCount = Number(trips);
-    const passengerCount = Number(passengers);
 
     if (!travelName.trim()) {
       alert("กรุณากรอกรายละเอียดการเดินทาง");
+      return;
+    }
+
+    if (tripCount <= 0 || distance <= 0) {
+      alert("กรุณาระบุระยะทางและจำนวนเที่ยวให้ถูกต้อง");
       return;
     }
 
@@ -93,12 +100,6 @@ export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFor
       return;
     }
 
-    if (!isEvSelected && distance <= 0) {
-      alert("กรุณาระบุระยะทางให้ถูกต้อง");
-      return;
-    }
-
-    // ค้นหา ef_id ที่ตรงกับประเภทเชื้อเพลิงหรือยานพาหนะจาก adminActivities (Master Data ใน DB)
     const foundAct = adminActivities.find(a => 
       a.ef_name?.toLowerCase().includes(fuelType.toLowerCase()) ||
       a.sub_category?.toLowerCase().includes(fuelType.toLowerCase()) ||
@@ -109,13 +110,12 @@ export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFor
 
     onSubmit({
       travelName: travelName.trim(),
-      distanceKm: isEvSelected ? 0 : distance,
+      distanceKm: distance,
       electricityKwh: isEvSelected ? kwh : undefined,
       trips: tripCount,
-      passengers: passengerCount,
       vehicleType,
-      fuelType,
-      ef_id: matchedEfId, // แนบ ef_id ส่งกลับไปหน้าแม่
+      fuelType: isEvSelected ? "Electricity" : fuelType,
+      ef_id: matchedEfId,
     });
     alert("บันทึกข้อมูลการเดินทางชั่วคราวแล้ว");
   };
@@ -134,7 +134,7 @@ export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFor
               type="text"
               value={travelName}
               onChange={(e) => setTravelName(e.target.value)}
-              placeholder="เช่น เดินทางไปพบลูกค้า หรือปฏิบัติงานนอกสถานที่"
+              placeholder="เช่น เดินทางไปพบลูกค้า"
               className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
               required
             />
@@ -172,10 +172,10 @@ export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFor
             </div>
           </div>
 
-          {isEvSelected ? (
+          {isEvSelected && (
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-700">
-                ปริมาณกระแสไฟฟ้าที่ใช้ชาร์จ (kWh) *
+                ปริมาณกระแสไฟฟ้าที่ใช้ชาร์จต่อเที่ยว (kWh) *
               </label>
               <input
                 type="number"
@@ -187,48 +187,34 @@ export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFor
                 className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
                 required
               />
-              <p className="text-[11px] text-gray-500 mt-1">ระบบจะคำนวณอัตโนมัติด้วยค่า EF ไฟฟ้า (CFO Scope 2)</p>
-            </div>
-          ) : (
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700">
-                ระยะทาง (กิโลเมตร) *
-              </label>
-              <input
-                type="number"
-                min="0.1"
-                step="0.1"
-                value={distanceKm}
-                onChange={(e) => setDistanceKm(e.target.value)}
-                className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
-                required
-              />
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700">จำนวนเที่ยว *</label>
-              <input
-                type="number"
-                min="1"
-                value={trips}
-                onChange={(e) => setTrips(e.target.value)}
-                className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
-                required
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700">จำนวนผู้เดินทาง (คน) *</label>
-              <input
-                type="number"
-                min="1"
-                value={passengers}
-                onChange={(e) => setPassengers(e.target.value)}
-                className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
-                required
-              />
-            </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">
+              ระยะทาง (กิโลเมตร) *
+            </label>
+            <input
+              type="number"
+              min="0.1"
+              step="0.1"
+              value={distanceKm}
+              onChange={(e) => setDistanceKm(e.target.value)}
+              className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">จำนวนเที่ยว *</label>
+            <input
+              type="number"
+              min="1"
+              value={trips}
+              onChange={(e) => setTrips(e.target.value)}
+              className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
+              required
+            />
           </div>
 
           <button
