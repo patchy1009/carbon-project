@@ -1,3 +1,4 @@
+// หน้าจัดการค่า EF และ GWP ของแอดมิน: เพิ่ม แก้ไข ลบ ประเภท EF, ค่า EF และค่า GWP
 'use client';
 
 import { useState } from 'react';
@@ -8,10 +9,10 @@ import { validateForm, extendSchema, notDuplicate, existsIn, type formError } fr
 import { normalizeToArabicNumber } from '@/lib/normalization';
 import FieldError from '@/components/FieldError';
 import { efTypeSchema, efSchema, gwpSchema, type EfTypeField, type EfField, type GwpField } from './schema';
-import RowActions from '@/components/RowActions'; // [แก้ไข] ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
-import { inputClass } from '@/components/formStyles'; // [แก้ไข] class ช่องกรอกกลาง
+import RowActions from '@/components/RowActions'; // ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
+import { inputClass } from '@/components/formStyles'; // class ช่องกรอกกลาง
 
-/* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
+/* สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) ลบ modal "เพิ่มค่า EF" และ "เพิ่มค่า GWP" ชุดเก่าที่ซ้อนอยู่ (เดิม render 2 ชุดพร้อมกันเวลาเปิด)
  * 2) ประเภท EF: เดิมไม่ได้ validate เลย และปิด modal ผิดตัว (setShowEfModal) -> แก้ให้ validate + ปิดถูกตัว
  * 3) ทุกฟอร์มตรวจ "ข้อมูลซ้ำ" (notDuplicate) และ "ประเภทที่เลือกต้องมีอยู่จริง" (existsIn) ก่อนบันทึก
@@ -26,6 +27,7 @@ const palette = [
   { bg: 'bg-[#ECFDF5]', border: 'border-[#D1FAE5]', text: 'text-[#047857]' },
 ];
 
+// เลือกสีป้ายตามลำดับของประเภท EF ถ้าสีหมดให้วนกลับมาสีแรก
 function colorFor(typeId: string, types: EfType[]) {
   const idx = types.findIndex((t) => t.eftype_id === typeId);
   return palette[idx % palette.length] ?? palette[0];
@@ -34,6 +36,7 @@ function colorFor(typeId: string, types: EfType[]) {
 const emptyEfForm = { eftype_id: '', ef_name: '', ef_value: '', real_unit: '' };
 const emptyGwpForm = { gas_name: '', gwp_value: '' };
 
+// หน้าจอหลัก รับข้อมูลเริ่มต้นจาก page.tsx แล้วเก็บใน state เพื่อให้แก้ไขบนหน้าได้ทันที
 export default function EfGwpClient({
   initialEfTypes,
   initialEf,
@@ -55,7 +58,7 @@ export default function EfGwpClient({
   const [showEfModal, setShowEfModal] = useState(false);
   const [showGwpModal, setShowGwpModal] = useState(false);
 
-  // [เพิ่ม] id ของแถวที่กำลังแก้ไข (null = กำลังเพิ่มใหม่)
+  // id ของแถวที่กำลังแก้ไข (null = กำลังเพิ่มใหม่)
   const [editTypeId, setEditTypeId] = useState<string | null>(null);
   const [editEfId, setEditEfId] = useState<string | null>(null);
   const [editGwpId, setEditGwpId] = useState<string | null>(null);
@@ -64,17 +67,21 @@ export default function EfGwpClient({
   const [efForm, setEfForm] = useState(emptyEfForm);
   const [gwpForm, setGwpForm] = useState(emptyGwpForm);
 
+  // ปิดฟอร์มประเภท EF และล้างข้อความ error
   function closeTypeModal() { setShowTypeModal(false); setTypeErrors({}); }
+  // ปิดฟอร์มค่า EF และล้างข้อความ error
   function closeEfModal() { setShowEfModal(false); setEfError({}); }
+  // ปิดฟอร์มค่า GWP และล้างข้อความ error
   function closeGwpModal() { setShowGwpModal(false); setGwpErrors({}); }
 
-  // [เพิ่ม] เปิด modal: ไม่ส่ง row = เพิ่มใหม่ (ฟอร์มว่าง) / ส่ง row = แก้ไข (เติมค่าเดิม)
+  // เปิด modal: ไม่ส่ง row = เพิ่มใหม่ (ฟอร์มว่าง) / ส่ง row = แก้ไข (เติมค่าเดิม)
   function openTypeModal(row?: EfType) {
     setEditTypeId(row?.eftype_id ?? null);
     setTypeForm({ type_name: row?.type_name ?? '' });
     setTypeErrors({});
     setShowTypeModal(true);
   }
+  // เปิดฟอร์มค่า EF ถ้าส่ง row มาคือโหมดแก้ไข ถ้าไม่ส่งคือเพิ่มใหม่
   function openEfModal(row?: EmissionFactor) {
     setEditEfId(row?.ef_id ?? null);
     setEfForm(
@@ -90,6 +97,7 @@ export default function EfGwpClient({
     setEfError({});
     setShowEfModal(true);
   }
+  // เปิดฟอร์มค่า GWP ถ้าส่ง row มาคือโหมดแก้ไข ถ้าไม่ส่งคือเพิ่มใหม่
   function openGwpModal(row?: GwpValue) {
     setEditGwpId(row?.gwp_id ?? null);
     setGwpForm(
@@ -104,7 +112,7 @@ export default function EfGwpClient({
   // --- ประเภท EF ---
   async function handleSaveType(e: React.FormEvent) {
     e.preventDefault();
-    // [แก้ไข] เดิมบันทึก typeForm.type_name ตรงๆ ไม่ผ่าน normalize/validate
+    // เดิมบันทึก typeForm.type_name ตรงๆ ไม่ผ่าน normalize/validate
     // ห้ามซ้ำกับประเภทอื่น (ไม่นับแถวที่กำลังแก้ไข)
     const others = efTypes.filter((t) => t.eftype_id !== editTypeId).map((t) => t.type_name);
     const result = validateForm(
@@ -131,9 +139,10 @@ export default function EfGwpClient({
       if (!created) return;
       setEfTypes((prev) => [...prev, created]);
     }
-    closeTypeModal(); // [แก้ไข] เดิมเรียก setShowEfModal(false) ทำให้ modal ประเภทไม่ปิด
+    closeTypeModal(); // เดิมเรียก setShowEfModal(false) ทำให้ modal ประเภทไม่ปิด
   }
 
+  // ลบประเภท EF สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteType(id: string) {
     const ok = await deleteRecord(
       'ef_type',
@@ -151,7 +160,7 @@ export default function EfGwpClient({
   // --- ค่า EF ---
   async function handleSaveEf(e: React.FormEvent) {
     e.preventDefault();
-    // [เพิ่ม] ห้ามชื่อ EF ซ้ำ "ภายในประเภทเดียวกัน" (ต่างประเภทชื่อเดียวกันได้ เช่น Diesel ของ Stationary / Mobile)
+    // ห้ามชื่อ EF ซ้ำ "ภายในประเภทเดียวกัน" (ต่างประเภทชื่อเดียวกันได้ เช่น Diesel ของ Stationary / Mobile)
     const sameTypeNames = efList
       .filter((r) => r.ef_id !== editEfId && r.eftype_id === efForm.eftype_id)
       .map((r) => r.ef_name);
@@ -174,7 +183,7 @@ export default function EfGwpClient({
       ef_name: result.clean.ef_name,
       ef_value: normalizeToArabicNumber(result.clean.ef_value),
       real_unit: result.clean.real_unit,
-      eftype_id: result.clean.eftype_id, // [แก้ไข] ใช้ค่า clean แทน efForm ดิบ
+      eftype_id: result.clean.eftype_id, // ใช้ค่า clean แทน efForm ดิบ
     };
     const select = '*, ef_type(eftype_id, type_name)';
 
@@ -193,6 +202,7 @@ export default function EfGwpClient({
     closeEfModal();
   }
 
+  // ลบค่า EF สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteEf(id: string) {
     const ok = await deleteRecord('emission_factor', 'ef_id', id, 'ลบค่า EF?');
     if (!ok) return;
@@ -228,6 +238,7 @@ export default function EfGwpClient({
     closeGwpModal();
   }
 
+  // ลบค่า GWP สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteGwp(id: string) {
     const ok = await deleteRecord('global_warming_potential', 'gwp_id', id, 'ลบค่า GWP นี้?');
     if (!ok) return;
@@ -248,7 +259,7 @@ export default function EfGwpClient({
           </h2>
           <button
             onClick={() => openTypeModal()}
-            className="flex items-center gap-1 rounded-lg border border-dashed border-[#6EE7B7] bg-[#266955] px-3 py-1.5 text-xs text-white"
+            className="btn btn-create flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs"
           >
             + เพิ่มประเภท EF ใหม่
           </button>
@@ -259,7 +270,7 @@ export default function EfGwpClient({
               key={t.eftype_id}
               className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F1F5F9] text-xs font-sans"
             >
-              {/* [เพิ่ม] กดที่ชื่อเพื่อแก้ไข */}
+              {/* กดที่ชื่อเพื่อแก้ไข */}
               <button onClick={() => openTypeModal(t)} className="hover:underline" title="แก้ไข" aria-label="แก้ไข">
                 {t.type_name}
               </button>
@@ -282,7 +293,7 @@ export default function EfGwpClient({
           </h2>
           <button
             onClick={() => openEfModal()}
-            className="flex items-center gap-1 rounded-lg bg-[#266955] px-3 py-1.5 text-xs text-white shadow-sm"
+            className="btn btn-create flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs"
           >
             + เพิ่มค่า EF
           </button>
@@ -335,7 +346,7 @@ export default function EfGwpClient({
           </h2>
           <button
             onClick={() => openGwpModal()}
-            className="flex items-center gap-1 rounded-lg bg-[#266955] px-3 py-1.5 text-xs text-white shadow-sm"
+            className="btn btn-create flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs"
           >
             + เพิ่มค่า GWP
           </button>

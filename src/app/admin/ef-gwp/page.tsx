@@ -6,6 +6,7 @@ import { requireAdminId } from '@/lib/auth';
 import EfGwpClient from './EfGwpClient';
 import type { EfType, EmissionFactor, GwpValue } from '@/types/ef-gwp';
 
+// ตรวจสิทธิ์แอดมิน ดึงประเภท EF ค่า EF และค่า GWP แล้วส่งให้หน้าจอ
 export default async function EfGwpPage() {
   await requireAdminId(); // ไม่ใช่แอดมิน -> เด้งไปหน้า login
   const supabase = await createSupabaseServer();

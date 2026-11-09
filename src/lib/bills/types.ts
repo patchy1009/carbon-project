@@ -1,5 +1,5 @@
 // lib/bills/types.ts
-/* [ปรับปรุง] เปลี่ยนจากชนิดข้อมูลของ Tesseract (Extracted) มาเป็นของ Python PaddleOCR (/api/ocr)
+/* เปลี่ยนจากชนิดข้อมูลของ Tesseract (Extracted) มาเป็นของ Python PaddleOCR (/api/ocr)
  * OCR ใช้ "ช่วยกรอก" เท่านั้น ข้อมูลบิลอยู่ใน React state ไม่บันทึกลง Supabase */
 
 export type BillType = 'water' | 'electricity' | 'fuel';
@@ -15,7 +15,7 @@ export type BillUnit = 'kWh' | 'L';
 export const BILL_UNIT: Record<BillType, BillUnit> = { electricity: 'kWh', water: 'L', fuel: 'L' };
 export const BILL_UNIT_LABEL: Record<BillUnit, string> = { kWh: 'kWh', L: 'ลิตร' };
 
-// [แก้ไข] ชนิดน้ำมันตามที่ extract_fuel_type() ใน Python คืนมา (เดิมมีแค่ diesel | gasoline)
+// ชนิดน้ำมันตามที่ extract_fuel_type() ใน Python คืนมา (เดิมมีแค่ diesel | gasoline)
 export type FuelType = 'diesel' | 'gasohol_91' | 'gasohol_95' | 'gasohol_e20' | 'gasohol_e85';
 export const FUEL_TYPES: { value: FuelType; label: string }[] = [
   { value: 'diesel', label: 'ดีเซล' },
@@ -24,9 +24,10 @@ export const FUEL_TYPES: { value: FuelType; label: string }[] = [
   { value: 'gasohol_e20', label: 'แก๊สโซฮอล์ E20' },
   { value: 'gasohol_e85', label: 'แก๊สโซฮอล์ E85' },
 ];
+// ตรวจว่าค่าที่ได้เป็นชนิดน้ำมันที่ระบบรู้จักหรือไม่
 export const isFuelType = (v: unknown): v is FuelType => FUEL_TYPES.some((f) => f.value === v);
 
-/* [เพิ่ม] ตัวผูกบิลกับช่องกิจกรรม = ค่าในคอลัมน์ activity_detail.ocr_source
+/* ตัวผูกบิลกับช่องกิจกรรม = ค่าในคอลัมน์ activity_detail.ocr_source
  * ต้องตรงกับ check constraint ใน supabase/activity_detail_ocr_source.sql */
 export type OcrSource = 'electricity' | 'water' | `fuel:${FuelType}`;
 export const OCR_SOURCES: { value: OcrSource; label: string }[] = [
@@ -41,7 +42,7 @@ export const ocrSourceOf = (type: BillType, fuel: FuelType | ''): OcrSource | nu
 // กิจกรรมที่กำลังบันทึก: month = 'YYYY-MM-01' (ค.ศ.), รายปีใช้ 'YYYY-01-01'
 export type ActivityPeriod = { type: 'month' | 'year'; month: string };
 
-/* [เพิ่ม] JSON ที่ POST /api/ocr คืนมา (มาจาก extract_bill_data() ใน Python) */
+/* JSON ที่ POST /api/ocr คืนมา (มาจาก extract_bill_data() ใน Python) */
 export type OcrResult = {
   bill_type: BillType | 'unknown';
   bill_number: string | null;

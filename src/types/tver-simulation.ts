@@ -1,3 +1,4 @@
+// ชนิดข้อมูลของหน้าจำลองโครงการ T-VER
 export type { OrgTreeProject } from './dashboard';
 
 export interface OrgTreeProjectDetail {

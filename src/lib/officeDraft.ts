@@ -1,5 +1,5 @@
 // lib/officeDraft.ts
-/* [เพิ่มใหม่] ค่าข้อมูลสำนักงานที่กรอกในขั้นที่ 1 (ยังไม่บันทึกลง DB)
+/* ค่าข้อมูลสำนักงานที่กรอกในขั้นที่ 1 (ยังไม่บันทึกลง DB)
  * กด "ถัดไป" -> เก็บไว้ใน sessionStorage -> ขั้นที่ 2 กด "คำนวณ" แล้วจึงบันทึกลง org_office_info พร้อมรายการ
  * - ย้อนกลับมาขั้นที่ 1 (ปุ่มกลับ หรือปุ่ม Back ของเบราว์เซอร์) ค่าที่กรอกไว้ยังอยู่
  * - แยกตามรายการ: 'new' = รายการใหม่, หรือ orgactlist_id ของรายการที่กำลังแก้ไข
@@ -12,6 +12,7 @@ export type OfficeDraft = Record<string, string>; // key = info_id, value = ค�
 /* scope: 'new' หรือ orgactlist_id ของรายการที่แก้ไข */
 export const draftScope = (editId: string | null | undefined) => editId ?? 'new';
 
+// อ่านข้อมูลสำนักงานที่พักไว้ ถ้าเป็นของบัญชีอื่นจะไม่คืนค่า
 export function readOfficeDraft(orgId: string, scope: string): OfficeDraft | null {
   try {
     const raw = sessionStorage.getItem(keyOf(scope));
@@ -23,6 +24,7 @@ export function readOfficeDraft(orgId: string, scope: string): OfficeDraft | nul
   }
 }
 
+// พักข้อมูลสำนักงานไว้ใน sessionStorage
 export function writeOfficeDraft(orgId: string, scope: string, values: OfficeDraft) {
   try {
     sessionStorage.setItem(keyOf(scope), JSON.stringify({ orgId, values }));
@@ -31,6 +33,7 @@ export function writeOfficeDraft(orgId: string, scope: string, values: OfficeDra
   }
 }
 
+// ลบข้อมูลที่พักไว้ หลังบันทึกเสร็จ
 export function clearOfficeDraft(scope: string) {
   try {
     sessionStorage.removeItem(keyOf(scope));

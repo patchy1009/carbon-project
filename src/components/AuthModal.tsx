@@ -1,8 +1,9 @@
+// กล่องเข้าสู่ระบบและลงทะเบียน ใช้ได้ทุกหน้าของฝั่งองค์กร
 "use client";
 
 import React, { useState } from "react";
 import Modal from "./Modal";
-import { showAlert } from "@/lib/dialog"; // [แก้ไข] กล่องแจ้งเตือนกลางแทน alert
+import { showAlert } from "@/lib/dialog"; // กล่องแจ้งเตือนกลางแทน alert
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -10,6 +11,7 @@ interface AuthModalProps {
   initialMode?: "login" | "register";
 }
 
+// แสดงฟอร์มตามขั้นตอนที่เลือก: เข้าสู่ระบบ ลงทะเบียน หรือกรอก OTP
 export default function AuthModal({
   isOpen,
   onClose,
@@ -22,7 +24,7 @@ export default function AuthModal({
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState(false);
-  // [เพิ่ม] ข้อความ error ของการเข้าสู่ระบบ แสดงใต้ฟอร์ม (เดิมเด้ง alert ซ้ำกับข้อความสีแดง)
+  // ข้อความ error ของการเข้าสู่ระบบ แสดงใต้ฟอร์ม (เดิมเด้ง alert ซ้ำกับข้อความสีแดง)
   const [loginMessage, setLoginMessage] = useState<string | null>(null);
 
   // state ฟอร์ม Register
@@ -30,10 +32,12 @@ export default function AuthModal({
   const [regPassword, setRegPassword] = useState("");
   const [regOrgName, setRegOrgName] = useState("");
   const [regIndustry, setRegIndustry] = useState("");
-  // [เพิ่ม] error ของแต่ละช่องในฟอร์มลงทะเบียน (แทน required ของ browser ที่เด้ง popup)
+  // error ของแต่ละช่องในฟอร์มลงทะเบียน (แทน required ของ browser ที่เด้ง popup)
   const [regErrors, setRegErrors] = useState<Record<string, string>>({});
+  // เลือกสีกรอบของช่องลงทะเบียน ถ้ามี error จะเป็นกรอบแดง
   const regBorder = (field: string) =>
     regErrors[field] ? "border-red-500 bg-red-50/20" : "border-gray-300 focus:border-[#1c5d41]";
+  // ล้าง error ของช่องลงทะเบียนเมื่อผู้ใช้พิมพ์แก้
   const clearRegError = (field: string) =>
     setRegErrors((prev) => (prev[field] ? { ...prev, [field]: "" } : prev));
 
@@ -58,6 +62,7 @@ export default function AuthModal({
   const [isLoading, setIsLoading] = useState(false);
 
   
+  // ส่งอีเมลและรหัสผ่านไปที่ API ถ้าสำเร็จจะพาไปหน้าตาม role
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -119,9 +124,10 @@ export default function AuthModal({
   };
 
 
+  // ตรวจข้อมูลลงทะเบียน ถ้าครบแล้วไปขั้นตอนกรอก OTP
   const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // [แก้ไข] ตรวจเองแล้วแสดงกรอบแดง + ข้อความใต้ช่อง แทน required ของ browser
+    // ตรวจเองแล้วแสดงกรอบแดง + ข้อความใต้ช่อง แทน required ของ browser
     const errs: Record<string, string> = {};
     if (!regEmail.trim()) errs.email = "กรุณากรอกอีเมล";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regEmail.trim())) errs.email = "รูปแบบอีเมลไม่ถูกต้อง";
@@ -133,6 +139,7 @@ export default function AuthModal({
     setStep("otp");
   };
 
+  // ตรวจว่ากรอก OTP ครบ 6 หลัก
   const handleOtpSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (otp.join("").length < 6) {
@@ -202,7 +209,7 @@ export default function AuthModal({
 
               <button
                 type="submit"
-                className="w-full py-2.5 bg-[#1c5d41] hover:bg-[#144530] text-white font-medium rounded-full text-xs transition shadow-sm mt-2"
+                className="w-full py-2.5 btn btn-primary font-medium rounded-full text-xs mt-2"
               >
                 เข้าสู่ระบบ
               </button>
@@ -293,7 +300,7 @@ export default function AuthModal({
 
               <button
                 type="submit"
-                className="w-full py-2.5 bg-[#1c5d41] hover:bg-[#144530] text-white font-medium rounded-full text-xs transition shadow-sm mt-3"
+                className="w-full py-2.5 btn btn-primary font-medium rounded-full text-xs mt-3"
               >
                 ลงทะเบียนองค์กร
               </button>
@@ -347,7 +354,7 @@ export default function AuthModal({
 
               <button
                 type="submit"
-                className="w-full py-2.5 bg-[#1c5d41] hover:bg-[#144530] text-white font-medium rounded-full text-xs transition shadow-sm"
+                className="w-full py-2.5 btn btn-primary font-medium rounded-full text-xs"
               >
                 ยืนยันการลงทะเบียน
               </button>

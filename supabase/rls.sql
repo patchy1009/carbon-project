@@ -1,28 +1,19 @@
--- =====================================================================
--- RLS (Row Level Security) ของระบบ Carbon Calculator — ครบทุกตาราง
--- วิธีใช้: Supabase Dashboard > SQL Editor > วางทั้งไฟล์ > Run (รันซ้ำได้ ไม่พัง)
+-- กำหนดสิทธิ์การเข้าถึงข้อมูล (RLS) ของระบบ Carbon Calculator
+-- วิธีใช้: Supabase > SQL Editor > วางทั้งไฟล์ > Run (รันซ้ำได้)
 --
--- หลักการ:
---   auth.uid()  = id ของบัญชีที่ล็อกอินอยู่ (Supabase Auth)
---               = "user".acc_id = org_id (ฝั่งองค์กร) = admin_id (ฝั่งแอดมิน)
---   - ตารางข้อมูลกลาง (EF, กิจกรรม, ต้นไม้ ...) : ทุกคนที่ล็อกอินอ่านได้ / แอดมินเท่านั้นแก้ได้
---   - ตารางขององค์กร (มี org_id)                 : องค์กรเห็น/แก้เฉพาะของตัวเอง / แอดมินอ่านได้ทุกแถว
---   - ตารางลูกที่ไม่มี org_id                      : ตรวจความเป็นเจ้าของผ่านตารางแม่
---   - ตารางที่แอปไม่ได้ใช้ (login_attempts, profiles): เปิด RLS ไว้เฉยๆ = ฝั่งเว็บอ่าน/เขียนไม่ได้เลย
---
--- [แก้ไข] เวอร์ชันนี้:
---   - org_office_info ไม่มี org_id แล้ว (ผูกกับรายการด้วย orgactlist_id) -> ย้ายไปตรวจผ่าน org_activity_list
---   - ทุกคำสั่งเช็กก่อนว่าตาราง/คอลัมน์มีอยู่จริง (เช่น org_bill_file ที่เลิกใช้แล้ว) ถ้าไม่มีจะข้ามไป
--- =====================================================================
+-- auth.uid() คือ id ของคนที่ล็อกอินอยู่ ซึ่งเป็นค่าเดียวกับ acc_id, org_id และ admin_id
+-- ตารางข้อมูลกลาง : ผู้ที่ล็อกอินอ่านได้ แอดมินเท่านั้นที่เพิ่ม แก้ไข ลบได้
+-- ตารางขององค์กร  : องค์กรจัดการได้เฉพาะข้อมูลตัวเอง แอดมินอ่านได้อย่างเดียว
 
 
--- ---------------------------------------------------------------------
--- 0) ฟังก์ชันช่วยเช็ก role
---    security definer = อ่านตาราง "user" ได้โดยไม่ติด RLS ของตัวมันเอง (กัน policy วนซ้ำ)
--- ---------------------------------------------------------------------
+-- ===== ฟังก์ชันตรวจสิทธิ์ =====
+-- ใช้ security definer เพราะตาราง user เปิด RLS อยู่
+-- ถ้าไม่ใส่ policy ของตาราง user จะเรียก is_admin() วนกลับมาไม่จบ
+
+-- คนที่ล็อกอินเป็นแอดมินหรือไม่
 create or replace function public.is_admin()
 returns boolean
-language sql stable security definer set search_path = public
+language sql stable security definer set search_path = ''
 as $$
   select exists (
     select 1 from public."user"
@@ -30,9 +21,10 @@ as $$
   );
 $$;
 
+-- คนที่ล็อกอินเป็นองค์กรหรือไม่
 create or replace function public.is_org()
 returns boolean
-language sql stable security definer set search_path = public
+language sql stable security definer set search_path = ''
 as $$
   select exists (
     select 1 from public."user"
@@ -40,189 +32,329 @@ as $$
   );
 $$;
 
--- ใช้ตรวจว่า "รายการบันทึกการปล่อยก๊าซ" นี้เป็นขององค์กรที่ล็อกอินอยู่ไหม (ใช้กับตารางลูก)
+-- รายการบันทึกกิจกรรมนี้เป็นขององค์กรที่ล็อกอินอยู่หรือไม่
 create or replace function public.owns_activity_list(p_id uuid)
 returns boolean
-language sql stable security definer set search_path = public
+language sql stable security definer set search_path = ''
 as $$
   select exists (
-    select 1 from public.org_activity_list l
-    where l.orgactlist_id = p_id and l.org_id = auth.uid()
+    select 1 from public.org_activity_list
+    where orgactlist_id = p_id and org_id = auth.uid()
   );
 $$;
 
--- ใช้ตรวจว่า "โครงการ T-VER" นี้เป็นขององค์กรที่ล็อกอินอยู่ไหม
+-- โครงการ T-VER นี้เป็นขององค์กรที่ล็อกอินอยู่หรือไม่
 create or replace function public.owns_tree_project(p_id uuid)
 returns boolean
-language sql stable security definer set search_path = public
+language sql stable security definer set search_path = ''
 as $$
   select exists (
-    select 1 from public.org_tree_project p
-    where p.orgtreeproject_id = p_id and p.org_id = auth.uid()
+    select 1 from public.org_tree_project
+    where orgtreeproject_id = p_id and org_id = auth.uid()
   );
 $$;
 
 
--- ---------------------------------------------------------------------
--- 1) ตาราง "user" : เห็นเฉพาะแถวของตัวเอง แอดมินเห็นทั้งหมด
---    (ห้ามผู้ใช้แก้ role/status ของตัวเอง -> ไม่มี policy update สำหรับผู้ใช้ทั่วไป)
--- ---------------------------------------------------------------------
+-- ===== ตาราง user =====
+-- ผู้ใช้ดูได้เฉพาะข้อมูลตัวเอง และแก้ role/status ของตัวเองไม่ได้
 alter table public."user" enable row level security;
 
 drop policy if exists "user: read own" on public."user";
 create policy "user: read own" on public."user"
-  for select to authenticated
-  using (acc_id = auth.uid() or public.is_admin());
+for select to authenticated
+using (acc_id = auth.uid() or public.is_admin());
 
 drop policy if exists "user: admin manage" on public."user";
 create policy "user: admin manage" on public."user"
-  for all to authenticated
-  using (public.is_admin()) with check (public.is_admin());
+for all to authenticated
+using (public.is_admin())
+with check (public.is_admin());
 
 
--- ---------------------------------------------------------------------
--- 2) ตารางข้อมูลกลางที่แอดมินดูแล
---    ทุกคนที่ล็อกอินอ่านได้ / แอดมินเท่านั้นเพิ่ม-แก้-ลบ
---    ถ้ามีคอลัมน์ admin_id: ให้ DB ใส่ id แอดมินที่ล็อกอินอยู่ให้เองตอน insert
--- ---------------------------------------------------------------------
-do $$
-declare t text;
-begin
-  foreach t in array array[
-    'carbon_scope', 'activity', 'activity_detail',
-    'ef_type', 'emission_factor', 'global_warming_potential',
-    'office_info_type', 'carbon_reduction_recommendation', 'recommendation_condition',
-    'tree_list', 'tver_project_detail', 'documents'
-  ] loop
-    continue when to_regclass('public.' || t) is null; -- ไม่มีตารางนี้ = ข้าม
+-- ===== ตารางข้อมูลกลาง =====
 
-    execute format('alter table public.%I enable row level security', t);
+-- carbon_scope
+alter table public.carbon_scope enable row level security;
 
-    execute format('drop policy if exists "read: authenticated" on public.%I', t);
-    execute format(
-      'create policy "read: authenticated" on public.%I for select to authenticated using (true)', t);
+drop policy if exists "read: authenticated" on public.carbon_scope;
+create policy "read: authenticated" on public.carbon_scope
+for select to authenticated
+using (true);
 
-    execute format('drop policy if exists "write: admin" on public.%I', t);
-    execute format(
-      'create policy "write: admin" on public.%I for all to authenticated
-         using (public.is_admin()) with check (public.is_admin())', t);
+drop policy if exists "write: admin" on public.carbon_scope;
+create policy "write: admin" on public.carbon_scope
+for all to authenticated
+using (public.is_admin())
+with check (public.is_admin());
 
-    if exists (select 1 from information_schema.columns
-               where table_schema = 'public' and table_name = t and column_name = 'admin_id') then
-      execute format('alter table public.%I alter column admin_id set default auth.uid()', t);
-    end if;
-  end loop;
-end $$;
+-- activity
+alter table public.activity enable row level security;
+
+drop policy if exists "read: authenticated" on public.activity;
+create policy "read: authenticated" on public.activity
+for select to authenticated
+using (true);
+
+drop policy if exists "write: admin" on public.activity;
+create policy "write: admin" on public.activity
+for all to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+-- activity_detail
+alter table public.activity_detail enable row level security;
+
+drop policy if exists "read: authenticated" on public.activity_detail;
+create policy "read: authenticated" on public.activity_detail
+for select to authenticated
+using (true);
+
+drop policy if exists "write: admin" on public.activity_detail;
+create policy "write: admin" on public.activity_detail
+for all to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+-- ef_type
+alter table public.ef_type enable row level security;
+
+drop policy if exists "read: authenticated" on public.ef_type;
+create policy "read: authenticated" on public.ef_type
+for select to authenticated
+using (true);
+
+drop policy if exists "write: admin" on public.ef_type;
+create policy "write: admin" on public.ef_type
+for all to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+-- emission_factor
+alter table public.emission_factor enable row level security;
+
+drop policy if exists "read: authenticated" on public.emission_factor;
+create policy "read: authenticated" on public.emission_factor
+for select to authenticated
+using (true);
+
+drop policy if exists "write: admin" on public.emission_factor;
+create policy "write: admin" on public.emission_factor
+for all to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+-- global_warming_potential
+alter table public.global_warming_potential enable row level security;
+
+drop policy if exists "read: authenticated" on public.global_warming_potential;
+create policy "read: authenticated" on public.global_warming_potential
+for select to authenticated
+using (true);
+
+drop policy if exists "write: admin" on public.global_warming_potential;
+create policy "write: admin" on public.global_warming_potential
+for all to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+-- office_info_type
+alter table public.office_info_type enable row level security;
+
+drop policy if exists "read: authenticated" on public.office_info_type;
+create policy "read: authenticated" on public.office_info_type
+for select to authenticated
+using (true);
+
+drop policy if exists "write: admin" on public.office_info_type;
+create policy "write: admin" on public.office_info_type
+for all to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+-- carbon_reduction_recommendation
+alter table public.carbon_reduction_recommendation enable row level security;
+
+drop policy if exists "read: authenticated" on public.carbon_reduction_recommendation;
+create policy "read: authenticated" on public.carbon_reduction_recommendation
+for select to authenticated
+using (true);
+
+drop policy if exists "write: admin" on public.carbon_reduction_recommendation;
+create policy "write: admin" on public.carbon_reduction_recommendation
+for all to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+-- recommendation_condition
+alter table public.recommendation_condition enable row level security;
+
+drop policy if exists "read: authenticated" on public.recommendation_condition;
+create policy "read: authenticated" on public.recommendation_condition
+for select to authenticated
+using (true);
+
+drop policy if exists "write: admin" on public.recommendation_condition;
+create policy "write: admin" on public.recommendation_condition
+for all to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+-- tree_list
+alter table public.tree_list enable row level security;
+
+drop policy if exists "read: authenticated" on public.tree_list;
+create policy "read: authenticated" on public.tree_list
+for select to authenticated
+using (true);
+
+drop policy if exists "write: admin" on public.tree_list;
+create policy "write: admin" on public.tree_list
+for all to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+-- tver_project_detail
+alter table public.tver_project_detail enable row level security;
+
+drop policy if exists "read: authenticated" on public.tver_project_detail;
+create policy "read: authenticated" on public.tver_project_detail
+for select to authenticated
+using (true);
+
+drop policy if exists "write: admin" on public.tver_project_detail;
+create policy "write: admin" on public.tver_project_detail
+for all to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+-- documents
+alter table public.documents enable row level security;
+
+drop policy if exists "read: authenticated" on public.documents;
+create policy "read: authenticated" on public.documents
+for select to authenticated
+using (true);
+
+drop policy if exists "write: admin" on public.documents;
+create policy "write: admin" on public.documents
+for all to authenticated
+using (public.is_admin())
+with check (public.is_admin());
 
 
--- ---------------------------------------------------------------------
--- 3) ตารางขององค์กรที่มีคอลัมน์ org_id
---    องค์กรจัดการได้เฉพาะแถวที่ org_id = ตัวเอง / แอดมินอ่านได้ทุกแถว
---    DB ใส่ org_id = id ที่ล็อกอินอยู่ให้เองตอน insert
--- ---------------------------------------------------------------------
-do $$
-declare t text;
-begin
-  foreach t in array array['org_activity_list', 'org_tree_project', 'org_bill_file'] loop
-    continue when to_regclass('public.' || t) is null;
-
-    execute format('alter table public.%I enable row level security', t);
-    execute format('alter table public.%I alter column org_id set default auth.uid()', t);
-
-    execute format('drop policy if exists "org: own rows" on public.%I', t);
-    execute format(
-      'create policy "org: own rows" on public.%I for all to authenticated
-         using (org_id = auth.uid())
-         with check (org_id = auth.uid() and public.is_org())', t);
-
-    execute format('drop policy if exists "admin: read all" on public.%I', t);
-    execute format(
-      'create policy "admin: read all" on public.%I for select to authenticated
-         using (public.is_admin())', t);
-  end loop;
-end $$;
+-- ===== ให้ฐานข้อมูลใส่ admin_id เองตอนเพิ่มข้อมูล =====
+-- หน้าเว็บไม่ต้องส่ง admin_id มา ฐานข้อมูลจะใช้ id ของแอดมินที่ล็อกอินอยู่
+alter table public.carbon_scope alter column admin_id set default auth.uid();
+alter table public.emission_factor alter column admin_id set default auth.uid();
+alter table public.global_warming_potential alter column admin_id set default auth.uid();
+alter table public.office_info_type alter column admin_id set default auth.uid();
+alter table public.carbon_reduction_recommendation alter column admin_id set default auth.uid();
+alter table public.tree_list alter column admin_id set default auth.uid();
+alter table public.tver_project_detail alter column admin_id set default auth.uid();
+alter table public.documents alter column admin_id set default auth.uid();
 
 
--- ---------------------------------------------------------------------
--- 4) ตารางลูกที่ไม่มี org_id -> ตรวจผ่านตารางแม่
---    org_activity_detail, org_office_info -> org_activity_list (orgactlist_id)
---    org_tree_project_detail             -> org_tree_project  (orgtreeproject_id)
--- ---------------------------------------------------------------------
-do $$
-declare t text;
-begin
-  foreach t in array array['org_activity_detail', 'org_office_info'] loop
-    continue when to_regclass('public.' || t) is null;
+-- ===== ตารางขององค์กรที่มี org_id =====
 
-    execute format('alter table public.%I enable row level security', t);
+-- org_activity_list
+alter table public.org_activity_list enable row level security;
+alter table public.org_activity_list alter column org_id set default auth.uid();
 
-    execute format('drop policy if exists "org: own rows" on public.%I', t);
-    execute format(
-      'create policy "org: own rows" on public.%I for all to authenticated
-         using (public.owns_activity_list(orgactlist_id))
-         with check (public.owns_activity_list(orgactlist_id))', t);
+drop policy if exists "org: own rows" on public.org_activity_list;
+create policy "org: own rows" on public.org_activity_list
+for all to authenticated
+using (org_id = auth.uid())
+with check (org_id = auth.uid() and public.is_org());
 
-    execute format('drop policy if exists "admin: read all" on public.%I', t);
-    execute format(
-      'create policy "admin: read all" on public.%I for select to authenticated
-         using (public.is_admin())', t);
-  end loop;
-end $$;
+drop policy if exists "admin: read all" on public.org_activity_list;
+create policy "admin: read all" on public.org_activity_list
+for select to authenticated
+using (public.is_admin());
 
+-- org_tree_project
+alter table public.org_tree_project enable row level security;
+alter table public.org_tree_project alter column org_id set default auth.uid();
+
+drop policy if exists "org: own rows" on public.org_tree_project;
+create policy "org: own rows" on public.org_tree_project
+for all to authenticated
+using (org_id = auth.uid())
+with check (org_id = auth.uid() and public.is_org());
+
+drop policy if exists "admin: read all" on public.org_tree_project;
+create policy "admin: read all" on public.org_tree_project
+for select to authenticated
+using (public.is_admin());
+
+
+-- ===== ตารางลูกขององค์กร (ไม่มี org_id จึงตรวจจากตารางแม่) =====
+
+-- org_activity_detail
+alter table public.org_activity_detail enable row level security;
+
+drop policy if exists "org: own rows" on public.org_activity_detail;
+create policy "org: own rows" on public.org_activity_detail
+for all to authenticated
+using (public.owns_activity_list(orgactlist_id))
+with check (public.owns_activity_list(orgactlist_id));
+
+drop policy if exists "admin: read all" on public.org_activity_detail;
+create policy "admin: read all" on public.org_activity_detail
+for select to authenticated
+using (public.is_admin());
+
+-- org_office_info
+alter table public.org_office_info enable row level security;
+
+drop policy if exists "org: own rows" on public.org_office_info;
+create policy "org: own rows" on public.org_office_info
+for all to authenticated
+using (public.owns_activity_list(orgactlist_id))
+with check (public.owns_activity_list(orgactlist_id));
+
+drop policy if exists "admin: read all" on public.org_office_info;
+create policy "admin: read all" on public.org_office_info
+for select to authenticated
+using (public.is_admin());
+
+-- org_tree_project_detail
 alter table public.org_tree_project_detail enable row level security;
 
 drop policy if exists "org: own rows" on public.org_tree_project_detail;
 create policy "org: own rows" on public.org_tree_project_detail
-  for all to authenticated
-  using (public.owns_tree_project(orgtreeproject_id))
-  with check (public.owns_tree_project(orgtreeproject_id));
+for all to authenticated
+using (public.owns_tree_project(orgtreeproject_id))
+with check (public.owns_tree_project(orgtreeproject_id));
 
 drop policy if exists "admin: read all" on public.org_tree_project_detail;
 create policy "admin: read all" on public.org_tree_project_detail
-  for select to authenticated using (public.is_admin());
+for select to authenticated
+using (public.is_admin());
 
 
--- ---------------------------------------------------------------------
--- 5) ตารางที่แอปไม่ได้ใช้ผ่านหน้าเว็บ
---    เปิด RLS โดยไม่มี policy = ผู้ใช้ฝั่งเว็บ (anon/authenticated) อ่าน-เขียนไม่ได้เลย
---    (service role / SQL Editor ยังใช้ได้ตามปกติ)
--- ---------------------------------------------------------------------
-do $$
-declare t text;
-begin
-  foreach t in array array['login_attempts', 'profiles'] loop
-    continue when to_regclass('public.' || t) is null;
-    execute format('alter table public.%I enable row level security', t);
-  end loop;
-end $$;
+-- ===== ตารางที่เว็บไม่ได้ใช้ =====
+-- ถ้ายังไม่ได้ลบตาราง ให้เปิด RLS ไว้โดยไม่มี policy เพื่อไม่ให้เว็บอ่านหรือเขียนได้
+alter table if exists public.login_attempts enable row level security;
+alter table if exists public.profiles enable row level security;
 
 
--- ---------------------------------------------------------------------
--- 6) Storage
---    bills     : (ระบบเก่า เลิกใช้แล้ว) ไฟล์อยู่ที่ "<org_id>/..." -> โฟลเดอร์แรกต้องเป็น id ตัวเอง
---                ยังคงไว้เพื่อให้องค์กรลบไฟล์เก่าของตัวเองได้ (ปุ่มลบใน dashboard)
---    documents : ทุกคนที่ล็อกอินอ่านได้ / แอดมินเท่านั้นอัปโหลด-ลบ
--- ---------------------------------------------------------------------
-drop policy if exists "bills: own folder" on storage.objects;
-create policy "bills: own folder" on storage.objects
-  for all to authenticated
-  using (bucket_id = 'bills' and (storage.foldername(name))[1] = auth.uid()::text)
-  with check (bucket_id = 'bills' and (storage.foldername(name))[1] = auth.uid()::text);
-
+-- ===== Storage: ไฟล์เอกสาร =====
+-- ผู้ที่ล็อกอินอ่านได้ แอดมินเท่านั้นที่อัปโหลดและลบได้
 drop policy if exists "documents: read" on storage.objects;
 create policy "documents: read" on storage.objects
-  for select to authenticated
-  using (bucket_id = 'documents');
+for select to authenticated
+using (bucket_id = 'documents');
 
 drop policy if exists "documents: admin write" on storage.objects;
 create policy "documents: admin write" on storage.objects
-  for all to authenticated
-  using (bucket_id = 'documents' and public.is_admin())
-  with check (bucket_id = 'documents' and public.is_admin());
+for all to authenticated
+using (bucket_id = 'documents' and public.is_admin())
+with check (bucket_id = 'documents' and public.is_admin());
+
+-- เลิกใช้ bucket bills แล้ว จึงลบ policy เดิมออก
+drop policy if exists "bills: own folder" on storage.objects;
 
 
--- ---------------------------------------------------------------------
--- 7) ตรวจผล: ดูว่าทุกตารางเปิด RLS แล้ว และมี policy อะไรบ้าง
--- ---------------------------------------------------------------------
+-- ===== ตรวจผล (ลบ -- ข้างหน้าแล้วรันทีละบรรทัด) =====
 -- select tablename, rowsecurity from pg_tables where schemaname = 'public' order by 1;
 -- select tablename, policyname, cmd from pg_policies where schemaname = 'public' order by 1, 2;

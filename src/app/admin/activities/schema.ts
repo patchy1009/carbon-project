@@ -47,7 +47,7 @@ export const detailSchema: formSchema<DetailField> = {
   gwp_id: {
     rules: []
   },
-  // [เพิ่ม] รับข้อมูลจากบิล (OCR) ไม่บังคับ: ต้องเป็นค่าในรายการ และห้ามซ้ำกับรายการอื่น (ใส่ตอน submit)
+  // รับข้อมูลจากบิล (OCR) ไม่บังคับ: ต้องเป็นค่าในรายการ และห้ามซ้ำกับรายการอื่น (ใส่ตอน submit)
   ocr_source: {
     rules: [existsIn('ประเภทบิล', OCR_SOURCES.map((o) => o.value))],
   },

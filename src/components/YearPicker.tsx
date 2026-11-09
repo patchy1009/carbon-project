@@ -3,18 +3,20 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-/* [เพิ่ม] ช่องเลือกปี พ.ศ. แบบพิมพ์ค้นหาได้ (ใช้แทน <select> ที่มีให้เลือกแค่ไม่กี่ปี)
+/* ช่องเลือกปี พ.ศ. แบบพิมพ์ค้นหาได้ (ใช้แทน <select> ที่มีให้เลือกแค่ไม่กี่ปี)
  * - คลิกช่อง = เปิดรายการปีทั้งหมดในช่วง min..max (ใหม่สุดอยู่บน)
  * - พิมพ์ตัวเลข (รับเลขไทย ๐-๙ ได้) = กรองรายการเหลือปีที่มีเลขนั้น เช่น พิมพ์ "65" เห็น 2565, 2556 ...
  * - พิมพ์ครบ 4 หลักและอยู่ในช่วง = เลือกปีนั้นทันที / นอกช่วง = แจ้งข้อความใต้ช่อง
  * - ลูกศรขึ้น/ลง เลื่อนรายการ, Enter เลือก, Esc ปิด
  * value = 0 หมายถึงยังไม่ได้เลือก
- * [แก้ไข] รายการปีวาดผ่าน portal ลอยเหนือทั้งหน้า (position: fixed)
+ * รายการปีวาดผ่าน portal ลอยเหนือทั้งหน้า (position: fixed)
  *   เดิมอยู่ในกล่องที่มี overflow-hidden เลยถูกตัด มองไม่เห็นรายการ */
 
 const THAI_DIGITS = '๐๑๒๓๔๕๖๗๘๙';
+// แปลงเลขไทยเป็นเลขอารบิก และเก็บไว้เฉพาะตัวเลข
 const toArabic = (s: string) => s.replace(/[๐-๙]/g, (d) => String(THAI_DIGITS.indexOf(d))).replace(/\D/g, '');
 
+// ช่องเลือกปี พ.ศ. ที่พิมพ์ค้นหาได้
 export default function YearPicker({
   value,
   onChange,
@@ -61,6 +63,7 @@ export default function YearPicker({
   // ปิดรายการเมื่อคลิกนอกช่อง แล้วคืนข้อความเป็นปีที่เลือกอยู่
   useEffect(() => {
     if (!open) return;
+    // คลิกนอกช่องและนอกรายการแล้วปิดรายการ
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (!boxRef.current?.contains(t) && !listRef.current?.contains(t)) close();
@@ -72,6 +75,7 @@ export default function YearPicker({
   // วางรายการใต้ช่องกรอก และตามไปเมื่อเลื่อนหน้า/ย่อขยายจอ
   useEffect(() => {
     if (!open) return;
+    // คำนวณตำแหน่งของรายการปี ให้อยู่ใต้ช่องกรอก
     const place = () => {
       const r = boxRef.current?.getBoundingClientRect();
       if (r) setPos({ top: r.bottom + 4, left: r.left, width: r.width });
@@ -95,11 +99,13 @@ export default function YearPicker({
       list.scrollTop = item.offsetTop + item.offsetHeight - list.clientHeight;
   }, [active, open, pos]);
 
+  // ปิดรายการ แล้วคืนข้อความเป็นปีที่เลือกไว้
   function close() {
     setOpen(false);
     setText(value ? String(value) : '');
   }
 
+  // เลือกปีจากรายการ
   function pick(y: number) {
     setRangeError('');
     setText(String(y));
@@ -107,12 +113,14 @@ export default function YearPicker({
     if (y !== value) onChange(y);
   }
 
+  // เปิดรายการปี แล้วไปที่ปีที่เลือกไว้
   function openList() {
     setOpen(true);
     const i = years.indexOf(value);
     setActive(i >= 0 ? i : 0);
   }
 
+  // รับค่าที่ผู้ใช้พิมพ์ ถ้าครบ 4 หลักจะเลือกปีนั้นให้
   function handleType(raw: string) {
     const digits = toArabic(raw).slice(0, 4);
     setText(digits);
@@ -129,6 +137,7 @@ export default function YearPicker({
     }
   }
 
+  // ใช้ปุ่มลูกศร Enter และ Esc ควบคุมรายการปี
   function handleKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
@@ -183,6 +192,7 @@ export default function YearPicker({
         </button>
       </div>
 
+      {/* createPortal: วาดรายการปีไว้ที่ document.body เพื่อไม่ให้ถูกการ์ดที่อยู่รอบ ๆ ตัดขอบ */}
       {open && pos && createPortal(
         <ul
           ref={listRef}

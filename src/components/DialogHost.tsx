@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useSyncExternalStore } from 'react';
-import { closeDialog, currentDialog, subscribeDialog, type DialogTone } from '@/lib/dialog';
+import { useEffect, useRef, useState } from 'react';
+import { closeDialog, currentDialog, subscribeDialog, type DialogRequest, type DialogTone } from '@/lib/dialog';
 
-/* [เพิ่ม] ตัวแสดงกล่องแจ้งเตือน/ยืนยัน (คู่กับ src/lib/dialog.ts) วางครั้งเดียวใน root layout
+/* ตัวแสดงกล่องแจ้งเตือน/ยืนยัน (คู่กับ src/lib/dialog.ts) วางครั้งเดียวใน root layout
  * - Esc / คลิกพื้นหลัง = ยกเลิก (กล่องแจ้งเตือน = ปิด)
  * - Enter = กดปุ่มหลัก (โฟกัสอยู่ที่ปุ่มหลักตั้งแต่เปิด) */
 
@@ -15,6 +15,7 @@ const TONE: Record<DialogTone, { ring: string; icon: string; button: string }> =
   danger: { ring: 'bg-[#FEE2E2]', icon: 'text-[#DC2626]', button: 'bg-[#DC2626] hover:bg-[#B91C1C]' },
 };
 
+// เลือกไอคอนตามประเภทของกล่องแจ้งเตือน
 function ToneIcon({ tone }: { tone: DialogTone }) {
   const common = {
     viewBox: '0 0 24 24',
@@ -56,13 +57,21 @@ function ToneIcon({ tone }: { tone: DialogTone }) {
   );
 }
 
+// แสดงกล่องแจ้งเตือนที่อยู่ต้นคิว ถ้าไม่มีกล่องจะไม่แสดงอะไร
 export default function DialogHost() {
-  const dialog = useSyncExternalStore(subscribeDialog, currentDialog, () => null);
+  const [dialog, setDialog] = useState<DialogRequest | null>(null);
+
+  // ขอรับแจ้งจาก dialog.ts ว่ากล่องเปลี่ยน แล้วเก็บกล่องที่ต้องแสดงลง state
+  useEffect(() => {
+    return subscribeDialog(() => setDialog(currentDialog()));
+  }, []);
+
   const primaryRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!dialog) return;
     primaryRef.current?.focus();
+    // กด Esc เพื่อปิดกล่อง
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') closeDialog(dialog.id, false);
     };
@@ -72,6 +81,7 @@ export default function DialogHost() {
 
   if (!dialog) return null;
   const tone = TONE[dialog.tone];
+  // ปิดกล่องโดยถือว่าผู้ใช้กดยกเลิก
   const cancel = () => closeDialog(dialog.id, false);
 
   return (

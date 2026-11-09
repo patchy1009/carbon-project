@@ -1,3 +1,4 @@
+// หน้าจัดการกิจกรรมของแอดมิน: เพิ่ม แก้ไข ลบ ขอบเขต (Scope) กิจกรรม และรายการย่อยของกิจกรรม
 'use client';
 
 import { useState } from 'react';
@@ -10,11 +11,11 @@ import { validateForm, extendSchema, notDuplicate, existsIn, type formError } fr
 import { normalizeToArabicNumber } from '@/lib/normalization';
 import FieldError from '@/components/FieldError';
 import { OCR_SOURCES } from '@/lib/bills/types';
-import { PencilIcon, TrashIcon } from '@/components/icons'; // [แก้ไข] แทนอิโมจิ ✏️ 🗑️
-import RowActions from '@/components/RowActions'; // [แก้ไข] ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
-import { inputClass } from '@/components/formStyles'; // [แก้ไข] class ช่องกรอกกลาง
+import { PencilIcon, TrashIcon } from '@/components/icons'; // แทนอิโมจิ ✏️ 🗑️
+import RowActions from '@/components/RowActions'; // ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
+import { inputClass } from '@/components/formStyles'; // class ช่องกรอกกลาง
 
-/* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
+/* สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) เดิม validate แล้วเก็บ error ไว้ใน state แต่ "ไม่ได้แสดง" ใน modal -> เพิ่ม <FieldError> ใต้ทุกช่อง
  * 2) เอา required / type="number" ของ HTML ออก (ใส่ noValidate) ให้ผ่าน normalize + validate ของเราทั้งหมด
  *    (type="number" ทำให้พิมพ์เลขไทยไม่ได้ และ browser เด้งข้อความของตัวเองก่อน)
@@ -40,6 +41,7 @@ const emptyScopeForm = { scope_number: '', scope_name: '', scope_detail: '' };
 const emptyActivityForm = { scope_id: '', activity_name: '' };
 const emptyDetailForm = { activity_id: '', detail_name: '', unit: '', description: '', ef_id: '', gwp_id: '', ocr_source: '' };
 
+// หน้าจอหลัก รับข้อมูลเริ่มต้นจาก page.tsx แล้วเก็บใน state เพื่อให้แก้ไขบนหน้าได้ทันที
 export default function ActivityManagementClient({
   initialScopes,
   initialActivities,
@@ -68,7 +70,7 @@ export default function ActivityManagementClient({
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
-  // [เพิ่ม] id ของแถวที่กำลังแก้ไข (null = เพิ่มใหม่)
+  // id ของแถวที่กำลังแก้ไข (null = เพิ่มใหม่)
   const [editScopeId, setEditScopeId] = useState<string | null>(null);
   const [editActivityId, setEditActivityId] = useState<string | null>(null);
   const [editDetailId, setEditDetailId] = useState<string | null>(null);
@@ -92,12 +94,14 @@ export default function ActivityManagementClient({
     setScopeErrors({});
     setShowScopeModal(true);
   }
+  // เปิดฟอร์มกิจกรรม ถ้าส่ง row มาคือโหมดแก้ไข ถ้าไม่ส่งคือเพิ่มใหม่
   function openActivityModal(row?: Activity) {
     setEditActivityId(row?.activity_id ?? null);
     setActivityForm(row ? { scope_id: row.scope_id ?? '', activity_name: row.activity_name ?? '' } : emptyActivityForm);
     setActivityErrors({});
     setShowActivityModal(true);
   }
+  // เปิดฟอร์มรายการย่อย ถ้าส่ง row มาคือโหมดแก้ไข ถ้าไม่ส่งคือเพิ่มใหม่
   function openDetailModal(row?: ActivityDetail) {
     setEditDetailId(row?.scopedetail_id ?? null);
     setDetailForm(
@@ -116,8 +120,11 @@ export default function ActivityManagementClient({
     setDetailErrors({});
     setShowDetailModal(true);
   }
+  // ปิดฟอร์มขอบเขตและล้างข้อความ error
   const closeScopeModal = () => { setShowScopeModal(false); setScopeErrors({}); };
+  // ปิดฟอร์มกิจกรรมและล้างข้อความ error
   const closeActivityModal = () => { setShowActivityModal(false); setActivityErrors({}); };
+  // ปิดฟอร์มรายการย่อยและล้างข้อความ error
   const closeDetailModal = () => { setShowDetailModal(false); setDetailErrors({}); };
 
   // ---------- ขอบเขต (scope) ----------
@@ -127,7 +134,7 @@ export default function ActivityManagementClient({
     const result = validateForm(
       scopeForm,
       extendSchema(scopeSchema, {
-        // [เพิ่ม] ห้ามซ้ำ: เลข 1/2/3 มีได้อย่างละสโคปเดียว และชื่อห้ามซ้ำ
+        // ห้ามซ้ำ: เลข 1/2/3 มีได้อย่างละสโคปเดียว และชื่อห้ามซ้ำ
         scope_number: [notDuplicate('หมายเลขสโคป', others.map((s) => s.scope_number))],
         scope_name: [notDuplicate('ชื่อขอบเขต', others.map((s) => s.scope_name))],
       })
@@ -136,7 +143,7 @@ export default function ActivityManagementClient({
     setScopeErrors({});
 
     const values = {
-      scope_number: normalizeToArabicNumber(result.clean.scope_number), // [แก้ไข] เดิมใช้ Number()
+      scope_number: normalizeToArabicNumber(result.clean.scope_number), // เดิมใช้ Number()
       scope_name: result.clean.scope_name,
       scope_detail: result.clean.scope_detail || null,   // ว่าง → null
     };
@@ -165,6 +172,7 @@ export default function ActivityManagementClient({
     closeScopeModal();
   }
 
+  // ลบขอบเขตในฐานข้อมูล สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteScope( id : string ){
     const ok = await deleteRecord(
       'carbon_scope',  // ชื่อตาราง
@@ -230,6 +238,7 @@ export default function ActivityManagementClient({
     closeActivityModal();
   }
 
+  // ลบกิจกรรมในฐานข้อมูล สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteActivity( id : string ){
     const ok = await deleteRecord(
       'activity',  // ชื่อตาราง
@@ -258,26 +267,28 @@ export default function ActivityManagementClient({
         detail_name: [notDuplicate('ชื่อรายละเอียดในกิจกรรมนี้', sameActivityNames)],
         ef_id: [existsIn('ค่า EF', efOptions.map((o) => o.ef_id))],
         gwp_id: [existsIn('ค่า GWP', gwpOptions.map((o) => o.gwp_id))],
-        // [เพิ่ม] บิลแต่ละแบบเติมได้ช่องเดียว (กันยอดจากบิลเดียวกันถูกนับ 2 ช่อง)
+        // บิลแต่ละแบบเติมได้ช่องเดียว (กันยอดจากบิลเดียวกันถูกนับ 2 ช่อง)
         ocr_source: [notDuplicate('ประเภทบิล', details.filter((d) => d.scopedetail_id !== editDetailId).map((d) => d.ocr_source))],
       })
     );
     if (!result.ok) { setDetailErrors(result.errors); return; }
     setDetailErrors({});
 
-    const values = {
+    const values: Record<string, unknown> = {
       activity_id: result.clean.activity_id,
       detail_name: result.clean.detail_name,
       unit: result.clean.unit,
       description: result.clean.description || null,
       ef_id: result.clean.ef_id || null,
       gwp_id: result.clean.gwp_id || null,
-      // ส่ง ocr_source เฉพาะเมื่อเลือกไว้ หรือแถวเดิมเคยมีค่า (ต้องการล้าง)
-      // กันบันทึกไม่ได้ในกรณีที่ยังไม่ได้รัน supabase/activity_detail_ocr_source.sql (ยังไม่มีคอลัมน์)
-      ...(result.clean.ocr_source || details.find((d) => d.scopedetail_id === editDetailId)?.ocr_source
-        ? { ocr_source: result.clean.ocr_source || null }
-        : {}),
     };
+
+    // ส่ง ocr_source เฉพาะเมื่อเลือกไว้ หรือแถวเดิมเคยมีค่า (ต้องการล้าง)
+    // กันบันทึกไม่ได้ในกรณีที่ยังไม่ได้รัน supabase/activity_detail_ocr_source.sql (ยังไม่มีคอลัมน์)
+    const oldDetail = details.find((d) => d.scopedetail_id === editDetailId);
+    if (result.clean.ocr_source || oldDetail?.ocr_source) {
+      values.ocr_source = result.clean.ocr_source || null;
+    }
 
     if (editDetailId) {
       const updated = await updateRecord<ActivityDetail>(
@@ -294,6 +305,7 @@ export default function ActivityManagementClient({
     closeDetailModal();
   }
 
+  // ลบรายการย่อยในฐานข้อมูล สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteDetail( id : string ){
     const ok = await deleteRecord(
       'activity_detail',  // ชื่อตาราง
@@ -324,14 +336,14 @@ export default function ActivityManagementClient({
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#266955]" />
+            <span className="w-2.5 h-2.5 rounded-full bg-[#32885F]" />
             <h2 className="text-xl font-bold text-[#191C1C]">
               ขอบเขตคาร์บอน 3 สโคป (Carbon Scopes Configuration)
             </h2>
           </div>
           <button
             onClick={() => openScopeModal()}
-            className="flex items-center gap-1.5 rounded-lg bg-[#266955] px-3 py-2 text-sm text-white shadow-sm"
+            className="btn btn-create flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm"
           >
             + เพิ่มขอบเขต
           </button>
@@ -385,14 +397,14 @@ export default function ActivityManagementClient({
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#266955]" />
+            <span className="w-2.5 h-2.5 rounded-full bg-[#32885F]" />
             <h2 className="text-xl font-bold text-[#191C1C]">
               กิจกรรมที่ต้องการจากสำนักงาน (Office Required Activities)
             </h2>
           </div>
           <button
             onClick={() => openActivityModal()}
-            className="flex items-center gap-1.5 rounded-lg bg-[#266955] px-3 py-2 text-sm text-white shadow-sm"
+            className="btn btn-create flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm"
           >
             + เพิ่มกิจกรรม
           </button>
@@ -438,14 +450,14 @@ export default function ActivityManagementClient({
       <section className="rounded-xl bg-white shadow-sm p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2.5 rounded-full bg-[#266955]" />
+            <span className="w-2 h-2.5 rounded-full bg-[#32885F]" />
             <h2 className="text-xl font-bold text-[#191C1C]">
               รายละเอียดกิจกรรม (Activity Details)
             </h2>
           </div>
           <button
             onClick={() => openDetailModal()}
-            className="flex items-center gap-1.5 rounded-lg bg-[#266955] px-3 py-2 text-sm text-white shadow-sm"
+            className="btn btn-create flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm"
           >
             + เพิ่มรายละเอียด
           </button>
@@ -482,7 +494,7 @@ export default function ActivityManagementClient({
                     <td className="px-4 py-4 text-[#191C1C]">{d.activity?.activity_name}</td>
                     <td className="px-4 py-4 text-[#191C1C]">
                       {d.detail_name}
-                      {/* [เพิ่ม] แสดงว่ารายการนี้รับข้อมูลจากบิลประเภทไหน */}
+                      {/* แสดงว่ารายการนี้รับข้อมูลจากบิลประเภทไหน */}
                       {d.ocr_source && (
                         <span className="ml-2 inline-block rounded bg-[#ECFDF5] px-1.5 py-0.5 text-[10px] font-semibold text-[#047857]">
                           OCR: {OCR_SOURCES.find((o) => o.value === d.ocr_source)?.label ?? d.ocr_source}
@@ -619,7 +631,7 @@ export default function ActivityManagementClient({
             <div>
               <input
                 className={inputClass(!!detailErrors.unit)}
-                // [แก้ไข] ตัวอย่างเดิมมี "ลิตร" แต่ข้อกำหนดของหน้านี้คือหน่วยเป็นภาษาอังกฤษ
+                // ตัวอย่างเดิมมี "ลิตร" แต่ข้อกำหนดของหน้านี้คือหน่วยเป็นภาษาอังกฤษ
                 placeholder="หน่วย (ภาษาอังกฤษ) เช่น Litre, kWh, kg, km"
                 maxLength={50}
                 value={detailForm.unit}
@@ -657,7 +669,7 @@ export default function ActivityManagementClient({
               </select>
               <FieldError message={detailErrors.gwp_id} />
             </div>
-            {/* [เพิ่ม] ผูกรายการนี้กับบิลที่อ่านด้วย OCR: ปริมาณจากบิลประเภทนี้จะถูกเติมลงช่องนี้ในหน้าบันทึกกิจกรรม */}
+            {/* ผูกรายการนี้กับบิลที่อ่านด้วย OCR: ปริมาณจากบิลประเภทนี้จะถูกเติมลงช่องนี้ในหน้าบันทึกกิจกรรม */}
             <div>
               <label className="mb-1 block text-xs text-[#3F4944]">รับข้อมูลจากบิล (OCR ช่วยกรอก)</label>
               <select

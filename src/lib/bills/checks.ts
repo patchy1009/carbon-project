@@ -1,5 +1,5 @@
 // lib/bills/checks.ts
-/* [ปรับปรุง] ตรวจบิล 1 ใบหลัง OCR อ่านเสร็จ (คำนวณใหม่ทุกครั้งที่ผู้ใช้แก้ค่า หรือเปลี่ยนเดือน/ปีของกิจกรรม)
+/* ตรวจบิล 1 ใบหลัง OCR อ่านเสร็จ (คำนวณใหม่ทุกครั้งที่ผู้ใช้แก้ค่า หรือเปลี่ยนเดือน/ปีของกิจกรรม)
  *   fail = ยืนยันไม่ได้ ต้องแก้หรือเอาบิลออก
  *   warn = ยืนยันได้ แต่ต้องติ๊ก "รับทราบ" ก่อน
  * เดิมตรวจซ้ำกับตาราง org_bill_file -> ตอนนี้ตรวจซ้ำกับบิลอื่นที่แนบในหน้านี้ (ไม่เก็บบิลลง DB แล้ว) */
@@ -36,10 +36,12 @@ const qtyRule = isDecimal('ปริมาณ', { allowNegative: false, allowZer
 // เลขบิลสำหรับเทียบซ้ำ: ไม่สนช่องว่าง ขีด และตัวพิมพ์เล็ก/ใหญ่
 const billKey = (s: string) => normalizeForCompare(s).replace(/[-/]/g, '');
 
+// ตรวจบิล 1 ใบหลายข้อ แล้วคืนรายการผลตรวจ
 export function checkBill(it: PendingBill, ctx: CheckContext): Check[] {
   if (it.status !== 'ready') return [];
   const out: Check[] = [];
-  const add = (level: Check['level'], code: string, message: string) => out.push({ level, code, message });
+  // เพิ่มผลตรวจ 1 ข้อลงในรายการผลลัพธ์
+  const add = (level: 'ok' | 'warn' | 'fail', code: string, message: string) => out.push({ level, code, message });
 
   // 1) ประเภทบิลตรงกับหมวดที่แนบไหม (เช่น แนบในช่องบิลไฟ แต่เป็นบิลน้ำ)
   if (!it.billType) {
@@ -105,7 +107,9 @@ export function checkBill(it: PendingBill, ctx: CheckContext): Check[] {
   return out;
 }
 
+// มีผลตรวจที่ไม่ผ่านหรือไม่
 export const hasFail = (checks: Check[]) => checks.some((c) => c.level === 'fail');
+// มีผลตรวจที่เป็นคำเตือนหรือไม่
 export const hasWarn = (checks: Check[]) => checks.some((c) => c.level === 'warn');
 
 /* ยืนยันได้เมื่อไม่มี fail และรับทราบ warn แล้ว */

@@ -1,9 +1,10 @@
+// หน้าจำลองโครงการปลูกป่า T-VER: กรอกข้อมูล ตรวจเงื่อนไข คำนวณเครดิต และบันทึกโครงการ
 'use client';
 
 import { useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
-import type { TreeListItem, TverProjectDetail } from '@/types/tver-project';
+import { TVER_TREE_COUNT_NAME, type TreeListItem, type TverProjectDetail } from '@/types/tver-project';
 import type { OrgTreeProject, OrgTreeProjectDetail } from '@/types/tver-simulation';
 import {
   validateForm, required, requiredSelect, notNumericOnly, maxLength, isDecimal, isDate, existsIn,
@@ -11,13 +12,13 @@ import {
 } from '@/lib/validation';
 import { normalizeNumberString, normalizeToArabicNumber, formatCondition } from '@/lib/normalization';
 import { dbErrorMessage } from '@/lib/supabaseCrud';
-import { showAlert, showError } from '@/lib/dialog'; // [แก้ไข] กล่องแจ้งเตือนกลางแทน alert
+import { showAlert, showError } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert
 
-/* [ปรับปรุง] normalize / validate ฟอร์มจำลองโครงการ T-VER
+/* normalize / validate ฟอร์มจำลองโครงการ T-VER
  * 1) ชื่อโครงการ: ห้ามว่าง / ตัวเลขล้วน / ยาวเกิน 150 ตัวอักษร
  * 2) พันธุ์ไม้: ต้องเลือก และต้องมีอยู่จริงใน tree_list (ตรวจความสัมพันธ์)
  * 3) ค่าของแต่ละเงื่อนไข: แปลงเลขไทย/ลบ comma, ไม่ติดลบ (เดิม parseFloat รับ "12abc" และค่าติดลบได้)
- * 4) [เพิ่ม] เทียบค่าที่กรอกกับเงื่อนไขที่แอดมินตั้ง เช่น พื้นที่ "<= 1000" ไร่ กรอก 1200 -> แจ้งว่าไม่ผ่าน
+ * 4) เทียบค่าที่กรอกกับเงื่อนไขที่แอดมินตั้ง เช่น พื้นที่ "<= 1000" ไร่ กรอก 1200 -> แจ้งว่าไม่ผ่าน
  * 5) วันที่เริ่มโครงการ: ต้องเป็นวันที่ที่มีอยู่จริง และอยู่ในช่วงปีที่สมเหตุสมผล
  * 6) error แสดงใต้ช่อง แทนการพึ่ง required ของ browser */
 
@@ -34,6 +35,7 @@ const GROWTH_RATE_YEAR_3 = 1.38; // +38%
 
 type CreditResult = { year1: number; year2: number; year3: number };
 
+// หน้าจอหลัก รองรับทั้งโครงการใหม่ และการแก้ไขโครงการเดิม
 export default function TverSimulationClient({
   orgId,
   trees,
@@ -55,9 +57,9 @@ export default function TverSimulationClient({
   // พันธุ์ไม้เก็บอยู่ในแถวรายละเอียดของโครงการ (org_tree_project_detail.tree_id) ทุกแถวมีค่าเดียวกัน
   const [treeId, setTreeId] = useState(existingDetails.find((d) => d.tree_id)?.tree_id ?? '');
 
-  // ตารางเก็บแค่ปี (join_year) จึงเติมเป็นวันที่ 1 ม.ค. ของปีนั้นให้ในช่องวันที่
+  // ใช้ join_date ถ้ามี รายการเก่าที่มีแค่ปี (join_year) เติมเป็นวันที่ 1 ม.ค. ของปีนั้น
   const [startDate, setStartDate] = useState(
-    existingProject?.join_year ? `${existingProject.join_year}-01-01` : ''
+    existingProject?.join_date ?? (existingProject?.join_year ? `${existingProject.join_year}-01-01` : '')
   );
 
   const [amounts, setAmounts] = useState<Record<string, string>>(() => {
@@ -83,18 +85,20 @@ export default function TverSimulationClient({
     existingProject?.orgtreeproject_id ?? null
   );
   const [saving, setSaving] = useState(false);
-  // [เพิ่ม] error ใต้ช่อง: key = projectName / treeId / startDate / tverdetail_id
+  // error ใต้ช่อง: key = projectName / treeId / startDate / tverdetail_id
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // ล้างข้อความ error ของช่องที่ระบุ
   const clearError = (key: string) => {
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: '' }));
   };
 
+  // เก็บค่าที่ผู้ใช้พิมพ์ แล้วล้าง error ของช่องนั้น
   function handleAmountChange(tverdetailId: string, value: string) {
     setAmounts((prev) => ({ ...prev, [tverdetailId]: value }));
     clearError(tverdetailId);
   }
 
-  // [เพิ่ม] schema ของทั้งฟอร์ม (ช่องค่าของ criteria สร้างตามที่แอดมินตั้งไว้)
+  // schema ของทั้งฟอร์ม (ช่องค่าของ criteria สร้างตามที่แอดมินตั้งไว้)
   function buildSchema(): formSchema<string> {
     const schema: formSchema<string> = {
       projectName: { rules: [required('ชื่อโครงการ'), notNumericOnly('ชื่อโครงการ'), maxLength('ชื่อโครงการ', 150)] },
@@ -113,24 +117,18 @@ export default function TverSimulationClient({
     return schema;
   }
 
-  // จับคู่ช่องกรอกกับชื่อ criteria ที่แอดมินตั้งไว้
-  // ⚠️ เปราะบาง: ขึ้นกับว่าแอดมินตั้งชื่อ detail_name ตรงกับคำเหล่านี้
-  const totalTreesDetail = criteria.find((c) => c.detail_name?.includes('จำนวนต้นไม้ที่ปลูก'));
-  const areaDetail = criteria.find(
-    (c) => c.detail_name?.includes('พื้นที่โครงการทั้งหมด') || c.detail_name?.includes('พื้นที่ปลูก')
-  );
-  const densityDetail = criteria.find((c) => c.detail_name?.includes('ต้นไม้ต่อไร่'));
+  // จับคู่ช่องกรอกจากชื่อเงื่อนไขแบบตรงทุกตัวอักษร (เดิมค้นคำที่ไม่ตรงกับชื่อจริง ทำให้เครดิตเป็น 0)
+  const totalTreesDetail = criteria.find((c) => c.detail_name === TVER_TREE_COUNT_NAME);
 
-  // [แก้ไข] เดิม parseFloat (ไม่รู้จักเลขไทย/comma) -> normalizeToArabicNumber
+  // เดิม parseFloat (ไม่รู้จักเลขไทย/comma) -> normalizeToArabicNumber
   function valueOf(d?: TverProjectDetail): number {
     return d ? normalizeToArabicNumber(amounts[d.tverdetail_id]) ?? 0 : 0;
   }
 
+  // คำนวณเครดิต 3 ปีจากจำนวนต้นไม้
   function calculateCredits(): CreditResult {
-    // ใช้ "จำนวนต้นไม้ที่ปลูก" โดยตรงถ้ากรอกไว้ ถ้าไม่มีให้คำนวณจาก พื้นที่ x จำนวนต้นต่อไร่
-    const plantedTrees = valueOf(totalTreesDetail);
-    const totalTrees =
-      plantedTrees > 0 ? plantedTrees : valueOf(areaDetail) * valueOf(densityDetail);
+    // เอาสูตร พื้นที่ x จำนวนต้นต่อไร่ ออก เพราะไม่มีเงื่อนไข "ต้นไม้ต่อไร่" ในตาราง
+    const totalTrees = valueOf(totalTreesDetail);
 
     const year1 = (totalTrees * PLACEHOLDER_KG_CO2E_PER_TREE_PER_YEAR) / 1000; // kg -> tCO2e
     return { year1, year2: year1 * GROWTH_RATE_YEAR_2, year3: year1 * GROWTH_RATE_YEAR_3 };
@@ -140,12 +138,13 @@ export default function TverSimulationClient({
   async function handleCalculate(e: React.FormEvent) {
     e.preventDefault();
 
-    // [เพิ่ม] normalize + validate ทั้งฟอร์มก่อนคำนวณ/บันทึก
+    // normalize + validate ทั้งฟอร์มก่อนคำนวณ/บันทึก
     const result = validateForm({ ...amounts, projectName, treeId, startDate }, buildSchema());
-    const errs: Record<string, string> = result.ok ? {} : { ...(result.errors as Record<string, string>) };
+    const errs: Record<string, string> = {};
+    if (!result.ok) Object.assign(errs, result.errors);
 
-    // [เพิ่ม] เทียบค่าที่กรอกกับเงื่อนไขของแอดมิน (ตรวจข้อมูลอ้างอิงที่เกี่ยวข้อง)
-    // [แก้ไข] อ่านจาก condition_operator / condition_number ตรงๆ ไม่ต้องแกะข้อความแล้ว
+    // เทียบค่าที่กรอกกับเงื่อนไขของแอดมิน (ตรวจข้อมูลอ้างอิงที่เกี่ยวข้อง)
+    // อ่านจาก condition_operator / condition_number ตรงๆ ไม่ต้องแกะข้อความแล้ว
     for (const c of criteria) {
       if (errs[c.tverdetail_id] || !c.condition_operator || c.condition_number == null) continue;
       const v = normalizeToArabicNumber(result.clean[c.tverdetail_id]);
@@ -167,6 +166,7 @@ export default function TverSimulationClient({
       project_name: cleanName,
       // ตัดปีจากข้อความวันที่โดยตรง (YYYY-MM-DD) ไม่ผ่าน Date เพื่อกันเขตเวลาทำให้ปีเพี้ยน
       join_year: startDate ? parseInt(startDate.slice(0, 4), 10) : null,
+      join_date: startDate || null, // เก็บวันที่เต็ม ใช้ดูสถานะโครงการในหน้า Dashboard
       credit_year_1: credits.year1,
       credit_year_2: credits.year2,
       credit_year_3: credits.year3,
@@ -211,7 +211,7 @@ export default function TverSimulationClient({
     }
 
     // บันทึกรายละเอียดแต่ละ criteria ที่กรอกไว้ (พร้อมพันธุ์ไม้ที่เลือก)
-    // [แก้ไข] ใช้ค่าที่ normalize แล้วจาก result.clean แทน parseFloat(ค่าดิบ)
+    // ใช้ค่าที่ normalize แล้วจาก result.clean แทน parseFloat(ค่าดิบ)
     const detailRows = criteria
       .filter((c) => result.clean[c.tverdetail_id] !== '')
       .map((c) => ({
@@ -234,7 +234,7 @@ export default function TverSimulationClient({
 
     setResult(credits);
     setSaving(false);
-    // [แก้ไข] เดิมแสดงแถบแจ้งเตือนลอยค้างไว้ -> popup สั้นๆ แทน (ครั้งถัดไปที่กดจะอัปเดตโครงการเดิม ไม่สร้างซ้ำ)
+    // เดิมแสดงแถบแจ้งเตือนลอยค้างไว้ -> popup สั้นๆ แทน (ครั้งถัดไปที่กดจะอัปเดตโครงการเดิม ไม่สร้างซ้ำ)
     showAlert('จำลองโครงการเรียบร้อย', { title: 'สำเร็จ', tone: 'success' });
   }
 
@@ -261,7 +261,7 @@ export default function TverSimulationClient({
 
       <div className="grid grid-cols-[488px_1fr] gap-8 items-start">
         {/* ซ้าย: ฟอร์มตั้งค่าโครงการ */}
-        {/* [แก้ไข] ใส่ noValidate และเอา required ของ browser ออก ให้ใช้ validate ของเราแทน */}
+        {/* ใส่ noValidate และเอา required ของ browser ออก ให้ใช้ validate ของเราแทน */}
         <form
           onSubmit={handleCalculate}
           noValidate
@@ -349,9 +349,9 @@ export default function TverSimulationClient({
           <button
             type="submit"
             disabled={saving}
-            className="w-[239px] h-[60px] rounded-[20px] bg-[#32885F] text-white text-base font-semibold disabled:opacity-60"
+            className="btn btn-primary w-[239px] h-[60px] rounded-[20px] text-base font-semibold"
           >
-            {/* [แก้ไข] เดิม "คำนวณและดูรายงาน" / "คำนวณและอัปเดตโครงการ" */}
+            {/* เดิม "คำนวณและดูรายงาน" / "คำนวณและอัปเดตโครงการ" */}
             {saving ? 'กำลังบันทึก...' : 'จำลองโครงการปลูกป่า'}
           </button>
         </form>

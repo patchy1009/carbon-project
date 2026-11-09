@@ -1,8 +1,10 @@
+// หน้ารายงานฟุตพรินต์: แสดงยอดรวม กราฟแยกตาม Scope แนวทางลดคาร์บอน และดาวน์โหลดเป็น PDF
 'use client';
 
 import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { showError } from '@/lib/dialog';
+import { SCOPE_COLORS } from '@/lib/scopeColors';
 
 export type Measure = {
   name: string;
@@ -22,12 +24,15 @@ type ReportData = {
   s3: number;
 };
 
+// จัดรูปแบบตัวเลข ถ้าน้อยกว่า 10 แสดงทศนิยม 2 ตำแหน่ง
 const fmt = (n: number) =>
   n.toLocaleString('th-TH', { maximumFractionDigits: n < 10 ? 2 : 0 });
 
+// คำนวณเปอร์เซ็นต์ของส่วนย่อยเทียบกับยอดรวม
 const pct = (part: number, total: number) =>
   total > 0 ? ((part / total) * 100).toFixed(1) : '0.0';
 
+// แปลงวันที่เป็นรูปแบบไทย ปี พ.ศ.
 const thaiDate = (s: string) =>
   new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
     day: 'numeric',
@@ -35,6 +40,7 @@ const thaiDate = (s: string) =>
     year: 'numeric',
   }).format(new Date(s));
 
+// สร้างข้อความเปอร์เซ็นต์ เช่น 5% หรือ 5–10%
 const pctText = (m: Measure) =>
   m.percentMin === m.percentMax ? `${m.percentMin}%` : `${m.percentMin}–${m.percentMax}%`;
 
@@ -44,10 +50,14 @@ function niceStep(max: number) {
   const target = max / 4;
   const mag = Math.pow(10, Math.floor(Math.log10(target)));
   const n = target / mag;
-  const m = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+  let m = 10;
+  if (n <= 1) m = 1;
+  else if (n <= 2) m = 2;
+  else if (n <= 5) m = 5;
   return m * mag;
 }
 
+// แสดงหน่วย tCO2e โดยให้เลข 2 เป็นตัวห้อย
 function Co2e({ className = '' }: { className?: string }) {
   return (
     <span className={className}>
@@ -56,6 +66,7 @@ function Co2e({ className = '' }: { className?: string }) {
   );
 }
 
+// หน้าจอหลักของรายงาน รับข้อมูลที่คำนวณแล้วจาก page.tsx
 export default function ReportClient({
   report,
   measures,
@@ -71,9 +82,15 @@ export default function ReportClient({
   const { total, s1, s2, s3 } = report;
   const hasBreakdown = s1 + s2 + s3 > 0;
 
-  const totalReduction = measures.reduce((sum, m) => sum + (m.amount ?? 0), 0);
-  const totalLow = measures.reduce((sum, m) => sum + (m.low ?? 0), 0);
-  const totalHigh = measures.reduce((sum, m) => sum + (m.high ?? 0), 0);
+  // รวมปริมาณที่ลดได้ของทุกแนวทาง (ค่าที่ไม่มีให้นับเป็น 0)
+  let totalReduction = 0;
+  let totalLow = 0;
+  let totalHigh = 0;
+  for (const m of measures) {
+    totalReduction += m.amount ?? 0;
+    totalLow += m.low ?? 0;
+    totalHigh += m.high ?? 0;
+  }
 
   const step = niceStep(Math.max(s1, s2, s3));
   const yMax = step * 4;
@@ -126,9 +143,10 @@ export default function ReportClient({
     }
   }
 
-  /* [แก้ไข] เอาไอคอนบนการ์ดออก และให้แต่ละ scope มีสีประจำ 1 สี (ใช้ร่วมกันทั้งการ์ดและแท่งกราฟ)
+  /* เอาไอคอนบนการ์ดออก และให้แต่ละ scope มีสีประจำ 1 สี (ใช้ร่วมกันทั้งการ์ดและแท่งกราฟ)
    * ดูการ์ดแล้วจับคู่กับแท่งในกราฟได้ทันที */
-  const SCOPE_COLOR = { s1: '#0D9488', s2: '#2563EB', s3: '#F97316' } as const;
+  // สีย้ายไปไว้ที่ไฟล์กลาง lib/scopeColors.ts (ใช้ร่วมกับหน้ากรอกข้อมูลกิจกรรม)
+  const SCOPE_COLOR = { s1: SCOPE_COLORS[1].main, s2: SCOPE_COLORS[2].main, s3: SCOPE_COLORS[3].main } as const;
 
   const cards = [
     { title: 'ก๊าซเรือนกระจกรวม', value: total, note: null as string | null, color: null as string | null },
@@ -164,14 +182,14 @@ export default function ReportClient({
         <div className="flex gap-2" data-no-export="true">
           <Link
             href="/organization/dashboard"
-            className="rounded-lg border border-[#E2E8F0] bg-white px-4 py-2 text-sm font-semibold text-[#64748B]"
+            className="btn btn-outline rounded-lg px-4 py-2 text-sm font-semibold"
           >
             กลับแดชบอร์ด
           </Link>
-          {/* [แก้ไข] แก้ไขข้อมูลเริ่มที่ขั้นที่ 1 (ข้อมูลสำนักงาน) ของรายการนี้ แล้วกด "ถัดไป" ไปขั้นที่ 2 */}
+          {/* แก้ไขข้อมูลเริ่มที่ขั้นที่ 1 (ข้อมูลสำนักงาน) ของรายการนี้ แล้วกด "ถัดไป" ไปขั้นที่ 2 */}
           <Link
             href={`/organization/footprint?edit=${logId}`}
-            className="rounded-lg border border-[#32885F] bg-white px-4 py-2 text-sm font-semibold text-[#32885F]"
+            className="btn btn-soft rounded-lg px-4 py-2 text-sm font-semibold"
           >
             แก้ไขข้อมูล
           </Link>
@@ -179,7 +197,7 @@ export default function ReportClient({
             type="button"
             onClick={handleDownload}
             disabled={downloading}
-            className="rounded-lg bg-[#22C55E] px-4 py-2 text-sm font-semibold text-white shadow disabled:opacity-60"
+            className="btn btn-accent rounded-lg px-4 py-2 text-sm font-semibold"
           >
             {downloading ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลดรายงาน'}
           </button>
@@ -325,9 +343,9 @@ export default function ReportClient({
           <div className="mt-6 flex justify-center" data-no-export="true">
             <Link
               href="/organization/tver-simulation"
-              className="rounded-[20px] bg-[#32885F] px-8 py-4 text-base font-semibold text-white"
+              className="btn btn-accent rounded-[20px] px-8 py-4 text-base font-semibold"
             >
-              เริ่มจำลองโครงการ T-VER
+              เริ่มจำลองโครงการ T-VER <span className="btn-arrow">›</span>
             </Link>
           </div>
         </div>

@@ -8,7 +8,7 @@ import { validateForm, isDecimal, maxLength, type formSchema } from '@/lib/valid
 import { normalizeNumberString, normalizeText } from '@/lib/normalization';
 import { clearOfficeDraft, draftScope, readOfficeDraft, writeOfficeDraft } from '@/lib/officeDraft';
 
-/* [ปรับปรุง] ข้อมูลสำนักงานเป็นของ "แต่ละรายการ" (org_office_info.orgactlist_id) ไม่ใช่ชุดเดียวทั้งองค์กร
+/* ข้อมูลสำนักงานเป็นของ "แต่ละรายการ" (org_office_info.orgactlist_id) ไม่ใช่ชุดเดียวทั้งองค์กร
  * - รายการใหม่: ฟอร์มว่างเสมอ / แก้ไข: เริ่มจากค่าที่บันทึกไว้ของรายการนั้น
  * - ปุ่ม "ถัดไป": ตรวจข้อมูลแล้วพักค่าไว้ (sessionStorage) ยังไม่บันทึกลง DB
  *   บันทึกจริงตอนกด "คำนวณ" ในขั้นที่ 2 (รายการใหม่ยังไม่มี orgactlist_id จนถึงตอนนั้น)
@@ -29,14 +29,18 @@ export type SavedInfo = {
 // ตารางไม่มีคอลัมน์ "ชนิดข้อมูล" จึงเดาจากหน่วย:
 //   ไม่มีหน่วย → ข้อความ | หน่วยมี % → เปอร์เซ็นต์ (0-100) | มีหน่วยอื่น → ตัวเลข
 type Kind = 'text' | 'number' | 'percent';
-const kindOf = (t: OfficeInfoType): Kind =>
-  !t.unit?.trim() ? 'text' : t.unit.includes('%') ? 'percent' : 'number';
+// ดูหน่วยของหัวข้อ เพื่อเลือกว่าช่องนี้รับข้อความ ตัวเลข หรือเปอร์เซ็นต์
+function kindOf(t: OfficeInfoType): Kind {
+  if (!t.unit?.trim()) return 'text';
+  if (t.unit.includes('%')) return 'percent';
+  return 'number';
+}
 
-/* [แก้ไข] เดิมไฟล์นี้มี cleanNumber และ validate ของตัวเอง (ซ้ำกับไฟล์กลาง)
+/* เดิมไฟล์นี้มี cleanNumber และ validate ของตัวเอง (ซ้ำกับไฟล์กลาง)
  * ตอนนี้สร้าง schema ตามหัวข้อที่แอดมินตั้งไว้ แล้วใช้ validateForm กลาง
  * ทุกช่องไม่บังคับกรอก (ไม่ใส่ required) เพราะบริษัทอาจยังไม่มีข้อมูลบางหัวข้อ
  *   - ข้อความ  : normalizeText + ยาวไม่เกิน 255 ตัวอักษร
- *   - ตัวเลข   : แปลงเลขไทย/ลบ comma + ไม่ติดลบ + ทศนิยมไม่เกิน 4 หลัก   [เพิ่ม] จำกัดทศนิยม
+ *   - ตัวเลข   : แปลงเลขไทย/ลบ comma + ไม่ติดลบ + ทศนิยมไม่เกิน 4 หลัก   จำกัดทศนิยม
  *   - เปอร์เซ็นต์: เหมือนตัวเลข + ไม่เกิน 100 + ทศนิยมไม่เกิน 2 หลัก */
 function buildSchema(types: OfficeInfoType[]): formSchema<string> {
   const schema: formSchema<string> = {};
@@ -58,11 +62,13 @@ function buildSchema(types: OfficeInfoType[]): formSchema<string> {
   return schema;
 }
 
+// ตรวจทั้งฟอร์ม แล้วคืนข้อความ error และค่าที่ปรับรูปแบบแล้ว
 function validate(types: OfficeInfoType[], form: Record<string, string>) {
   const result = validateForm(form, buildSchema(types));
   return { errors: (result.ok ? {} : result.errors) as Record<string, string>, clean: result.clean };
 }
 
+// ขั้นที่ 1 ของการบันทึกฟุตพรินต์: กรอกข้อมูลสำนักงาน แล้วเก็บไว้ชั่วคราวก่อนไปขั้นที่ 2
 export default function OfficeInfoClient({
   orgId,
   editId = null, // มีค่า = โหมดแก้ไขรายการเดิม ต้องพกไปขั้นที่ 2
@@ -93,7 +99,7 @@ export default function OfficeInfoClient({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [openHint, setOpenHint] = useState<Record<string, boolean>>({});
 
-  // [แก้ไข] เข้ามาใหม่ (navbar/dashboard/ปุ่มแก้ไขจากรายงาน) = เริ่มจากค่าตั้งต้น ล้างค่าที่พักไว้
+  // เข้ามาใหม่ (navbar/dashboard/ปุ่มแก้ไขจากรายงาน) = เริ่มจากค่าตั้งต้น ล้างค่าที่พักไว้
   //         ย้อนกลับมาจากขั้นที่ 2 (?resume=1) = เติมค่าที่กรอกไว้กลับเข้าฟอร์ม
   // อ่าน sessionStorage ได้หลังหน้าโหลดในเบราว์เซอร์แล้วเท่านั้น จึงทำใน useEffect
   useEffect(() => {
@@ -106,19 +112,20 @@ export default function OfficeInfoClient({
     if (draft) setForm((prev) => ({ ...prev, ...draft }));
   }, [resume, orgId, scope]);
 
+  // เก็บค่าที่ผู้ใช้พิมพ์ แล้วล้าง error ของช่องนั้น
   function setField(id: string, value: string) {
     setForm((prev) => ({ ...prev, [id]: value }));
     if (errors[id]) setErrors((prev) => ({ ...prev, [id]: '' }));
   }
 
-  // [แก้ไข] ปุ่ม "ถัดไป": ตรวจข้อมูลแล้วพักค่าไว้ ยังไม่บันทึกลง DB
+  // ปุ่ม "ถัดไป": ตรวจข้อมูลแล้วพักค่าไว้ ยังไม่บันทึกลง DB
   // (บันทึกจริงตอนกด "คำนวณและดูรายงาน" ในขั้นที่ 2 ทั้งรายการใหม่และรายการที่แก้ไข)
   function handleNext(e: React.FormEvent) {
     e.preventDefault();
 
     const { errors: errs, clean } = validate(types, form);
     setErrors(errs);
-    // [แก้ไข] ไม่เด้ง alert แล้ว แสดงกรอบแดง + ข้อความใต้ช่องที่ผิดอย่างเดียว
+    // ไม่เด้ง alert แล้ว แสดงกรอบแดง + ข้อความใต้ช่องที่ผิดอย่างเดียว
     if (Object.keys(errs).length > 0) return;
 
     writeOfficeDraft(orgId, scope, clean);
@@ -205,15 +212,16 @@ export default function OfficeInfoClient({
       </div>
 
       <div className="mt-8 flex items-center gap-4">
-        {/* [แก้ไข] ปุ่ม "ถัดไป" ไปหน้ากรอกข้อมูลการดำเนินกิจกรรม (ยังไม่บันทึกลง DB) */}
+        {/* ปุ่ม "ถัดไป" ไปหน้ากรอกข้อมูลการดำเนินกิจกรรม (ยังไม่บันทึกลง DB) */}
         <button
           type="submit"
-          className="h-[60px] rounded-full bg-[#32885F] px-10 text-base font-semibold tracking-wide text-white"
+          // ปุ่มหลัก (btn-primary) ชี้แล้วลอย+เงา และลูกศรเลื่อนไปทางขวา
+          className="btn btn-primary h-[60px] rounded-full px-10 text-base font-semibold tracking-wide"
         >
-          ถัดไป ›
+          ถัดไป <span className="btn-arrow">›</span>
         </button>
         {/* ข้ามขั้นตอน = ไม่ใช้ค่าในหน้านี้ (รายการใหม่: ไม่มีข้อมูลสำนักงาน / แก้ไข: คงค่าเดิมใน DB) */}
-        <Link href={nextHref} onClick={() => clearOfficeDraft(scope)} className="text-sm text-[#6B7280] underline">
+        <Link href={nextHref} onClick={() => clearOfficeDraft(scope)} className="text-sm text-[#6B7280] underline transition hover:text-[#27704D]">
           ข้ามขั้นตอนนี้
         </Link>
       </div>

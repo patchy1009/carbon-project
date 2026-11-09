@@ -1,11 +1,10 @@
 
 import {supabase} from "./supabaseClient";
-import { showConfirm, showError } from "./dialog"; // [แก้ไข] ใช้กล่องแจ้งเตือนกลางแทน alert/confirm ของเบราว์เซอร์
+import { showConfirm, showError } from "./dialog"; // ใช้กล่องแจ้งเตือนกลางแทน alert/confirm ของเบราว์เซอร์
 
 type Values = Record<string, unknown>;
 
-/* แปลง error จาก Postgres เป็นข้อความที่ผู้ใช้อ่านเข้าใจ [เพิ่มใหม่]
- * เป็นด่านสุดท้ายของการตรวจ "ข้อมูลซ้ำ" และ "ความสัมพันธ์ระหว่างตาราง" ระดับฐานข้อมูล
+/* แปลง error จาก Postgres เป็นข้อความที่ผู้ใช้อ่านเข้าใจ  * เป็นด่านสุดท้ายของการตรวจ "ข้อมูลซ้ำ" และ "ความสัมพันธ์ระหว่างตาราง" ระดับฐานข้อมูล
  * (เผื่อมีคนบันทึกพร้อมกัน หรือหน้าจอยังไม่รีเฟรชข้อมูลล่าสุด)
  * รหัส error ดูได้ที่ https://www.postgresql.org/docs/current/errcodes-appendix.html */
 export function dbErrorMessage(error : { code?: string, message : string }) : string {
@@ -20,7 +19,8 @@ export function dbErrorMessage(error : { code?: string, message : string }) : st
     }
 }
 
-/* เพิ่ม 1 แถวในตาราง supabase ถ้าล้มเหลวจะแจ้งเด้งเตือนและ return null */
+/* เพิ่ม 1 แถวในตาราง supabase ถ้าล้มเหลวจะแจ้งเด้งเตือนและ return null
+ * T คือชนิดข้อมูลของแถวที่ได้กลับมา คนเรียกระบุเอง เช่น insertRecord<Activity>(...) */
 export async function insertRecord<T>(
     tableName : string,
     values : Values,
@@ -32,12 +32,14 @@ export async function insertRecord<T>(
     // ตรวจสอบข้อมูลซ้ำก่อน
     if ( duplicateCol ) {
         const duplicateVal = values[duplicateCol];
-        // [แก้ไข] เดิมใช้ .eq ซึ่งแยกตัวพิมพ์เล็ก/ใหญ่ ("Diesel" กับ "diesel" ไม่ถือว่าซ้ำ)
+        // เดิมใช้ .eq ซึ่งแยกตัวพิมพ์เล็ก/ใหญ่ ("Diesel" กับ "diesel" ไม่ถือว่าซ้ำ)
         //   ข้อความใช้ .ilike (ไม่สนตัวพิมพ์) โดย escape % และ _ ไม่ให้กลายเป็น wildcard
         let query = supabase.from(tableName).select(duplicateCol).limit(1);
-        query = typeof duplicateVal === 'string'
-            ? query.ilike(duplicateCol, duplicateVal.replace(/[\\%_]/g, (c) => '\\' + c))
-            : query.eq(duplicateCol, duplicateVal);
+        if (typeof duplicateVal === 'string') {
+            query = query.ilike(duplicateCol, duplicateVal.replace(/[\\%_]/g, (c) => '\\' + c));
+        } else {
+            query = query.eq(duplicateCol, duplicateVal);
+        }
         const { data: existingData, error: checkError } = await query;
         if (checkError) {
             showError('ตรวจสอบข้อมูลซ้ำไม่สำเร็จ: '+dbErrorMessage(checkError));
@@ -57,9 +59,10 @@ export async function insertRecord<T>(
     .single();
 
     if ( error ) {
-        showError(errorLabel+'ไม่สำเร็จ: '+dbErrorMessage(error)); // [แก้ไข] ใช้ข้อความที่อ่านเข้าใจ
+        showError(errorLabel+'ไม่สำเร็จ: '+dbErrorMessage(error)); // ใช้ข้อความที่อ่านเข้าใจ
         return null;
     }
+    // as unknown as T: บอก TypeScript ว่าข้อมูลที่ได้มีรูปแบบตามชนิด T ที่คนเรียกระบุ
     return data as unknown as T;
 }
 
@@ -77,7 +80,7 @@ export async function updateRecord<T>(
     .update(values)
     .eq(idCol, idVal)
     .select(selectQuery)
-    .maybeSingle(); // [แก้ไข] .single() -> .maybeSingle() เพื่อแยกกรณี "ไม่พบ/ไม่มีสิทธิ์" ออกมาแจ้งให้ชัด
+    .maybeSingle(); // .single() -> .maybeSingle() เพื่อแยกกรณี "ไม่พบ/ไม่มีสิทธิ์" ออกมาแจ้งให้ชัด
 
     if ( error ) {
         showError(errorLable+'ไม่สำเร็จ: '+dbErrorMessage(error));
@@ -88,6 +91,7 @@ export async function updateRecord<T>(
         showError(errorLable+'ไม่สำเร็จ: ไม่พบข้อมูล หรือไม่มีสิทธิ์แก้ไข');
         return null;
     }
+    // as unknown as T: บอก TypeScript ว่าข้อมูลที่ได้มีรูปแบบตามชนิด T ที่คนเรียกระบุ
     return data as unknown as T;
 }
 
@@ -106,7 +110,7 @@ export async function deleteRecord(
         .eq(idCol, idVal);
 
     if ( error ) {
-        // [แก้ไข] 23503 ตอนลบ = มีตารางอื่นอ้างถึงแถวนี้อยู่ แจ้งให้ชัดกว่าข้อความภาษาอังกฤษของ DB
+        // 23503 ตอนลบ = มีตารางอื่นอ้างถึงแถวนี้อยู่ แจ้งให้ชัดกว่าข้อความภาษาอังกฤษของ DB
         showError('ลบข้อมูลไม่สำเร็จ: '+(error.code === '23503'
             ? 'ข้อมูลนี้ถูกใช้งานอยู่ในส่วนอื่น ต้องลบข้อมูลที่อ้างถึงก่อน'
             : dbErrorMessage(error)));

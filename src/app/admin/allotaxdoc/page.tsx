@@ -1,3 +1,4 @@
+// ส่วนที่ทำงานฝั่ง server ของหน้าเอกสาร: ตรวจสิทธิ์แอดมินแล้วดึงรายการเอกสาร
 export const dynamic = 'force-dynamic';
 
 import { createSupabaseServer } from '@/lib/supabaseServer';
@@ -5,6 +6,7 @@ import { requireAdminId } from '@/lib/auth';
 import AlloTaxDocClient from './allotaxdocClient';
 import type { AlloTaxDoc } from '@/types/allotaxdoc';
 
+// ดึงรายการเอกสารจากตาราง documents แล้วส่งให้หน้าจอ
 export default async function AlloTaxDocPage() {
   await requireAdminId(); // ไม่ใช่แอดมิน -> เด้งไปหน้า login
   const supabase = await createSupabaseServer();

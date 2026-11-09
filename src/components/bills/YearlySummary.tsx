@@ -1,14 +1,16 @@
 // components/bills/YearlySummary.tsx
 'use client';
-/* [เพิ่มใหม่] ตาราง 12 เดือนของช่องกิจกรรม 1 ช่อง (ใช้เมื่อบันทึกแบบรายปี)
+/* ตาราง 12 เดือนของช่องกิจกรรม 1 ช่อง (ใช้เมื่อบันทึกแบบรายปี)
  * - เดือนที่มีบิล: แสดงผลรวมจากบิลของเดือนนั้น
  * - เดือนที่ไม่มีบิล: ให้เลือก "กรอกเอง" หรือ "ใช้ค่าเดือนก่อนหน้า"
  * - แถวล่างสุดแสดงผลรวมทั้งปี */
 import { resolveYear, type GapChoice, type TargetSummary } from '@/lib/bills/aggregate';
 
 const MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+// จัดรูปแบบตัวเลข แสดงทศนิยมไม่เกิน 4 ตำแหน่ง
 const fmt = (n: number) => n.toLocaleString('th-TH', { maximumFractionDigits: 4 });
 
+// แสดงยอดจากบิลรายเดือนของทั้งปี และให้เลือกวิธีเติมเดือนที่ไม่มีบิล
 export default function YearlySummary({
   summary,
   gaps,
@@ -49,7 +51,9 @@ export default function YearlySummary({
                         value={g?.mode ?? ''}
                         onChange={(e) => {
                           const mode = e.target.value;
-                          onGapChange(month, mode === 'prev' ? { mode: 'prev' } : mode === 'manual' ? { mode: 'manual', value: '' } : null);
+                          if (mode === 'prev') onGapChange(month, { mode: 'prev' });
+                          else if (mode === 'manual') onGapChange(month, { mode: 'manual', value: '' });
+                          else onGapChange(month, null);
                         }}
                         className="rounded border px-1 py-0.5"
                       >

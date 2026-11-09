@@ -1,3 +1,4 @@
+// ขั้นที่ 2 ของการบันทึกฟุตพรินต์: กรอกข้อมูลกิจกรรม แนบบิลให้ OCR ช่วยกรอก คำนวณ และบันทึก
 'use client';
 
 import { useState, useSyncExternalStore } from 'react';
@@ -6,6 +7,7 @@ import { supabase } from '@/lib/supabaseClient';
 import Modal from '@/components/Modal';
 import FootprintStepper from '@/components/FootprintStepper';
 import YearPicker from '@/components/YearPicker';
+import { scopeColor } from '@/lib/scopeColors'; // สีประจำ scope (ไฟล์กลาง ใช้ร่วมกับหน้ารายงาน)
 import type { ScopeGroup } from '@/types/footprint';
 import BillRow from '@/components/bills/BillRow';
 import YearlySummary from '@/components/bills/YearlySummary';
@@ -16,15 +18,15 @@ import { ocrSourceOf, type ActivityPeriod, type BillType, type OcrSource } from 
 import { validateForm, required, notNumericOnly, maxLength, isDecimal, type formSchema } from '@/lib/validation';
 import { normalizeNumberString, normalizeToArabicNumber } from '@/lib/normalization';
 import { clearOfficeDraft, draftScope, hasOfficeValues, readOfficeDraft } from '@/lib/officeDraft';
-import { showAlert, showConfirm, showError } from '@/lib/dialog'; // [แก้ไข] กล่องแจ้งเตือนกลางแทน alert/confirm
-import { TrashIcon } from '@/components/icons';
+import { showAlert, showConfirm, showError } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert/confirm
+import { CheckIcon, TrashIcon } from '@/components/icons'; // เพิ่ม CheckIcon แทนสัญลักษณ์ ✓
 
-/* [ปรับปรุง] แนบบิล = OCR ช่วยกรอก (Auto-fill) อย่างเดียว ไม่เก็บรูปบิลลง Supabase แล้ว
+/* แนบบิล = OCR ช่วยกรอก (Auto-fill) อย่างเดียว ไม่เก็บรูปบิลลง Supabase แล้ว
  *   แนบรูป -> POST /api/ocr (PaddleOCR) -> ตรวจแก้ใน BillRow -> กด "ยืนยัน"
  *   -> รวมยอดตามช่องกิจกรรม (activity_detail.ocr_source) -> กด "เติมลงฟอร์ม" -> คำนวณด้วยสูตรเดิม
  * ระบบแนบบิลเดิม (Storage 'bills' + ตาราง org_bill_file) ถูกคอมเมนต์ไว้ด้านล่าง ข้อมูลเก่าใน Supabase ยังอยู่ */
 
-/* [ปรับปรุง] normalize / validate ช่องที่ผู้ใช้กรอกเอง (ไม่รวมส่วน OCR ของบิล)
+/* normalize / validate ช่องที่ผู้ใช้กรอกเอง (ไม่รวมส่วน OCR ของบิล)
  * 1) ชื่อกิจกรรม: normalizeText + ห้ามว่าง + ห้ามเป็นตัวเลขล้วน + ยาวไม่เกิน NAME_MAX
  * 2) ปริมาณแต่ละรายการ: เดิมใช้ parseFloat ซึ่งรับ "12abc" เป็น 12 และข้ามค่าติดลบแบบเงียบๆ
  *    ตอนนี้ แปลงเลขไทย/ลบ comma -> ต้องเป็นตัวเลข ไม่ติดลบ ทศนิยมไม่เกิน 4 หลัก แสดง error ใต้ช่อง
@@ -41,11 +43,12 @@ type PeriodType = 'month' | 'year';
 const BILL_CATEGORIES: { value: BillType; label: string; hint: string }[] = [
   { value: 'water', label: 'บิลค่าน้ำ', hint: 'ใบแจ้งหนี้ค่าน้ำประปา' },
   { value: 'electricity', label: 'บิลค่าไฟฟ้า', hint: 'ใบแจ้งหนี้ค่าไฟฟ้า' },
-  { value: 'fuel', label: 'บิลน้ำมันเชื้อเพลิง', hint: 'ใบเสร็จหรือใบกำกับภาษีจากปั๊มน้ำมัน (แนบได้หลายใบต่อเดือน ระบบรวมยอดให้)' },
+  { value: 'fuel', label: 'บิลน้ำมันเชื้อเพลิง', hint: 'ใบเสร็จจากปั๊มน้ำมัน (แนบได้หลายใบต่อเดือน ระบบรวมยอดให้)' },
 ];
+// แปลงรหัสประเภทบิลเป็นชื่อภาษาไทย
 const billLabel = (v: string) => BILL_CATEGORIES.find((t) => t.value === v)?.label ?? v;
 
-// [แก้ไข] Python OCR รับเฉพาะรูป (ไม่รับ PDF) และไม่เกิน 10 MB ตรงกับ /api/ocr และ api.py
+// Python OCR รับเฉพาะรูป (ไม่รับ PDF) และไม่เกิน 10 MB ตรงกับ /api/ocr และ api.py
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_BYTES = 10 * 1024 * 1024;
 // จำนวนไฟล์สูงสุดต่อหมวด (ปรับได้ตามต้องการ)
@@ -57,6 +60,7 @@ const fileKey = (f: File) => `${f.name}|${f.size}|${f.lastModified}`;
 // ---------- ช่วงเวลา (เดือน/ปี) ----------
 const TH_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 const TH_MONTHS_FULL = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+// เติม 0 ข้างหน้าให้ครบ 2 หลัก เช่น 3 เป็น 03
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
 // เก็บใน DB เป็น 'YYYY-MM-01' (ค.ศ.) ; รายปีใช้ 1 ม.ค.
@@ -65,7 +69,9 @@ function derivePeriod(type: PeriodType, month: number, yearBE: number): string {
   if (type === 'year') return `${yearBE - 543}-01-01`;
   return month ? `${yearBE - 543}-${pad2(month)}-01` : '';
 }
+// ตัดเลขเดือนจากวันที่รูปแบบ YYYY-MM-DD
 const monthOf = (p: string) => (p ? Number(p.slice(5, 7)) : 0);
+// ตัดปีจากวันที่รูปแบบ YYYY-MM-DD แล้วแปลงเป็น พ.ศ.
 const yearBEOf = (p: string) => (p ? Number(p.slice(0, 4)) + 543 : 0);
 
 // ชื่อที่ระบบแนะนำ: "คาร์บอนฟุตพรินต์ มี.ค.69" หรือ "คาร์บอนฟุตพรินต์ ปี 2569"
@@ -74,6 +80,7 @@ function defaultName(type: PeriodType, p: string): string {
   if (type === 'year') return `คาร์บอนฟุตพรินต์ ปี ${yearBEOf(p)}`;
   return `คาร์บอนฟุตพรินต์ ${TH_MONTHS_SHORT[monthOf(p) - 1]}${String(yearBEOf(p)).slice(-2)}`;
 }
+// สร้างข้อความช่วงเวลา เช่น ปี 2569 หรือ มีนาคม 2569
 function periodLabel(type: PeriodType, p: string): string {
   return type === 'year'
     ? `ปี ${yearBEOf(p)}`
@@ -82,6 +89,7 @@ function periodLabel(type: PeriodType, p: string): string {
 
 const NAME_MAX = 100;
 
+// หน้าจอหลัก รองรับทั้งการบันทึกรายการใหม่ และการแก้ไขรายการเดิม
 export default function FootprintClient({
   scopeGroups,
   orgId,
@@ -106,8 +114,10 @@ export default function FootprintClient({
     ? `/organization/footprint?edit=${existingLogId}&resume=1`
     : '/organization/footprint?resume=1';
 
-  // [แก้ไข] รายการใหม่: ดูว่ากรอกข้อมูลสำนักงานในขั้นที่ 1 ไว้ไหม (ค่าที่ค้างใน sessionStorage)
+  // รายการใหม่: ดูว่ากรอกข้อมูลสำนักงานในขั้นที่ 1 ไว้ไหม (ค่าที่ค้างใน sessionStorage)
   // ฝั่ง server ถือว่ามี เพื่อไม่ให้กล่องเตือนกะพริบตอนโหลด
+  // ใช้ useSyncExternalStore เพราะ sessionStorage อ่านได้เฉพาะในเบราว์เซอร์
+  // ค่าที่ 1 = ไม่ต้องรอฟังการเปลี่ยนแปลง, ค่าที่ 2 = อ่านค่าในเบราว์เซอร์, ค่าที่ 3 = ค่าตอนอยู่ฝั่ง server
   const hasOfficeInfo = useSyncExternalStore(
     () => () => {},
     () => hasOfficeValues(readOfficeDraft(orgId, 'new')),
@@ -115,7 +125,7 @@ export default function FootprintClient({
   );
 
   const [values, setValues] = useState<Record<string, string>>(existingValues);
-  // [เพิ่ม] error ใต้ช่อง: key = 'name' หรือ scopedetail_id
+  // error ใต้ช่อง: key = 'name' หรือ scopedetail_id
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState<{ id: string; total: number } | null>(null);
@@ -144,7 +154,7 @@ export default function FootprintClient({
   };
   const bills = useBillOcr();
 
-  // [เพิ่ม] ช่องกิจกรรมที่รับข้อมูลจากบิล: จับคู่ด้วย activity_detail.ocr_source ที่แอดมินตั้ง (ไม่เดาจากชื่อ)
+  // ช่องกิจกรรมที่รับข้อมูลจากบิล: จับคู่ด้วย activity_detail.ocr_source ที่แอดมินตั้ง (ไม่เดาจากชื่อ)
   const billTargets = new Map<OcrSource, BillTarget>();
   for (const g of scopeGroups) {
     for (const d of g.details) {
@@ -156,28 +166,32 @@ export default function FootprintClient({
     }
   }
   const checkCtx = { period: ocrPeriod, items: bills.items, targets: billTargets };
+  // ตรวจความถูกต้องของบิล 1 ใบ
   const checksOf = (it: PendingBill) => checkBill(it, checkCtx);
+  // หาช่องกิจกรรมที่จะรับยอดจากบิลใบนี้
   const targetOf = (it: PendingBill) => {
     const src = it.billType ? ocrSourceOf(it.billType, it.fuelType) : null;
     return src ? billTargets.get(src) : undefined;
   };
 
-  // [เพิ่ม] ยอดรวมจากบิลที่ยืนยันแล้ว แยกตามช่องกิจกรรม + ตัวเลือกเติมเดือนที่ขาด (รายปี)
+  // ยอดรวมจากบิลที่ยืนยันแล้ว แยกตามช่องกิจกรรม + ตัวเลือกเติมเดือนที่ขาด (รายปี)
   const billSummaries = summarize(bills.items, checksOf, billTargets);
   const [gaps, setGaps] = useState<GapState>({});
   // ยอดที่เติมลงฟอร์มล่าสุดของแต่ละช่อง (ไว้แสดงป้าย "จากบิล" และเตือนถ้ายังไม่ได้เติม)
   const [filled, setFilled] = useState<Record<string, { value: string; count: number }>>({});
 
+  // เก็บวิธีเติมยอดของเดือนที่ไม่มีบิล ถ้า choice เป็น null คือยกเลิกค่าเดิม
   function setGap(scopedetailId: string, month: number, choice: GapChoice | null) {
     setGaps((prev) => {
-      const forTarget = { ...(prev[scopedetailId] ?? {}) };
+      const oldChoices = prev[scopedetailId] ?? {};
+      const forTarget = { ...oldChoices };
       if (choice) forTarget[month] = choice;
       else delete forTarget[month];
       return { ...prev, [scopedetailId]: forTarget };
     });
   }
 
-  /* [เพิ่ม] เติมยอดจากบิลลงช่องกิจกรรม (ผู้ใช้แก้ต่อในฟอร์มได้) ถามก่อนเขียนทับค่าที่กรอกเอง */
+  /* เติมยอดจากบิลลงช่องกิจกรรม (ผู้ใช้แก้ต่อในฟอร์มได้) ถามก่อนเขียนทับค่าที่กรอกเอง */
   async function fillFromBills(ids?: string[]) {
     const targets = billSummaries.filter((s) => !ids || ids.includes(s.target.scopedetail_id));
     const next: Record<string, string> = {};
@@ -211,10 +225,11 @@ export default function FootprintClient({
     });
   }
 
-  // [แก้ไข] เดิมเลือกได้แค่ปีปัจจุบัน +1 ย้อนหลัง 5 ปี -> ย้อนหลังได้ 30 ปี และพิมพ์ค้นหาปีได้ (YearPicker)
+  // เดิมเลือกได้แค่ปีปัจจุบัน +1 ย้อนหลัง 5 ปี -> ย้อนหลังได้ 30 ปี และพิมพ์ค้นหาปีได้ (YearPicker)
   const YEAR_MIN_BE = nowBE - 30;
   const YEAR_MAX_BE = nowBE + 1;
 
+  // เปลี่ยนช่วงเวลาที่เลือก แล้วล้าง error ของช่องช่วงเวลา
   function updatePeriod(type: PeriodType, m: number, y: number) {
     setPeriodType(type);
     setSelMonth(m);
@@ -223,13 +238,14 @@ export default function FootprintClient({
     if (fieldErrors.period) setFieldErrors((prev) => ({ ...prev, period: '' }));
   }
 
+  // เก็บค่าที่ผู้ใช้พิมพ์ในช่องปริมาณ
   function handleChange(scopedetailId: string, value: string) {
     setValues((prev) => ({ ...prev, [scopedetailId]: value }));
     // พิมพ์แก้แล้วล้าง error ของช่องนั้น
     if (fieldErrors[scopedetailId] || fieldErrors.form) setFieldErrors((prev) => ({ ...prev, [scopedetailId]: '', form: '' }));
   }
 
-  // [เพิ่ม] schema ของทั้งหน้า: ชื่อกิจกรรม + ปริมาณทุกรายการ (key = scopedetail_id)
+  // schema ของทั้งหน้า: ชื่อกิจกรรม + ปริมาณทุกรายการ (key = scopedetail_id)
   function buildSchema(): formSchema<string> {
     const schema: formSchema<string> = {
       name: { rules: [required('ชื่อกิจกรรม'), notNumericOnly('ชื่อกิจกรรม'), maxLength('ชื่อกิจกรรม', NAME_MAX)] },
@@ -248,12 +264,13 @@ export default function FootprintClient({
   // ---------- แนบไฟล์บิล (แยกตามหมวด) ----------
   const countOf = (type: string) => bills.items.filter((p) => p.slot === type).length;
 
+  // ตรวจไฟล์บิลที่ผู้ใช้เลือก แล้วส่งไฟล์ที่ผ่านไปอ่านด้วย OCR
   function handleFiles(type: BillType, e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = ''; // ให้เลือกไฟล์เดิมซ้ำได้
 
     // ต้องรู้เดือน/ปีของกิจกรรมก่อน เพื่อตรวจว่าบิลตรงกับช่วงเวลานี้
-    // [แก้ไข] เดิมเด้ง alert -> แสดงกรอบแดง + ข้อความใต้ช่องเดือน/ปีแทน
+    // เดิมเด้ง alert -> แสดงกรอบแดง + ข้อความใต้ช่องเดือน/ปีแทน
     if (!periodMonth) {
       setFieldErrors((prev) => ({
         ...prev,
@@ -263,7 +280,7 @@ export default function FootprintClient({
     }
 
     const accepted: File[] = [];
-    const rejected: string[] = []; // [แก้ไข] รวมไฟล์ที่ใช้ไม่ได้ แจ้งครั้งเดียว (เดิมเด้ง alert ทีละไฟล์)
+    const rejected: string[] = []; // รวมไฟล์ที่ใช้ไม่ได้ แจ้งครั้งเดียว (เดิมเด้ง alert ทีละไฟล์)
     const seen = new Set(
       bills.items.filter((p) => p.slot === type).map((p) => fileKey(p.file))
     );
@@ -376,7 +393,7 @@ export default function FootprintClient({
   }
   */
 
-  /* [เพิ่ม] เหตุผลที่ยังกดคำนวณไม่ได้ / ต้องถามก่อน (แทน bills.blockReason เดิม)
+  /* เหตุผลที่ยังกดคำนวณไม่ได้ / ต้องถามก่อน (แทน bills.blockReason เดิม)
    * บิลไม่บังคับแนบ: บิลที่ยังไม่ยืนยันจะไม่ถูกนำไปใช้ แต่ต้องรอให้อ่านเสร็จก่อน */
   function billConfirmMessages(): { block: string | null; ask: string[] } {
     if (bills.items.some((i) => i.status === 'reading')) return { block: 'กำลังอ่านบิล กรุณารอสักครู่', ask: [] };
@@ -395,7 +412,7 @@ export default function FootprintClient({
 
   // ตรวจรายการที่ซ้อนกับช่วงเวลานี้ คืนข้อความเตือน หรือ null ถ้าไม่ซ้อน
   async function findOverlap(): Promise<string | null> {
-    // [แก้ไข] โหมดแก้ไขที่ไม่ได้เปลี่ยนเดือน/ปี: เป็นการอัปเดตรายการเดิม ช่วงเวลาซ้อนเท่าเดิม ไม่ต้องถามซ้ำ
+    // โหมดแก้ไขที่ไม่ได้เปลี่ยนเดือน/ปี: เป็นการอัปเดตรายการเดิม ช่วงเวลาซ้อนเท่าเดิม ไม่ต้องถามซ้ำ
     if (isEdit && periodType === existingPeriodType && periodMonth === existingPeriod.slice(0, 10)) return null;
 
     const y = Number(periodMonth.slice(0, 4)); // ปี ค.ศ.
@@ -417,20 +434,22 @@ export default function FootprintClient({
 
     const hitType: PeriodType = hit.period_type === 'year' ? 'year' : 'month';
     const hitLabel = periodLabel(hitType, hit.period_month);
-    // [แก้ไข] โหมดแก้ไข: บอกให้ชัดว่าเป็นการอัปเดตรายการนี้ ไม่ใช่การบันทึกรายการใหม่เพิ่ม
+    // โหมดแก้ไข: บอกให้ชัดว่าเป็นการอัปเดตรายการนี้ ไม่ใช่การบันทึกรายการใหม่เพิ่ม
     if (isEdit) {
       return `ช่วงเวลาที่แก้เป็น ${periodLabel(periodType, periodMonth)} ซ้อนกับรายการ "${hit.orgact_name}" (${hitLabel}) ที่มีอยู่แล้ว
 ` +
         'ยอดรวมของทั้ง 2 รายการอาจนับซ้ำ ต้องการอัปเดตรายการนี้ต่อหรือไม่?';
     }
-    return periodType === 'year'
-      ? `ปี ${yearBEOf(periodMonth)} มีรายการ "${hit.orgact_name}" (${hitLabel}) อยู่แล้ว\nการบันทึกรายปีเพิ่มอาจทำให้ยอดรวมนับซ้ำ ต้องการบันทึกต่อหรือไม่?`
-      : hitType === 'year'
-      ? `มีรายการรายปี "${hit.orgact_name}" ที่ครอบคลุมช่วงนี้อยู่แล้ว\nการบันทึกรายเดือนเพิ่มอาจทำให้ยอดรวมนับซ้ำ ต้องการบันทึกต่อหรือไม่?`
-      : `${periodLabel('month', periodMonth)} มีรายการ "${hit.orgact_name}" อยู่แล้ว\nต้องการบันทึกรายการนี้เพิ่มหรือไม่?`;
+    if (periodType === 'year') {
+      return `ปี ${yearBEOf(periodMonth)} มีรายการ "${hit.orgact_name}" (${hitLabel}) อยู่แล้ว\nการบันทึกรายปีเพิ่มอาจทำให้ยอดรวมนับซ้ำ ต้องการบันทึกต่อหรือไม่?`;
+    }
+    if (hitType === 'year') {
+      return `มีรายการรายปี "${hit.orgact_name}" ที่ครอบคลุมช่วงนี้อยู่แล้ว\nการบันทึกรายเดือนเพิ่มอาจทำให้ยอดรวมนับซ้ำ ต้องการบันทึกต่อหรือไม่?`;
+    }
+    return `${periodLabel('month', periodMonth)} มีรายการ "${hit.orgact_name}" อยู่แล้ว\nต้องการบันทึกรายการนี้เพิ่มหรือไม่?`;
   }
 
-  /* [เพิ่ม] บันทึกข้อมูลสำนักงานที่พักไว้จากขั้นที่ 1 ลง org_office_info (ผูกด้วย orgactlist_id)
+  /* บันทึกข้อมูลสำนักงานที่พักไว้จากขั้นที่ 1 ลง org_office_info (ผูกด้วย orgactlist_id)
    * - ไม่มีค่าที่พักไว้ (เข้าขั้นที่ 2 ตรงๆ หรือกดข้าม) -> ไม่แตะข้อมูลสำนักงานเดิม
    * - รายการที่แก้ไข: ลบชุดเดิมของรายการนั้นแล้วใส่ชุดใหม่
    * ล้มเหลวไม่ยกเลิกรายการที่บันทึกแล้ว: แจ้งให้กดแก้ไขรายการแล้วกรอกข้อมูลสำนักงานใหม่ */
@@ -441,7 +460,7 @@ export default function FootprintClient({
 
     const rows = Object.entries(draft)
       .filter(([, amount]) => amount !== '')
-      .map(([info_id, amount]) => ({ orgactlist_id: logId, info_id, amount })); // [แก้ไข] ไม่มี org_id แล้ว
+      .map(([info_id, amount]) => ({ orgactlist_id: logId, info_id, amount })); // ไม่มี org_id แล้ว
 
     let error: { message: string } | null = null;
     if (isEdit) {
@@ -463,21 +482,12 @@ export default function FootprintClient({
 
   // ---------- คำนวณและบันทึก ----------
   async function handleCalculate() {
-    // [แก้ไข] normalize + validate ชื่อและปริมาณทุกช่องพร้อมกัน แสดง error ใต้ช่อง
+    // normalize + validate ชื่อและปริมาณทุกช่องพร้อมกัน แสดง error ใต้ช่อง
     const result = validateForm({ ...values, name }, buildSchema());
-    const errs: Record<string, string> = result.ok ? {} : { ...(result.errors as Record<string, string>) };
+    const errs: Record<string, string> = {};
+    if (!result.ok) Object.assign(errs, result.errors);
 
-    // [เพิ่ม] ตรวจความสัมพันธ์: รายการที่กรอก > 0 ต้องมีค่า EF ผูกอยู่
-    for (const group of scopeGroups) {
-      for (const d of group.details) {
-        const qty = normalizeToArabicNumber(result.clean[d.scopedetail_id]);
-        if (!errs[d.scopedetail_id] && qty && qty > 0 && d.emission_factor?.ef_value == null) {
-          errs[d.scopedetail_id] = 'รายการนี้ยังไม่มีค่า EF ในระบบ กรุณาติดต่อผู้ดูแลระบบ';
-        }
-      }
-    }
-
-    // [แก้ไข] เดิมเด้ง alert "กรุณาตรวจสอบข้อมูล..." และ "กรุณาเลือกเดือนและปี"
+    // เดิมเด้ง alert "กรุณาตรวจสอบข้อมูล..." และ "กรุณาเลือกเดือนและปี"
     //   ตอนนี้แสดงแค่กรอบแดง + ข้อความใต้ช่อง (เดือน/ปีใช้ key 'period') ไม่มี popup
     if (!periodMonth) errs.period = periodType === 'year' ? 'กรุณาเลือกปี' : 'กรุณาเลือกเดือนและปี';
 
@@ -485,7 +495,7 @@ export default function FootprintClient({
     if (Object.keys(errs).length > 0) return;
     const cleanName = result.clean.name; // ชื่อที่ normalize แล้ว (ยุบช่องว่าง/ตัดหัวท้าย)
 
-    // [แก้ไข] บิลต้องอ่านเสร็จ ส่วนบิลที่ยังไม่ยืนยัน/ยอดที่ยังไม่เติมลงฟอร์ม ให้ผู้ใช้ตัดสินใจเอง
+    // บิลต้องอ่านเสร็จ ส่วนบิลที่ยังไม่ยืนยัน/ยอดที่ยังไม่เติมลงฟอร์ม ให้ผู้ใช้ตัดสินใจเอง
     const billState = billConfirmMessages();
     if (billState.block) return showAlert(billState.block, { tone: 'warning' });
     if (billState.ask.length > 0 && !await showConfirm(`${billState.ask.join('\n')}\n\nต้องการคำนวณด้วยค่าที่อยู่ในฟอร์มตอนนี้หรือไม่?`, { confirmText: 'คำนวณต่อ' })) return;
@@ -501,10 +511,11 @@ export default function FootprintClient({
 
     for (const group of scopeGroups) {
       for (const detail of group.details) {
-        // [แก้ไข] เดิม parseFloat(ค่าดิบ) -> ใช้ค่าที่ normalize + validate แล้ว
+        // เดิม parseFloat(ค่าดิบ) -> ใช้ค่าที่ normalize + validate แล้ว
         const qty = normalizeToArabicNumber(result.clean[detail.scopedetail_id]) ?? 0;
         if (qty <= 0) continue; // ว่าง หรือ 0 = ไม่ได้ใช้รายการนี้
-        const ef = detail.emission_factor?.ef_value ?? 0;
+        // ไม่มีค่า EF หรือ GWP ให้ใช้ 1 (เดิมไม่มี EF ใช้ 0 ทำให้ผลเป็น 0)
+        const ef = detail.emission_factor?.ef_value ?? 1;
         const gwp = detail.global_warming_potential?.gwp_value ?? 1;
         rows.push({
           scopedetail_id: detail.scopedetail_id,
@@ -517,7 +528,7 @@ export default function FootprintClient({
 
     if (rows.length === 0) {
       setLoading(false);
-      // [แก้ไข] เดิมเด้ง alert -> แสดงข้อความสีแดงเหนือปุ่มคำนวณ
+      // เดิมเด้ง alert -> แสดงข้อความสีแดงเหนือปุ่มคำนวณ
       setFieldErrors((prev) => ({ ...prev, form: 'กรุณากรอกปริมาณอย่างน้อย 1 รายการ' }));
       return;
     }
@@ -528,7 +539,11 @@ export default function FootprintClient({
       return;
     }
 
-    const total = rows.reduce((sum, r) => sum + r.ghg_emission, 0);
+    // รวมการปล่อยก๊าซของทุกรายการที่กรอก
+    let total = 0;
+    for (const r of rows) {
+      total += r.ghg_emission;
+    }
     let logId: string;
 
     if (isEdit && existingLogId) {
@@ -610,7 +625,7 @@ export default function FootprintClient({
       }
     }
 
-    // [เพิ่ม] บันทึกข้อมูลสำนักงานที่กรอกในขั้นที่ 1 ผูกกับรายการนี้ (ทั้งรายการใหม่และที่แก้ไข)
+    // บันทึกข้อมูลสำนักงานที่กรอกในขั้นที่ 1 ผูกกับรายการนี้ (ทั้งรายการใหม่และที่แก้ไข)
     await saveOfficeInfo(logId);
 
     // [ปิดใช้งาน] เดิมอัปโหลดรูปบิลลง Storage หลังบันทึกรายการ -> ตอนนี้ไม่เก็บรูปบิลแล้ว
@@ -626,7 +641,7 @@ export default function FootprintClient({
   }
 
   // การ์ดแนบบิลของแต่ละหมวด
-  // [แก้ไข] เลิกแสดงบิลที่เคยเก็บใน org_bill_file และส่งช่องกิจกรรมที่จะเติม (target) ให้ BillRow
+  // เลิกแสดงบิลที่เคยเก็บใน org_bill_file และส่งช่องกิจกรรมที่จะเติม (target) ให้ BillRow
   function renderBillCategory(type: BillType, label: string, hint: string) {
     const pendingOfType = bills.items.filter((p) => p.slot === type);
     const used = pendingOfType.length;
@@ -647,8 +662,9 @@ export default function FootprintClient({
         <div className="space-y-3 p-4">
           <div className="flex flex-wrap items-center gap-3">
             <label
-              className={`flex h-11 items-center rounded-[20px] px-5 text-sm font-semibold text-white ${
-                full ? 'cursor-not-allowed bg-[#94A3B8]' : 'cursor-pointer bg-[#32885F]'
+              // ปุ่มเลือกรูปบิล = btn-create (น้ำเงินเทา: เพิ่มไฟล์) ครบจำนวนแล้วเป็นสีเทากดไม่ได้
+              className={`flex h-11 items-center rounded-[20px] px-5 text-sm font-semibold ${
+                full ? 'cursor-not-allowed bg-[#94A3B8] text-white' : 'btn btn-create'
               }`}
             >
               เลือกรูปบิล
@@ -688,7 +704,7 @@ export default function FootprintClient({
     );
   }
 
-  // [เพิ่ม] การ์ดสรุปยอดจากบิลที่ยืนยันแล้ว + ปุ่มเติมลงฟอร์ม
+  // การ์ดสรุปยอดจากบิลที่ยืนยันแล้ว + ปุ่มเติมลงฟอร์ม
   function renderBillSummary() {
     if (billSummaries.length === 0) return null;
     return (
@@ -700,7 +716,7 @@ export default function FootprintClient({
           <button
             type="button"
             onClick={() => fillFromBills()}
-            className="rounded-full bg-[#32885F] px-4 py-1.5 text-xs font-semibold text-white"
+            className="btn btn-primary rounded-full px-4 py-1.5 text-xs font-semibold"
           >
             เติมทั้งหมดลงฟอร์ม
           </button>
@@ -758,7 +774,7 @@ export default function FootprintClient({
           title={isEdit ? 'บันทึกการแก้ไขเสร็จสิ้น' : 'บันทึกรายการและคำนวณเสร็จสิ้น'}
         >
           <div className="space-y-4 text-center">
-            <div className="text-4xl text-[#16A34A]">✓</div>
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#DCFCE7] text-[#16A34A]"><CheckIcon className="h-7 w-7" /></div>
             <p className="text-sm text-[#6B7280]">
               {isEdit
                 ? 'ระบบบันทึกการแก้ไขและคำนวณใหม่เรียบร้อยแล้ว'
@@ -772,13 +788,13 @@ export default function FootprintClient({
               <button
                 type="button"
                 onClick={() => setDone(null)}
-                className="rounded-lg border px-4 py-2 text-sm"
+                className="btn btn-outline rounded-lg px-4 py-2 text-sm"
               >
                 ปิด
               </button>
               <Link
                 href={`/organization/footprint/report/${done.id}`}
-                className="rounded-lg bg-[#32885F] px-4 py-2 text-sm font-semibold text-white"
+                className="btn btn-primary rounded-lg px-4 py-2 text-sm font-semibold"
               >
                 ดูรายงานการคำนวณ
               </Link>
@@ -913,7 +929,7 @@ export default function FootprintClient({
                   ))}
                 </select>
               )}
-              {/* [แก้ไข] เดิมเป็น <select> -> ช่องเลือกปีที่พิมพ์ค้นหาได้ */}
+              {/* เดิมเป็น <select> -> ช่องเลือกปีที่พิมพ์ค้นหาได้ */}
               <YearPicker
                 value={selYear}
                 onChange={(y) => updatePeriod(periodType, selMonth, y)}
@@ -937,7 +953,7 @@ export default function FootprintClient({
       <div className="mb-6">
         <div className="mb-3">
           <h2 className="text-base font-medium text-[#191C1E]">อ่านบิลเพื่อช่วยกรอกข้อมูล (ไม่บังคับ)</h2>
-          {/* [แก้ไข] ข้อความใหม่: OCR ช่วยกรอกเท่านั้น ไม่เก็บรูปบิล */}
+          {/* ข้อความใหม่: OCR ช่วยกรอกเท่านั้น ไม่เก็บรูปบิล */}
           <p className="text-xs text-[#6B7280]">
             {`แนบรูปบิลแยกตามประเภท (JPG, PNG, WEBP ไม่เกิน 10 MB ต่อไฟล์ สูงสุด ${maxPerType} ไฟล์ต่อหมวด) ระบบจะอ่านเดือน ปริมาณ และเลขที่บิลให้ ตรวจแก้แล้วกด "ยืนยันข้อมูล" จากนั้นกด "เติมลงฟอร์ม" ระบบไม่เก็บรูปบิลไว้${periodType === 'year' ? ' (รายปี: แนบบิลของแต่ละเดือนในปีนั้น เดือนที่ไม่มีบิลกรอกเองหรือใช้ค่าเดือนก่อนหน้าได้)' : ''}`}
           </p>
@@ -961,81 +977,120 @@ export default function FootprintClient({
 
       {/* Scope Sections */}
       <div className="flex flex-col gap-6">
-        {scopeGroups.map((group) => (
+        {scopeGroups.map((group) => {
+          // สีประจำ scope (lib/scopeColors.ts ใช้ชุดเดียวกับกราฟในหน้ารายงาน)
+          const color = scopeColor(group.scope.scope_number);
+          return (
           <div
             key={group.scope.scope_id}
-            className="overflow-hidden rounded-[25px] border border-[#BDC9C1] bg-white"
+            // เดิมกรอบสีเทาเหมือนกันทุก scope -> เส้นขอบตามสีของ scope
+            className="overflow-hidden rounded-[25px] border bg-white"
+            style={{ borderColor: color.border }}
           >
-            <div className="flex items-center gap-2 border-b border-[#BDC9C1] bg-[#F2F4F6] px-4 py-2">
-              <span className="h-3 w-3 rounded-full bg-[#6FB898]" />
-              <h2 className="text-base text-[#191C1E]">
+            {/* หัวกล่อง: พื้นอ่อน + จุดสี + ชื่อ scope เป็นสีของ scope (เดิมเทา/เขียวเหมือนกันทุกกล่อง) */}
+            <div
+              className="flex items-center gap-2 border-b px-4 py-2"
+              style={{ backgroundColor: color.soft, borderColor: color.border }}
+            >
+              <span className="h-3 w-3 rounded-full" style={{ backgroundColor: color.main }} />
+              <h2 className="text-base font-medium" style={{ color: color.text }}>
                 Scope {group.scope.scope_number}: {group.scope.scope_name}
               </h2>
             </div>
 
-            <div className="grid grid-cols-2 gap-x-8 gap-y-4 p-4">
-              {group.details.length === 0 && (
-                <p className="col-span-2 py-4 text-sm text-[#6B7280]">
+            {/* เลือกแบบรายปี: เตือนในทุก scope ว่าต้องกรอกปริมาณรวมทั้งปี ไม่ใช่ค่าของเดือนเดียว */}
+            {periodType === 'year' && group.activities.length > 0 && (
+              <p
+                role="note"
+                className="flex items-start gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700"
+              >
+                <span aria-hidden="true" className="font-bold">!</span>
+                <span>
+                  บันทึกแบบรายปี: กรอก<b>ปริมาณรวมทั้งปี</b>
+                  {selYear ? ` (ม.ค.–ธ.ค. ${selYear})` : ''} ของทุกรายการในขอบเขตนี้ ไม่ใช่ค่าของเดือนเดียว
+                </span>
+              </p>
+            )}
+
+            {/* เดิมแสดงทุกรายการของขอบเขตปนกันในตารางเดียว
+                ตอนนี้แบ่งเป็นกลุ่มตามกิจกรรม (activity_id) มีหัวกลุ่มเป็น activity_name
+                ข้อมูลกลุ่มจัดมาจาก page.tsx (groupByActivity) — ช่องกรอกแต่ละช่องเหมือนเดิมทุกอย่าง */}
+            <div className="divide-y divide-[#E3E9E5]">
+              {group.activities.length === 0 && (
+                <p className="px-4 py-6 text-sm text-[#6B7280]">
                   ยังไม่มีรายการให้กรอกในขอบเขตนี้
                 </p>
               )}
-              {group.details.map((detail) => (
-                <div key={detail.scopedetail_id} className="space-y-1">
-                  <label className="block text-xs tracking-wide text-[#3E4943]">
-                    {detail.detail_name} {detail.unit ? `(${detail.unit})` : ''}
-                  </label>
-                  <div
-                    className={`flex h-11 items-center justify-between rounded-[20px] border bg-[#F7F9FB] px-[18px] ${
-                      fieldErrors[detail.scopedetail_id] ? 'border-red-500' : 'border-[#BDC9C1]'
-                    }`}
-                  >
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={values[detail.scopedetail_id] ?? ''}
-                      onChange={(e) => handleChange(detail.scopedetail_id, e.target.value)}
-                      placeholder="0.00"
-                      className="w-full bg-transparent text-base text-[#191C1E] outline-none"
-                    />
-                    <span className="whitespace-nowrap pl-2 text-base text-[#6B7280]">
-                      {detail.unit}
-                    </span>
+              {group.activities.map((act) => (
+                <div key={act.activity_id} className="px-4 py-4">
+                  {/* หัวกลุ่ม: ชื่อกิจกรรม + จำนวนรายการในกลุ่ม */}
+                  <div className="mb-3 flex items-baseline gap-2">
+                    {/* ชื่อกิจกรรมเป็นสีของ scope (เดิมเขียวเหมือนกันทุก scope) */}
+                    <h3 className="text-sm font-semibold" style={{ color: color.text }}>
+                      {act.activity_name ?? 'ไม่ระบุกิจกรรม'}
+                    </h3>
+                    <span className="text-xs text-[#94A3B8]">{act.details.length} รายการ</span>
                   </div>
-                  {fieldErrors[detail.scopedetail_id] && (
-                    <p className="text-xs text-red-600">{fieldErrors[detail.scopedetail_id]}</p>
-                  )}
-                  {/* [เพิ่ม] ป้ายบอกว่าค่านี้เติมจากบิล (หายเมื่อผู้ใช้แก้ค่าเอง) */}
-                  {filled[detail.scopedetail_id] &&
-                    (values[detail.scopedetail_id] ?? '').trim() === filled[detail.scopedetail_id].value && (
-                      <p className="text-xs text-emerald-700">✓ เติมจากบิล {filled[detail.scopedetail_id].count} ใบ</p>
-                    )}
+                  <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+                    {act.details.map((detail) => (
+                      <div key={detail.scopedetail_id} className="space-y-1">
+                        <label className="block text-xs tracking-wide text-[#3E4943]">
+                          {detail.detail_name} {detail.unit ? `(${detail.unit})` : ''}
+                        </label>
+                        <div
+                          className={`flex h-11 items-center justify-between rounded-[20px] border bg-[#F7F9FB] px-[18px] ${
+                            fieldErrors[detail.scopedetail_id] ? 'border-red-500' : 'border-[#BDC9C1]'
+                          }`}
+                        >
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={values[detail.scopedetail_id] ?? ''}
+                            onChange={(e) => handleChange(detail.scopedetail_id, e.target.value)}
+                            placeholder="0.00"
+                            className="w-full bg-transparent text-base text-[#191C1E] outline-none"
+                          />
+                          <span className="whitespace-nowrap pl-2 text-base text-[#6B7280]">
+                            {detail.unit}
+                          </span>
+                        </div>
+                        {fieldErrors[detail.scopedetail_id] && (
+                          <p className="text-xs text-red-600">{fieldErrors[detail.scopedetail_id]}</p>
+                        )}
+                        {/* ป้ายบอกว่าค่านี้เติมจากบิล (หายเมื่อผู้ใช้แก้ค่าเอง) */}
+                        {filled[detail.scopedetail_id] &&
+                          (values[detail.scopedetail_id] ?? '').trim() === filled[detail.scopedetail_id].value && (
+                            <p className="flex items-center gap-1 text-xs text-emerald-700"><CheckIcon className="h-3.5 w-3.5" />เติมจากบิล {filled[detail.scopedetail_id].count} ใบ</p>
+                          )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* [เพิ่ม] error ระดับฟอร์ม (เช่น ยังไม่กรอกปริมาณเลย) แสดงเหนือปุ่ม แทน popup */}
+      {/* error ระดับฟอร์ม (เช่น ยังไม่กรอกปริมาณเลย) แสดงเหนือปุ่ม แทน popup */}
       {fieldErrors.form && <p className="mt-6 text-sm text-red-600">{fieldErrors.form}</p>}
       <div className="mt-8 flex items-center gap-4">
         <Link
-          // [แก้ไข] กลับไปขั้นที่ 1 พร้อม ?resume=1 เพื่อให้เห็นค่าข้อมูลสำนักงานที่กรอกไว้
+          // กลับไปขั้นที่ 1 พร้อม ?resume=1 เพื่อให้เห็นค่าข้อมูลสำนักงานที่กรอกไว้
           href={backHref}
-          className="flex h-[60px] items-center rounded-[20px] border border-[#BDC9C1] px-8 text-base font-semibold text-[#64748B]"
+          className="btn btn-outline flex h-[60px] items-center rounded-[20px] px-8 text-base font-semibold"
         >
           กลับ
         </Link>
         <button
           onClick={handleCalculate}
           disabled={loading}
-          className="h-[60px] w-[280px] rounded-[20px] bg-[#32885F] text-base font-semibold tracking-wide text-white disabled:opacity-60"
+          className="btn btn-primary h-[60px] w-[280px] rounded-[20px] text-base font-semibold tracking-wide"
         >
-          {loading
-            ? 'กำลังบันทึก...'
-            : isEdit
-            ? 'บันทึกการแก้ไขและคำนวณใหม่'
-            : 'คำนวณและดูรายงาน'}
+          {loading && 'กำลังบันทึก...'}
+          {!loading && isEdit && 'บันทึกการแก้ไขและคำนวณใหม่'}
+          {!loading && !isEdit && 'คำนวณและดูรายงาน'}
         </button>
       </div>
     </div>

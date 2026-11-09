@@ -1,3 +1,4 @@
+// หน้าจัดการเอกสารภาษีของแอดมิน: อัปโหลด แก้ชื่อ ลบ และดาวน์โหลดเอกสาร
 'use client';
 
 import { useRef, useState } from 'react';
@@ -9,10 +10,10 @@ import { validateForm, extendSchema, notDuplicate, validateFile, type formError 
 import { normalizeToArabicNumber, safeStorageName, fileBaseName, fileExtension } from '@/lib/normalization';
 import FieldError from '@/components/FieldError';
 import { docSchema, costSchema, DOC_FILE_RULE, type DocField, type CostField } from './schema';
-import { showError } from '@/lib/dialog'; // [แก้ไข] กล่องแจ้งเตือนกลางแทน alert
+import { showError } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert
 import { DownloadIcon, FileIcon, PencilIcon, PlusIcon, TrashIcon, UploadCloudIcon } from '@/components/icons';
 
-/* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
+/* สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) เอกสาร: ชื่อผ่าน normalize + validate (ห้ามว่าง/ตัวเลขล้วน/ซ้ำ/ยาวเกิน) แสดง error ใต้ช่องแทน alert
  * 2) ไฟล์: ตรวจนามสกุล (PDF, DOCX, XLSX) และขนาด (ไม่เกิน 25MB) ตามที่หน้าเว็บบอกไว้ (เดิมไม่ได้ตรวจจริง)
  * 3) ชื่อไฟล์ใน Storage เปลี่ยนเป็น เวลา-สุ่ม.นามสกุล (safeStorageName)
@@ -26,7 +27,7 @@ import { DownloadIcon, FileIcon, PencilIcon, PlusIcon, TrashIcon, UploadCloudIco
  */
 const BUCKET = 'documents';
 
-/* [แก้ไข] ไอคอนที่เคยเขียนไว้ในไฟล์นี้ ย้ายไปไว้ที่ components/icons.tsx (ใช้ร่วมกันทุกหน้า) */
+/* ไอคอนที่เคยเขียนไว้ในไฟล์นี้ ย้ายไปไว้ที่ components/icons.tsx (ใช้ร่วมกันทุกหน้า) */
 
 /* -------------------------------------------------------------------------- */
 /*  Helpers                                                                    */
@@ -40,7 +41,7 @@ function formatFileSize(bytes: number) {
   return `${Math.max(1, Math.round(kb))} KB`;
 }
 
-// [แก้ไข] ใช้ fileExtension กลาง (ไฟล์ไม่มีนามสกุล / ขึ้นต้นด้วยจุด จะได้ค่าว่าง)
+// ใช้ fileExtension กลาง (ไฟล์ไม่มีนามสกุล / ขึ้นต้นด้วยจุด จะได้ค่าว่าง)
 const extOf = (name: string) => fileExtension(name).toUpperCase();
 
 /* -------------------------------------------------------------------------- */
@@ -96,13 +97,14 @@ export default function AlloTaxDocClient({
   const [costVat, setCostVat] = useState<number>(7);
   const [costErrors, setCostErrors] = useState<formError<CostField>>({});
 
-  // [แก้ไข] เดิมใช้ Number(costPrice) ซึ่งรับเลขไทย/comma ไม่ได้ -> ใช้ normalizeToArabicNumber
+  // เดิมใช้ Number(costPrice) ซึ่งรับเลขไทย/comma ไม่ได้ -> ใช้ normalizeToArabicNumber
   const previewBase = normalizeToArabicNumber(costPrice);
   const netPreview = previewBase !== null && previewBase >= 0 ? previewBase * (1 + costVat / 100) : 0;
 
+  // ตรวจข้อมูลรายการค่าใช้จ่าย ถ้าถูกต้องจึงเพิ่มเข้ารายการ
   function handleAddCost(e: React.FormEvent) {
     e.preventDefault();
-    // [แก้ไข] เดิมเช็กแค่ว่าง และไม่บอกผู้ใช้ว่าผิดตรงไหน -> ใช้ schema + ห้ามชื่อซ้ำ
+    // เดิมเช็กแค่ว่าง และไม่บอกผู้ใช้ว่าผิดตรงไหน -> ใช้ schema + ห้ามชื่อซ้ำ
     const result = validateForm(
       { name: costName, price: costPrice },
       extendSchema(costSchema, { name: [notDuplicate('ชื่อรายการต้นทุน', costs.map((c) => c.name))] })
@@ -125,6 +127,7 @@ export default function AlloTaxDocClient({
     setCostVat(7);
   }
 
+  // เอารายการค่าใช้จ่ายออกจากรายการบนหน้า
   function handleDeleteCost(id: string) {
     setCosts((prev) => prev.filter((c) => c.id !== id));
   }
@@ -137,13 +140,14 @@ export default function AlloTaxDocClient({
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // กดปุ่มแล้วเปิดหน้าต่างเลือกไฟล์ของ input ที่ซ่อนไว้
   function pickFile() {
     fileInputRef.current?.click();
   }
 
-  // [เพิ่ม] error ใต้ช่องชื่อเอกสาร และของไฟล์ที่เลือก
+  // error ใต้ช่องชื่อเอกสาร และของไฟล์ที่เลือก
   const [docErrors, setDocErrors] = useState<formError<DocField | 'file'>>({});
-  // [เพิ่ม] แก้ไขชื่อเอกสาร
+  // แก้ไขชื่อเอกสาร
   const [editDoc, setEditDoc] = useState<AlloTaxDoc | null>(null);
   const [editDocName, setEditDocName] = useState('');
   const [editDocErrors, setEditDocErrors] = useState<formError<DocField>>({});
@@ -156,9 +160,10 @@ export default function AlloTaxDocClient({
       ],
     });
 
+  // ตรวจชนิดและขนาดไฟล์ทันทีที่ผู้ใช้เลือก
   function onFileChosen(f: File | undefined | null) {
     if (!f) return;
-    // [เพิ่ม] ตรวจนามสกุลและขนาดทันทีที่เลือก ไม่ต้องรอกดเพิ่มเอกสาร
+    // ตรวจนามสกุลและขนาดทันทีที่เลือก ไม่ต้องรอกดเพิ่มเอกสาร
     const check = validateFile(f, DOC_FILE_RULE);
     if (!check.ok) {
       setDocErrors((prev) => ({ ...prev, file: check.message }));
@@ -171,8 +176,9 @@ export default function AlloTaxDocClient({
     if (!docName.trim()) setDocName(fileBaseName(f.name));
   }
 
+  // ตรวจชื่อและไฟล์ อัปโหลดไฟล์ไป Storage แล้วบันทึกข้อมูลเอกสารลงตาราง
   async function handleAddDocument() {
-    // [แก้ไข] เดิม alert ทีละข้อ -> ตรวจทั้งชื่อและไฟล์พร้อมกัน แล้วแสดงใต้ช่อง
+    // เดิม alert ทีละข้อ -> ตรวจทั้งชื่อและไฟล์พร้อมกัน แล้วแสดงใต้ช่อง
     const errs: formError<DocField | 'file'> = {};
     const result = validateForm({ document_name: docName }, docNameSchema(null));
     if (!result.ok) errs.document_name = result.errors.document_name;
@@ -186,7 +192,7 @@ export default function AlloTaxDocClient({
 
     setUploading(true);
 
-    // [แก้ไข] เดิมใช้ `${Date.now()}-${ชื่อไฟล์จริง}` ชื่อภาษาไทยทำให้อัปโหลดไม่ผ่าน
+    // เดิมใช้ `${Date.now()}-${ชื่อไฟล์จริง}` ชื่อภาษาไทยทำให้อัปโหลดไม่ผ่าน
     const filePath = safeStorageName(pendingFile.name);
 
     const { error: uploadError } = await supabase.storage
@@ -199,7 +205,7 @@ export default function AlloTaxDocClient({
       return;
     }
 
-    // [แก้ไข] บันทึกผ่านฟังก์ชันกลาง (แปลง error ของ DB เป็นข้อความที่อ่านเข้าใจ)
+    // บันทึกผ่านฟังก์ชันกลาง (แปลง error ของ DB เป็นข้อความที่อ่านเข้าใจ)
     const created = await insertRecord<AlloTaxDoc>(
       'documents',
       { document_name: result.clean.document_name, file_path: filePath },
@@ -221,13 +227,14 @@ export default function AlloTaxDocClient({
     setUploading(false);
   }
 
-  // [เพิ่ม] แก้ไขชื่อเอกสาร (ไฟล์เดิมคงไว้)
+  // แก้ไขชื่อเอกสาร (ไฟล์เดิมคงไว้)
   function openEditDoc(doc: AlloTaxDoc) {
     setEditDoc(doc);
     setEditDocName(doc.document_name ?? '');
     setEditDocErrors({});
   }
 
+  // บันทึกชื่อเอกสารที่แก้ไขลงตาราง
   async function handleSaveDocName(e: React.FormEvent) {
     e.preventDefault();
     if (!editDoc) return;
@@ -243,8 +250,9 @@ export default function AlloTaxDocClient({
     setEditDoc(null);
   }
 
+  // ลบข้อมูลเอกสารในตารางก่อน แล้วจึงลบไฟล์ใน Storage
   async function handleDeleteDocument(doc: AlloTaxDoc) {
-    // [แก้ไข] ลบแถวใน DB ก่อน (ถามยืนยันใน deleteRecord) แล้วค่อยลบไฟล์
+    // ลบแถวใน DB ก่อน (ถามยืนยันใน deleteRecord) แล้วค่อยลบไฟล์
     // เดิมลบไฟล์ก่อน ถ้าลบแถวไม่ผ่าน (เช่น ไม่มีสิทธิ์) จะเหลือแถวที่ชี้ไปยังไฟล์ที่หายไปแล้ว
     const ok = await deleteRecord(
       'documents',
@@ -267,6 +275,7 @@ export default function AlloTaxDocClient({
     setDocuments((prev) => prev.filter((d) => d.document_id !== doc.document_id));
   }
 
+  // ดาวน์โหลดเอกสาร ถ้าเก็บเป็นลิงก์เว็บจะเปิดลิงก์นั้น ถ้าเป็นไฟล์จะโหลดจาก Storage
   async function handleDownloadDocument(doc: AlloTaxDoc) {
     if (!doc.file_path) return;
 
@@ -312,12 +321,12 @@ export default function AlloTaxDocClient({
       <section className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-xl font-bold text-[#1E293B]">
-            <span className="h-[6px] w-[7px] rounded-full bg-[#266955]" />
+            <span className="h-[6px] w-[7px] rounded-full bg-[#32885F]" />
             เป้าหมายโครงการ
           </h2>
           <button
             type="button"
-            className="flex items-center gap-1.5 rounded-lg bg-[#266955] px-4 py-2 text-xs text-white shadow-sm hover:bg-[#1f5747]"
+            className="btn btn-create flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs"
           >
             <PlusIcon className="h-2.5 w-2.5" />
             เพิ่มเป้าหมาย
@@ -378,7 +387,7 @@ export default function AlloTaxDocClient({
       {/* ---------------------------------------------------------------- */}
       <section className="flex flex-col gap-4">
         <h2 className="flex items-center gap-2 text-xl font-bold text-[#1E293B]">
-          <span className="h-[6px] w-[7px] rounded-full bg-[#266955]" />
+          <span className="h-[6px] w-[7px] rounded-full bg-[#32885F]" />
           ต้นทุนโครงการ
         </h2>
 
@@ -397,7 +406,7 @@ export default function AlloTaxDocClient({
             </div>
             <div className="flex w-[180px] flex-col gap-1">
               <label className="text-xs text-[#475569]">ราคา (บาท)</label>
-              {/* [แก้ไข] type="number" -> text + inputMode เพื่อให้พิมพ์เลขไทย/comma ได้ แล้ว normalize เอง */}
+              {/* type="number" -> text + inputMode เพื่อให้พิมพ์เลขไทย/comma ได้ แล้ว normalize เอง */}
               <input
                 type="text"
                 inputMode="decimal"
@@ -433,7 +442,7 @@ export default function AlloTaxDocClient({
             </div>
             <button
               type="submit"
-              className="mt-5 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg bg-[#266955] text-white shadow-sm hover:bg-[#1f5747]"
+              className="btn btn-create mt-5 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg"
               aria-label="เพิ่มรายการต้นทุน"
             >
               <PlusIcon className="h-3 w-3" />
@@ -496,7 +505,7 @@ export default function AlloTaxDocClient({
       {/* ---------------------------------------------------------------- */}
       <section className="flex flex-col gap-4">
         <h2 className="flex items-center gap-2 text-xl font-bold text-[#1E293B]">
-          <span className="h-[6px] w-[7px] rounded-full bg-[#266955]" />
+          <span className="h-[6px] w-[7px] rounded-full bg-[#32885F]" />
           เอกสารโครงการ
         </h2>
 
@@ -554,7 +563,7 @@ export default function AlloTaxDocClient({
               type="button"
               disabled={uploading}
               onClick={handleAddDocument}
-              className="flex items-center justify-center gap-1.5 self-start rounded-lg border border-[#BCE2D4]/60 bg-[#3C6E5C] px-3 py-2 text-xs text-white shadow-sm hover:bg-[#33604F] disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn btn-create flex items-center justify-center gap-1.5 self-start rounded-lg px-3 py-2 text-xs"
             >
               <PlusIcon className="h-2.5 w-2.5" />
               {uploading ? 'กำลังอัปโหลด...' : 'เพิ่มเอกสาร'}
@@ -621,7 +630,7 @@ export default function AlloTaxDocClient({
         </div>
       </section>
 
-      {/* [เพิ่ม] Modal แก้ไขชื่อเอกสาร */}
+      {/* Modal แก้ไขชื่อเอกสาร */}
       {editDoc && (
         <ModalShell onClose={() => setEditDoc(null)}>
           <form onSubmit={handleSaveDocName} className="space-y-4" noValidate>

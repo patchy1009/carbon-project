@@ -1,5 +1,5 @@
 // lib/bills/aggregate.ts
-/* [เพิ่มใหม่] รวมยอดจากบิลที่ "ยืนยันแล้ว" แยกตามช่องกิจกรรม แล้วแปลงเป็นหน่วยของช่องนั้น
+/* รวมยอดจากบิลที่ "ยืนยันแล้ว" แยกตามช่องกิจกรรม แล้วแปลงเป็นหน่วยของช่องนั้น
  * กติกากันนับซ้ำ:
  *   - บิลซ้ำ (ไฟล์เดียวกัน/เลขบิลเดียวกัน) ถูกตัดตั้งแต่ checks.ts จึงไม่มาถึงที่นี่
  *   - รายเดือน: บิลทุกใบของเดือนนั้นรวมกัน (เช่น หลายมิเตอร์ หรือเติมน้ำมันหลายครั้ง)
@@ -59,17 +59,20 @@ export type GapState = Record<string, Record<number, GapChoice>>;
 
 const manualRule = isDecimal('ปริมาณ', { allowNegative: false, maxDecimals: 4 });
 
+type MonthSource = 'bill' | 'manual' | 'prev' | null; // ยอดของเดือนนั้นมาจากไหน
+
 export type YearResolution = {
   values: (number | null)[];                                   // ยอดแต่ละเดือนหลังเติมช่องว่าง
-  source: ('bill' | 'manual' | 'prev' | null)[];
+  source: MonthSource[];
   errors: (string | null)[];                                   // error ของช่องกรอกเอง
   missing: number[];                                           // เดือน (1-12) ที่ยังไม่มีค่า
   total: number;
 };
 
+// รวมยอดรายเดือนของทั้งปี โดยเติมเดือนที่ไม่มีบิลตามวิธีที่ผู้ใช้เลือก
 export function resolveYear(s: TargetSummary, gaps: Record<number, GapChoice> = {}): YearResolution {
   const values: (number | null)[] = [];
-  const source: YearResolution['source'] = [];
+  const source: MonthSource[] = [];
   const errors: (string | null)[] = [];
   for (let i = 0; i < 12; i++) {
     errors.push(null);
@@ -101,8 +104,15 @@ export function resolveYear(s: TargetSummary, gaps: Record<number, GapChoice> = 
       source.push(null);
     }
   }
-  const missing = values.flatMap((v, i) => (v === null ? [i + 1] : []));
-  const total = round4(values.reduce<number>((sum, v) => sum + (v ?? 0), 0));
+  // เก็บเดือนที่ยังไม่มีค่า และรวมยอดของเดือนที่มีค่า
+  const missing: number[] = [];
+  let sum = 0;
+  for (let i = 0; i < 12; i++) {
+    const v = values[i];
+    if (v === null) missing.push(i + 1);
+    else sum += v;
+  }
+  const total = round4(sum);
   return { values, source, errors, missing, total };
 }
 

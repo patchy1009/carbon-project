@@ -1,3 +1,4 @@
+// ชนิดข้อมูลของหน้า EF และ GWP (ตรงกับคอลัมน์ในตาราง)
 export interface EfType {
   eftype_id: string;
   type_name: string | null;

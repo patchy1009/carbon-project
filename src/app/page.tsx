@@ -25,6 +25,7 @@ export default function Home() {
 */
 import { redirect } from "next/navigation";
 
+// หน้าแรกของเว็บ พาไปหน้าเข้าสู่ระบบทันที
 export default function Home() {
   //redirect("/admin/ef-gwp");
   redirect("/organization/login");

@@ -1,6 +1,6 @@
 import { PencilIcon, TrashIcon } from './icons';
 
-/* [กลาง] ปุ่ม "แก้ไข" + "ลบ" ท้ายแถวของตารางฝั่ง admin (เดิมเขียนซ้ำทุกตารางทุกหน้า)
+/* ปุ่ม "แก้ไข" + "ลบ" ท้ายแถวของตารางฝั่ง admin (เดิมเขียนซ้ำทุกตารางทุกหน้า)
  * ใช้: <RowActions onEdit={() => openModal(row)} onDelete={() => handleDelete(row.id)} />
  * แก้สี/ระยะห่างของปุ่มที่ไฟล์นี้ที่เดียว ทุกตารางเปลี่ยนตาม */
 export default function RowActions({

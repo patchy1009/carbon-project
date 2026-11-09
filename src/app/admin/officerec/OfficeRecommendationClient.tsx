@@ -1,3 +1,4 @@
+// หน้าจัดการแนวทางลดคาร์บอนของแอดมิน: เพิ่มหัวข้อข้อมูลสำนักงาน แนวทาง และเงื่อนไขของแนวทาง
 'use client';
 
 import { useState } from 'react';
@@ -5,14 +6,14 @@ import { supabase } from '@/lib/supabaseClient';
 import { dbErrorMessage, deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
 import { validateForm, extendSchema, notDuplicate, existsIn, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber } from '@/lib/normalization';
-import { showConfirm, showError } from '@/lib/dialog'; // [แก้ไข] กล่องแจ้งเตือนกลางแทน alert/confirm
+import { showConfirm, showError } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert/confirm
 import { infoSchema, recSchema, condValueSchema, type InfoField, type RecField } from './schema';
-import RowActions from '@/components/RowActions'; // [แก้ไข] ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
-import { inputClass } from '@/components/formStyles'; // [แก้ไข] class ช่องกรอกกลาง
+import RowActions from '@/components/RowActions'; // ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
+import { inputClass } from '@/components/formStyles'; // class ช่องกรอกกลาง
 import { ModalShell } from '@/components/Modal';
 import FieldError from '@/components/FieldError';
 
-/* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
+/* สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) ลบตัวช่วยตรวจที่เขียนซ้ำในไฟล์ (cleanText/cleanNumber/isNumeric/isNumberOnlyText)
  *    แล้วใช้ schema.ts + validation.ts / normalization.ts กลางแทน
  * 2) หัวข้อข้อมูลสำนักงาน: เดิมตรวจแค่ชื่อ ตอนนี้ตรวจหน่วย (ไทย/อังกฤษได้) และคำอธิบายด้วย + ห้ามชื่อซ้ำ
@@ -102,6 +103,7 @@ const emptyOperand: OperandForm = {
   scope_number: '1',
   metric: 'amount',
 };
+// สร้างเงื่อนไขว่าง 1 แถวสำหรับฟอร์ม
 const newCond = (): CondForm => ({
   mode: 'single',
   num: { ...emptyOperand },
@@ -110,10 +112,10 @@ const newCond = (): CondForm => ({
   value: '',
 });
 
-// [แก้ไข] ตัวช่วยตรวจที่เคยอยู่ตรงนี้ย้ายไปใช้ไฟล์กลางแล้ว (ดู schema.ts)
+// ตัวช่วยตรวจที่เคยอยู่ตรงนี้ย้ายไปใช้ไฟล์กลางแล้ว (ดู schema.ts)
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-// [เพิ่ม] แปลงเงื่อนไขที่บันทึกแล้ว (CondRow) กลับเป็นค่าในฟอร์ม เพื่อใช้ตอนแก้ไขแนวทาง
+// แปลงเงื่อนไขที่บันทึกแล้ว (CondRow) กลับเป็นค่าในฟอร์ม เพื่อใช้ตอนแก้ไขแนวทาง
 const rowToOperand = (
   source_type: SourceType,
   scopedetail_id: string | null,
@@ -127,6 +129,7 @@ const rowToOperand = (
   scope_number: String(scope_number ?? 1),
   metric: metric ?? 'amount',
 });
+// แปลงเงื่อนไขจากฐานข้อมูลให้อยู่ในรูปแบบของฟอร์ม
 const rowToCond = (c: CondRow): CondForm => ({
   mode: c.den_source_type ? 'ratio' : 'single',
   num: rowToOperand(c.source_type, c.scopedetail_id, c.info_id, c.scope_number, c.metric),
@@ -138,7 +141,7 @@ const rowToCond = (c: CondRow): CondForm => ({
 });
 
 // ---------- component ย่อย ----------
-/* [แก้ไข] Dialog / Err ที่เคยเขียนไว้ในไฟล์นี้ ย้ายไปใช้ ModalShell (components/Modal) และ FieldError กลางแทน */
+/* Dialog / Err ที่เคยเขียนไว้ในไฟล์นี้ ย้ายไปใช้ ModalShell (components/Modal) และ FieldError กลางแทน */
 
 // ตัวเลือก 1 ค่า (ตัวตั้ง หรือ ตัวหาร)
 function OperandPicker({
@@ -152,6 +155,7 @@ function OperandPicker({
   activityOptions: ActivityOption[];
   infoTypes: InfoType[];
 }) {
+  // แก้ค่าบางช่อง แล้วส่งค่าทั้งหมดกลับไปให้ฟอร์มหลัก
   const set = (p: Partial<OperandForm>) => onChange({ ...v, ...p });
 
   return (
@@ -222,6 +226,7 @@ function OperandPicker({
   );
 }
 
+// หน้าจอหลัก รับข้อมูลเริ่มต้นจาก page.tsx แล้วเก็บใน state เพื่อให้แก้ไขบนหน้าได้ทันที
 export default function OfficeRecommendationClient({
   initialInfoTypes,
   initialRecs,
@@ -239,18 +244,19 @@ export default function OfficeRecommendationClient({
 
   const [infoForm, setInfoForm] = useState({ info_name: '', unit: '', info_detail: '' });
   const [infoErrors, setInfoErrors] = useState<formError<InfoField>>({});
-  const [editInfoId, setEditInfoId] = useState<string | null>(null); // [เพิ่ม] null = เพิ่มใหม่
+  const [editInfoId, setEditInfoId] = useState<string | null>(null); // null = เพิ่มใหม่
 
   const [recForm, setRecForm] = useState<RecForm>(emptyRec);
   const [conds, setConds] = useState<CondForm[]>([]);
   // conds = ข้อความ error รวมของเงื่อนไข (ไม่ใช่ช่องในตาราง จึงเพิ่มเป็น key พิเศษ)
   const [recErrors, setRecErrors] = useState<formError<RecField | 'conds'>>({});
-  const [editRecId, setEditRecId] = useState<string | null>(null); // [เพิ่ม] null = เพิ่มใหม่
+  const [editRecId, setEditRecId] = useState<string | null>(null); // null = เพิ่มใหม่
   const [saving, setSaving] = useState(false);
 
   // ---------- ตัวช่วยแสดงผล ----------
   const actName = (id: string | null) =>
     activityOptions.find((a) => a.scopedetail_id === id)?.detail_name ?? 'กิจกรรมที่ถูกลบ';
+  // หาชื่อหัวข้อข้อมูลสำนักงานจาก id ถ้าหาไม่เจอแปลว่าหัวข้อถูกลบแล้ว
   const infoName = (id: string | null) =>
     infoTypes.find((i) => i.info_id === id)?.info_name ?? 'หัวข้อที่ถูกลบ';
 
@@ -284,6 +290,7 @@ export default function OfficeRecommendationClient({
     }
   }
 
+  // สร้างข้อความอธิบายเงื่อนไขสำหรับแสดงในตาราง
   function describeCond(c: CondRow): string {
     const num: OperandLike = {
       source_type: c.source_type,
@@ -300,11 +307,13 @@ export default function OfficeRecommendationClient({
         scope_number: c.den_scope_number,
         metric: c.den_metric,
       };
-      return `(${operandText(num)}) ÷ (${operandText(den)}) ${c.operator} ${c.value}`;
+      // เดิมแสดง "(A) ÷ (B) > 5" -> "A ต่อ B > 5" อ่านเป็นภาษาพูดได้ เช่น "ปริมาณน้ำ ต่อ จำนวนพนักงาน > 25"
+      return `${operandText(num)} ต่อ ${operandText(den)} ${c.operator} ${c.value}`;
     }
     return `${operandText(num)} ${c.operator} ${c.value}`;
   }
 
+  // สร้างข้อความเปอร์เซ็นต์ที่ลดได้ เช่น 5% หรือ 5–10%
   const percentText = (r: RecRow) => {
     const mid = r.carbon_reduction_amount;
     if (r.percent_min && r.percent_max && r.percent_min !== r.percent_max) {
@@ -314,7 +323,7 @@ export default function OfficeRecommendationClient({
   };
 
   // ================= หัวข้อข้อมูลสำนักงาน =================
-  // [เพิ่ม] เปิด popup หัวข้อ: ไม่ส่ง row = เพิ่ม / ส่ง row = แก้ไข
+  // เปิด popup หัวข้อ: ไม่ส่ง row = เพิ่ม / ส่ง row = แก้ไข
   function openInfoModal(row?: InfoType) {
     setEditInfoId(row?.info_id ?? null);
     setInfoForm({
@@ -326,10 +335,11 @@ export default function OfficeRecommendationClient({
     setShowInfoModal(true);
   }
 
+  // ตรวจและบันทึกหัวข้อข้อมูลสำนักงาน ทั้งเพิ่มใหม่และแก้ไข
   async function handleSaveInfo(e: React.FormEvent) {
     e.preventDefault();
 
-    // [แก้ไข] ใช้ schema กลาง + ห้ามชื่อหัวข้อซ้ำ (ไม่นับหัวข้อที่กำลังแก้ไข)
+    // ใช้ schema กลาง + ห้ามชื่อหัวข้อซ้ำ (ไม่นับหัวข้อที่กำลังแก้ไข)
     const others = infoTypes.filter((i) => i.info_id !== editInfoId).map((i) => i.info_name);
     const result = validateForm(
       infoForm,
@@ -366,6 +376,7 @@ export default function OfficeRecommendationClient({
     setInfoForm({ info_name: '', unit: '', info_detail: '' });
   }
 
+  // ลบหัวข้อข้อมูลสำนักงาน ถ้ามีแนวทางใช้อยู่จะถามยืนยันก่อน
   async function handleDeleteInfo(id: string) {
     // ถ้ามีบริษัทกรอกข้อมูลหัวข้อนี้ไว้แล้ว ฐานข้อมูลจะไม่ให้ลบ
     // ถ้ามีเงื่อนไขของแนวทางอ้างถึงหัวข้อนี้ เงื่อนไขนั้นจะถูกลบตาม (แนวทางอาจเหลือเงื่อนไขน้อยลง)
@@ -394,7 +405,7 @@ export default function OfficeRecommendationClient({
   }
 
   // ================= แนวทางลดคาร์บอน =================
-  // [แก้ไข] รับ row ได้ เพื่อเปิดในโหมดแก้ไข (เติมค่าเดิม + เงื่อนไขเดิม)
+  // รับ row ได้ เพื่อเปิดในโหมดแก้ไข (เติมค่าเดิม + เงื่อนไขเดิม)
   function openRecModal(row?: RecRow) {
     setEditRecId(row?.rec_uid ?? null);
     setRecForm(
@@ -415,7 +426,7 @@ export default function OfficeRecommendationClient({
   }
 
   // ตรวจ 1 ค่าในเงื่อนไข คืนข้อความ error หรือ null
-  // [แก้ไข] เพิ่มการตรวจว่ากิจกรรม/หัวข้อที่เลือก "ยังมีอยู่จริง" (อาจถูกลบไปแล้วตอนแก้ไขแนวทางเก่า)
+  // เพิ่มการตรวจว่ากิจกรรม/หัวข้อที่เลือก "ยังมีอยู่จริง" (อาจถูกลบไปแล้วตอนแก้ไขแนวทางเก่า)
   function operandError(o: OperandForm): string | null {
     if (o.source_type === 'activity') {
       if (!o.scopedetail_id) return 'กรุณาเลือกกิจกรรม';
@@ -429,6 +440,7 @@ export default function OfficeRecommendationClient({
     return null;
   }
 
+  // ตรวจข้อมูลแนวทางและเงื่อนไขทั้งหมด แล้วคืน error กับค่าที่พร้อมบันทึก
   function validateRec() {
     // ---- ช่องหลักของแนวทาง: ใช้ schema กลาง + ห้ามชื่อซ้ำ + กิจกรรมที่ผูกต้องมีอยู่จริง ----
     const others = recs.filter((r) => r.rec_uid !== editRecId).map((r) => r.recommendation);
@@ -456,24 +468,25 @@ export default function OfficeRecommendationClient({
 
       const e1 = operandError(c.num);
       if (e1) {
-        errs.conds = `${label}: ${e1}${c.mode === 'ratio' ? ' (ตัวตั้ง)' : ''}`;
+        // เลิกใช้คำว่า ตัวตั้ง/ตัวหาร -> ค่า A / ค่า B ให้ตรงกับหน้าจอ
+        errs.conds = `${label}: ${e1}${c.mode === 'ratio' ? ' (ค่า A)' : ''}`;
         break;
       }
 
       if (c.mode === 'ratio') {
         const e2 = operandError(c.den);
         if (e2) {
-          errs.conds = `${label}: ${e2} (ตัวหาร)`;
+          errs.conds = `${label}: ${e2} (ค่า B)`;
           break;
         }
         // A ÷ A = 1 เสมอ ไม่มีความหมาย
         if (JSON.stringify(c.num) === JSON.stringify(c.den)) {
-          errs.conds = `${label}: ตัวตั้งและตัวหารต้องไม่ใช่ค่าเดียวกัน`;
+          errs.conds = `${label}: ค่า A และค่า B ต้องไม่ใช่ค่าเดียวกัน`;
           break;
         }
       }
 
-      // [แก้ไข] ค่าที่เทียบใช้ schema กลาง: ไม่ติดลบ ทศนิยมไม่เกิน 4 หลัก รับเลขไทย/comma ได้
+      // ค่าที่เทียบใช้ schema กลาง: ไม่ติดลบ ทศนิยมไม่เกิน 4 หลัก รับเลขไทย/comma ได้
       const v = validateForm({ value: c.value }, condValueSchema);
       if (!v.ok) {
         errs.conds = `${label}: ${v.errors.value}`;
@@ -482,7 +495,7 @@ export default function OfficeRecommendationClient({
       condValues.push(normalizeToArabicNumber(v.clean.value) ?? 0);
     }
 
-    // [เพิ่ม] เงื่อนไขซ้ำกันทุกส่วน (ค่า/ตัวดำเนินการ/ตัวเลขเหมือนกัน) ไม่มีประโยชน์
+    // เงื่อนไขซ้ำกันทุกส่วน (ค่า/ตัวดำเนินการ/ตัวเลขเหมือนกัน) ไม่มีประโยชน์
     if (!errs.conds) {
       const keys = conds.map((c, i) =>
         JSON.stringify([c.mode, c.num, c.mode === 'ratio' ? c.den : null, c.operator, condValues[i]])
@@ -502,6 +515,7 @@ export default function OfficeRecommendationClient({
     scope_number: o.source_type === 'scope' ? Number(o.scope_number) : null,
     metric: o.source_type === 'activity' ? o.metric : null,
   });
+  // แปลงค่า B ของเงื่อนไขแบบเทียบ 2 ค่าให้ตรงกับคอลัมน์ในตาราง
   const denCols = (o: OperandForm | null) => ({
     den_source_type: o ? o.source_type : null,
     den_scopedetail_id: o && o.source_type === 'activity' ? o.scopedetail_id : null,
@@ -510,6 +524,7 @@ export default function OfficeRecommendationClient({
     den_metric: o && o.source_type === 'activity' ? o.metric : null,
   });
 
+  // บันทึกแนวทางและเงื่อนไข ทั้งเพิ่มใหม่และแก้ไข
   async function handleSaveRec(e: React.FormEvent) {
     e.preventDefault();
 
@@ -544,13 +559,13 @@ export default function OfficeRecommendationClient({
         ...numCols(c.num),
         ...denCols(c.mode === 'ratio' ? c.den : null),
         operator: c.operator,
-        value: condValues[i], // [แก้ไข] เดิม Number(cleanNumber(c.value)) ซ้ำงานกับตอนตรวจ
+        value: condValues[i], // เดิม Number(cleanNumber(c.value)) ซ้ำงานกับตอนตรวจ
       }));
 
-    // ===== [เพิ่ม] โหมดแก้ไข =====
+    // ===== โหมดแก้ไข =====
     if (editRecId) {
       const old = recs.find((r) => r.rec_uid === editRecId);
-      // 1) แก้แนวทาง [แก้ไข] ตั้ง status = 'published' ด้วย (แนวทางเก่าที่เคยเป็นร่าง แก้แล้วกลายเป็นใช้งาน)
+      // 1) แก้แนวทาง ตั้ง status = 'published' ด้วย (แนวทางเก่าที่เคยเป็นร่าง แก้แล้วกลายเป็นใช้งาน)
       const updated = await updateRecord<RecRow>(
         'carbon_reduction_recommendation', 'rec_uid', editRecId, { ...recValues, status: 'published' }, '*', 'แก้ไขแนวทาง'
       );
@@ -588,7 +603,7 @@ export default function OfficeRecommendationClient({
     }
 
     // ===== โหมดเพิ่มใหม่ =====
-    // 1) บันทึกแนวทาง [แก้ไข] เดิมเริ่มเป็น 'draft' ต้องกด "เผยแพร่" ก่อน
+    // 1) บันทึกแนวทาง เดิมเริ่มเป็น 'draft' ต้องกด "เผยแพร่" ก่อน
     //    ตอนนี้บันทึกแล้วพร้อมแนะนำทันที (คอลัมน์ status ยังอยู่ใน DB จึงเก็บเป็น 'published')
     const created = await insertRecord<RecRow>(
       'carbon_reduction_recommendation',
@@ -625,6 +640,7 @@ export default function OfficeRecommendationClient({
     setShowRecModal(false);
   }
 
+  // ลบแนวทาง เงื่อนไขของแนวทางจะถูกลบตามอัตโนมัติ
   async function handleDeleteRec(id: string) {
     // เงื่อนไขของแนวทางนี้ถูกลบตามอัตโนมัติ
     const ok = await deleteRecord(
@@ -645,8 +661,9 @@ export default function OfficeRecommendationClient({
     setConds((prev) => prev.map((x, j) => (j === i ? { ...x, ...patch } : x)));
 
   // ข้อความ "หน่วยของค่าที่เทียบ" ของเงื่อนไข 1 ข้อใน popup
+  // เดิม "kWh ÷ คน" -> "kWh ต่อ คน"
   const unitHint = (c: CondForm) =>
-    c.mode === 'ratio' ? `${operandUnit(c.num)} ÷ ${operandUnit(c.den)}` : operandUnit(c.num);
+    c.mode === 'ratio' ? `${operandUnit(c.num)} ต่อ ${operandUnit(c.den)}` : operandUnit(c.num);
 
   const sortedRecs = recs
     .slice()
@@ -666,7 +683,7 @@ export default function OfficeRecommendationClient({
           </h2>
           <button
             onClick={() => openInfoModal()}
-            className="rounded-lg bg-[#266955] px-3 py-1.5 text-xs text-white shadow-sm"
+            className="btn btn-create rounded-lg px-3 py-1.5 text-xs"
           >
             + เพิ่มหัวข้อ
           </button>
@@ -717,7 +734,7 @@ export default function OfficeRecommendationClient({
           </div>
           <button
             onClick={() => openRecModal()}
-            className="rounded-lg bg-[#266955] px-3 py-1.5 text-xs text-white shadow-sm"
+            className="btn btn-create rounded-lg px-3 py-1.5 text-xs"
           >
             + เพิ่มแนวทาง
           </button>
@@ -793,7 +810,7 @@ export default function OfficeRecommendationClient({
               />
               <FieldError message={infoErrors.info_name} />
             </div>
-            {/* [แก้ไข] เดิมหน่วยและคำอธิบายไม่มีการตรวจ/ไม่แสดง error */}
+            {/* เดิมหน่วยและคำอธิบายไม่มีการตรวจ/ไม่แสดง error */}
             <div>
               <input
                 className={inputClass(!!infoErrors.unit)}
@@ -819,13 +836,13 @@ export default function OfficeRecommendationClient({
               <button
                 type="button"
                 onClick={() => setShowInfoModal(false)}
-                className="rounded-lg border px-4 py-2 text-sm"
+                className="btn btn-outline rounded-lg px-4 py-2 text-sm"
               >
                 ยกเลิก
               </button>
               <button
                 type="submit"
-                className="rounded-lg bg-[#059669] px-4 py-2 text-sm text-white"
+                className="btn btn-primary rounded-lg px-4 py-2 text-sm"
               >
                 บันทึก
               </button>
@@ -914,14 +931,14 @@ export default function OfficeRecommendationClient({
                 <button
                   type="button"
                   onClick={() => setConds((prev) => [...prev, newCond()])}
-                  className="text-sm font-semibold text-[#266955]"
+                  className="rounded-md px-2 py-1 text-sm font-semibold text-[#266955] transition hover:bg-[#EAF5EF]"
                 >
                   + เพิ่มเงื่อนไข
                 </button>
               </div>
               <p className="mb-3 text-xs text-[#94A3B8]">
                 ค่าในเงื่อนไขเทียบกับข้อมูล 1 รายการบันทึกขององค์กร ซึ่งถือเป็นข้อมูล 1 ปี
-                ถ้าข้อมูลที่ใช้เทียบไม่มี หรือตัวหารเป็น 0 เงื่อนไขนั้นไม่ผ่าน
+                ถ้าข้อมูลที่ใช้เทียบไม่มี หรือค่า B เป็น 0 เงื่อนไขนั้นไม่ผ่าน
                 ถ้าไม่ใส่เงื่อนไขเลย แนวทางนี้จะถูกแนะนำให้ทุกองค์กร
               </p>
 
@@ -948,7 +965,8 @@ export default function OfficeRecommendationClient({
                             checked={c.mode === 'ratio'}
                             onChange={() => setCond(i, { mode: 'ratio' })}
                           />
-                          อัตราส่วน (A ÷ B)
+                          {/* เดิม "อัตราส่วน (A ÷ B)" */}
+                          เทียบ 2 ค่า (A เทียบ B)
                         </label>
                       </div>
                       <button
@@ -962,8 +980,9 @@ export default function OfficeRecommendationClient({
 
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
+                        {/* เดิม "A (ตัวตั้ง)" -> "ค่า A" */}
                         {c.mode === 'ratio' && (
-                          <span className="w-16 text-xs font-bold">A (ตัวตั้ง)</span>
+                          <span className="w-20 text-xs font-bold">ค่า A</span>
                         )}
                         <OperandPicker
                           v={c.num}
@@ -975,7 +994,8 @@ export default function OfficeRecommendationClient({
 
                       {c.mode === 'ratio' && (
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="w-16 text-xs font-bold">B (ตัวหาร)</span>
+                          {/* เดิม "B (ตัวหาร)" -> "เทียบกับ B" */}
+                          <span className="w-20 text-xs font-bold">เทียบกับ B</span>
                           <OperandPicker
                             v={c.den}
                             onChange={(next) => setCond(i, { den: next })}
@@ -1005,9 +1025,27 @@ export default function OfficeRecommendationClient({
                           onChange={(e) => setCond(i, { value: e.target.value })}
                         />
                         <span className="text-xs text-[#64748B]">
-                          หน่วยของค่าที่เทียบ: <b>{unitHint(c)}</b>
+                          หน่วย: <b>{unitHint(c)}</b>
                         </span>
                       </div>
+
+                      {/* หมายเหตุอธิบายการเทียบ 2 ค่า พร้อมตัวอย่าง (แสดงเฉพาะเมื่อเลือก "เทียบ 2 ค่า") */}
+                      {c.mode === 'ratio' && (
+                        <div className="rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-xs leading-5 text-[#475569]">
+                          <p className="font-semibold text-[#334155]">หมายเหตุ: “A เทียบ B” คือ ค่า A ต่อ B 1 หน่วย</p>
+                          <p className="mt-1">
+                            ตัวอย่าง: A = ปริมาณการใช้น้ำ, B = จำนวนพนักงาน
+                            → ระบบดูว่า <b>พนักงาน 1 คน ใช้น้ำเท่าไร</b>
+                          </p>
+                          <p>
+                            องค์กรใช้น้ำ 1,200 ลบ.ม. มีพนักงาน 40 คน = 1,200 / 40 ={' '}
+                            <b>30 ลบ.ม. ต่อคน</b> ถ้าตั้งเงื่อนไข “มากกว่า 25” องค์กรนี้จะได้รับคำแนะนำ
+                          </p>
+                          <p className="mt-1 text-[#94A3B8]">
+                            ลำดับมีผล: ถ้าสลับเป็น A = จำนวนพนักงาน, B = ปริมาณการใช้น้ำ จะได้ “พนักงานต่อน้ำ 1 ลบ.ม.” (40 / 1,200 = 0.03)
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1019,16 +1057,18 @@ export default function OfficeRecommendationClient({
               <button
                 type="button"
                 onClick={() => setShowRecModal(false)}
-                className="rounded-lg border px-4 py-2 text-sm"
+                className="btn btn-outline rounded-lg px-4 py-2 text-sm"
               >
                 ยกเลิก
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="rounded-lg bg-[#059669] px-4 py-2 text-sm text-white disabled:opacity-60"
+                className="btn btn-primary rounded-lg px-4 py-2 text-sm"
               >
-                {saving ? 'กำลังบันทึก...' : editRecId ? 'บันทึกการแก้ไข' : 'บันทึก'}
+                {saving && 'กำลังบันทึก...'}
+                {!saving && editRecId && 'บันทึกการแก้ไข'}
+                {!saving && !editRecId && 'บันทึก'}
               </button>
             </div>
           </form>

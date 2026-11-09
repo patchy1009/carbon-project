@@ -1,7 +1,7 @@
 import { required, notNumericOnly, isDecimal, maxLength, type formSchema } from '@/lib/validation';
 import { normalizeNumberString } from '@/lib/normalization';
 
-/* [เพิ่มใหม่] schema ของหน้า Allocation & TAX & Doc */
+/* schema ของหน้า Allocation & TAX & Doc */
 
 /* เอกสารโครงการ (บันทึกลงตาราง documents + Storage bucket documents) */
 export type DocField = 'document_name';

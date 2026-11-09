@@ -1,3 +1,4 @@
+// ชนิดข้อมูลของหน้าจัดการกิจกรรม (ตรงกับคอลัมน์ในตาราง)
 import type { EmissionFactor, GwpValue } from './ef-gwp';
 import type { OcrSource } from '@/lib/bills/types';
 
@@ -26,7 +27,7 @@ export interface ActivityDetail {
   description: string | null;
   ef_id: string | null;
   gwp_id: string | null;
-  ocr_source?: OcrSource | null; // [เพิ่ม] รับข้อมูลจากบิลประเภทไหน (OCR ช่วยกรอก)
+  ocr_source?: OcrSource | null; // รับข้อมูลจากบิลประเภทไหน (OCR ช่วยกรอก)
   updated_at: string;
   activity?: (Pick<Activity, 'activity_id' | 'activity_name' | 'scope_id'> & {
     carbon_scope?: CarbonScope | null;

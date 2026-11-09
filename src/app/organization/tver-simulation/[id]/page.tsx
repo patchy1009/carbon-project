@@ -1,3 +1,4 @@
+// ส่วนที่ทำงานฝั่ง server ของหน้าแก้ไขโครงการ T-VER
 export const dynamic = 'force-dynamic';
 
 import { notFound } from 'next/navigation';
@@ -7,6 +8,7 @@ import TverSimulationClient from '../TverSimulationClient';
 import type { TreeListItem, TverProjectDetail } from '@/types/tver-project';
 import type { OrgTreeProject, OrgTreeProjectDetail } from '@/types/tver-simulation';
 
+// ดึงโครงการตาม id ที่เป็นขององค์กรนี้เท่านั้น ถ้าไม่พบให้แสดงหน้า 404
 export default async function EditTverProjectPage({
   params,
 }: {

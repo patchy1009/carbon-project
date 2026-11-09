@@ -1,4 +1,4 @@
-/* [เพิ่ม] กล่องแจ้งเตือน/ยืนยันแบบมีสไตล์ ใช้แทน alert() / confirm() ของเบราว์เซอร์
+/* กล่องแจ้งเตือน/ยืนยันแบบมีสไตล์ ใช้แทน alert() / confirm() ของเบราว์เซอร์
  * เรียกได้จากทุกที่ (ทั้งใน component และไฟล์ lib) โดยไม่ต้องมี state ในหน้านั้น
  *   await showAlert('บันทึกแล้ว')                         -> กล่องแจ้งข้อมูล ปุ่ม "ตกลง"
  *   await showError('บันทึกไม่สำเร็จ: ...')               -> กล่องแจ้งข้อผิดพลาด (ไอคอนแดง)
@@ -8,9 +8,11 @@
 
 export type DialogTone = 'info' | 'success' | 'error' | 'warning' | 'danger';
 
+export type DialogKind = 'alert' | 'confirm';
+
 export type DialogRequest = {
   id: number;
-  kind: 'alert' | 'confirm';
+  kind: DialogKind;
   tone: DialogTone;
   title: string;
   message: string;
@@ -28,16 +30,18 @@ type Options = {
 
 let queue: DialogRequest[] = [];
 let nextId = 1;
-const listeners = new Set<() => void>();
+let listeners: (() => void)[] = []; // ฟังก์ชันที่รอรับแจ้งเมื่อกล่องเปลี่ยน
 
+// แจ้งทุกฟังก์ชันที่รออยู่ว่ากล่องเปลี่ยนแล้ว
 function emit() {
   for (const l of listeners) l();
 }
 
+// สมัครรับแจ้งเมื่อกล่องเปลี่ยน แล้วคืนฟังก์ชันสำหรับยกเลิก
 export function subscribeDialog(listener: () => void) {
-  listeners.add(listener);
+  listeners.push(listener);
   return () => {
-    listeners.delete(listener);
+    listeners = listeners.filter((l) => l !== listener);
   };
 }
 
@@ -46,6 +50,7 @@ export function currentDialog(): DialogRequest | null {
   return queue[0] ?? null;
 }
 
+// เอากล่องออกจากคิว แล้วส่งผลการกดกลับไปให้โค้ดที่รออยู่
 export function closeDialog(id: number, ok: boolean) {
   const req = queue.find((d) => d.id === id);
   if (!req) return;
@@ -54,7 +59,8 @@ export function closeDialog(id: number, ok: boolean) {
   req.resolve(ok);
 }
 
-function open(kind: DialogRequest['kind'], message: string, opts: Options, defaults: Required<Options>) {
+// เพิ่มกล่องใหม่เข้าคิว แล้วรอจนกว่าผู้ใช้จะกดปุ่ม
+function open(kind: DialogKind, message: string, opts: Options, defaults: Required<Options>) {
   // ฝั่ง server ไม่มีหน้าจอให้แสดง (ไม่ควรเกิด เพราะเรียกจากเหตุการณ์ของผู้ใช้)
   if (typeof window === 'undefined') return Promise.resolve(false);
   return new Promise<boolean>((resolve) => {
@@ -75,14 +81,17 @@ function open(kind: DialogRequest['kind'], message: string, opts: Options, defau
   });
 }
 
+// แสดงกล่องแจ้งเตือนที่มีปุ่มตกลงปุ่มเดียว
 export async function showAlert(message: string, opts: Options = {}): Promise<void> {
   await open('alert', message, opts, { title: 'แจ้งเตือน', tone: 'info', confirmText: 'ตกลง', cancelText: '' });
 }
 
+// แสดงกล่องแจ้งข้อผิดพลาด
 export function showError(message: string, opts: Options = {}): Promise<void> {
   return showAlert(message, { title: 'เกิดข้อผิดพลาด', tone: 'error', ...opts });
 }
 
+// แสดงกล่องยืนยัน กดยืนยันได้ true กดยกเลิกได้ false
 export function showConfirm(message: string, opts: Options & { danger?: boolean } = {}): Promise<boolean> {
   const danger = opts.danger ?? false;
   return open('confirm', message, opts, {

@@ -1,35 +1,41 @@
 @import "tailwindcss";
 
+/* ฟอนต์และสีพื้นของทั้งเว็บ
+ * เดิมมี 3 อย่างตีกันจนทั้งเว็บกลายเป็นฟอนต์ Arial:
+ *   1) @theme ตั้ง --font-sans = IBM Plex Sans Thai
+ *   2) @theme inline ด้านล่างตั้ง --font-sans ซ้ำเป็น --font-geist-sans (ไม่มีอยู่จริง) จึงทับข้อ 1
+ *   3) body { font-family: Arial } ทับ class font-sans อีกชั้น
+ * ตอนนี้: font-sans = IBM Plex Sans Thai Looped (ฟอนต์มีหัว ใช้ทั้งเว็บรวมเมนู navbar)
+ *         font-display = Prompt (เฉพาะโลโก้ภาษาอังกฤษ "Carbon Calculator")
+ * และเอาโหมดมืดอัตโนมัติออก (เว็บออกแบบเป็นพื้นขาว เดิมเครื่องที่ตั้งโหมดมืดจะได้พื้นดำปนการ์ดขาว) */
 @theme {
-  --font-sans: var(--font-ibm-plex-thai), sans-serif;
+  --font-sans: var(--font-body), "Noto Sans Thai Looped", "Leelawadee UI", Tahoma, sans-serif;
+  --font-display: var(--font-prompt), var(--font-body), "Leelawadee UI", sans-serif;
 }
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #1e293b;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* [เพิ่ม] แอนิเมชันของกล่องแจ้งเตือน/ยืนยัน (src/components/DialogHost.tsx) */
+/* ปุ่ม/ลิงก์ที่กดด้วยคีย์บอร์ด เห็นกรอบโฟกัสชัดเจน (เดิมไม่มี) */
+:focus-visible {
+  outline: 2px solid #32885f;
+  outline-offset: 2px;
+}
+
+/* แอนิเมชันของกล่องแจ้งเตือน/ยืนยัน (src/components/DialogHost.tsx) */
 @keyframes dialog-fade {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -39,7 +45,7 @@ body {
   to { opacity: 1; transform: none; }
 }
 
-/* [เพิ่ม] scroll bar ที่มองเห็นตลอด สำหรับลิสต์ในกรอบ (เช่น รายการใน dashboard)
+/* scroll bar ที่มองเห็นตลอด สำหรับลิสต์ในกรอบ (เช่น รายการใน dashboard)
  * Edge/Windows 11 ซ่อน scroll bar จนกว่าจะเอาเมาส์ไปชี้ จึงกำหนดสไตล์เองให้เห็นเสมอ */
 .scroll-list {
   overflow-y: auto;
@@ -58,4 +64,49 @@ body {
 }
 .scroll-list::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+/* =====================================================================
+ * ปุ่มตามหน้าที่ (ใช้คู่กัน: className="btn btn-primary ...")
+ *   ปุ่มแต่ละแบบมีสีต่างกัน ให้รู้ว่ากดแล้วจะเกิดอะไร:
+ *   btn-primary  เขียวหลัก   — บันทึก / คำนวณ / ถัดไป / เข้าสู่ระบบ (การกระทำหลักของหน้า)
+ *   btn-create   น้ำเงินเทา  — ปุ่ม "+ เพิ่ม..." หัวตารางฝั่งแอดมิน (สีเดียวกับต้น navbar)
+ *   btn-accent   เหลืองทอง   — ชวนไปทำต่อ เช่น ดาวน์โหลดรายงาน / เริ่มจำลองโครงการ
+ *   btn-outline  ขาวมีเส้นขอบ — ยกเลิก / กลับ / แก้ไข (การกระทำรอง)
+ *   btn-soft     เขียวอ่อน    — ลิงก์สร้างรายการใหม่ใน Dashboard
+ * ลูกเล่น: เอาเมาส์ชี้ = ปุ่มลอยขึ้นเล็กน้อย + สีเข้มขึ้น + มีเงา, กด = ยุบลงนิดหนึ่ง
+ *   ลูกศร "›" ที่ใส่ class btn-arrow จะเลื่อนไปทางขวาตอนชี้
+ * ข้อควรระวัง: อย่าใส่ class สีของ Tailwind (bg-[...], text-[...], border-[...]) ซ้ำบนปุ่มเดียวกัน
+ *   เพราะ class ของ Tailwind ชนะ class ในไฟล์นี้ (อยู่คนละชั้น) สีตอนชี้จะไม่เปลี่ยน
+ * ===================================================================== */
+@layer components {
+  .btn {
+    cursor: pointer;
+    transition: background-color 0.18s, color 0.18s, border-color 0.18s, box-shadow 0.18s, transform 0.18s;
+  }
+  .btn:hover:not(:disabled) { transform: translateY(-1px); }
+  .btn:active:not(:disabled) { transform: translateY(0) scale(0.98); }
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .btn-primary { background: #32885f; color: #fff; box-shadow: 0 1px 2px rgba(16, 60, 40, 0.15); }
+  .btn-primary:hover:not(:disabled) { background: #27704d; box-shadow: 0 6px 16px rgba(50, 136, 95, 0.3); }
+
+  .btn-create { background: #2d4a63; color: #fff; }
+  .btn-create:hover:not(:disabled) { background: #22394d; box-shadow: 0 6px 16px rgba(45, 74, 99, 0.28); }
+
+  .btn-accent { background: #f2c94c; color: #3a2e06; }
+  .btn-accent:hover:not(:disabled) { background: #e9b829; box-shadow: 0 6px 16px rgba(233, 184, 41, 0.35); }
+
+  .btn-outline { background: #fff; color: #475569; border: 1px solid #cbd5e1; }
+  .btn-outline:hover:not(:disabled) { border-color: #32885f; color: #27704d; background: #f2f8f5; }
+
+  .btn-soft { background: #eaf5ef; color: #27704d; }
+  .btn-soft:hover:not(:disabled) { background: #32885f; color: #fff; }
+
+  .btn-arrow { display: inline-block; transition: transform 0.18s; }
+  .btn:hover .btn-arrow { transform: translateX(3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn, .btn:hover, .btn:active, .btn-arrow { transform: none !important; transition: none; }
 }

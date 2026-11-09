@@ -1,3 +1,4 @@
+// ชนิดข้อมูลของเอกสารฝั่งองค์กร
 export interface DocumentItem {
   document_id: string;
   document_name: string | null;

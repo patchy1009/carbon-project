@@ -14,6 +14,7 @@ const toNum = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+// ดึงรายการบันทึก คำนวณยอดแต่ละ Scope และแนวทางลดคาร์บอน แล้วส่งให้หน้ารายงาน
 export default async function FootprintReportPage({
   params,
 }: {
@@ -37,12 +38,12 @@ export default async function FootprintReportPage({
       )
       .eq('orgactlist_id', id),
     // แนวทางทั้งหมด + เงื่อนไขของแต่ละแนวทาง
-    // [แก้ไข] เดิมเอาเฉพาะ status = 'published' ตอนนี้แอดมินกดบันทึก = พร้อมแนะนำ (ไม่มีสถานะร่างแล้ว)
+    // เดิมเอาเฉพาะ status = 'published' ตอนนี้แอดมินกดบันทึก = พร้อมแนะนำ (ไม่มีสถานะร่างแล้ว)
     //   แนวทางเก่าที่เคยค้างเป็นร่างก็จะแสดงด้วย
     supabase
       .from('carbon_reduction_recommendation')
       .select('*, recommendation_condition(*)'),
-    // [แก้ไข] ข้อมูลสำนักงานของ "รายการนี้" (ใช้ตัดสินเงื่อนไข) เดิมใช้ชุดเดียวทั้งองค์กร
+    // ข้อมูลสำนักงานของ "รายการนี้" (ใช้ตัดสินเงื่อนไข) เดิมใช้ชุดเดียวทั้งองค์กร
     // org_office_info ไม่มี org_id แล้ว: ความเป็นเจ้าของตรวจจาก logRes ด้านบน (ไม่ใช่ของตัวเอง -> notFound)
     supabase.from('org_office_info').select('info_id, amount').eq('orgactlist_id', id),
   ]);

@@ -1,3 +1,4 @@
+// หน้าจัดการโครงการ T-VER ของแอดมิน: เพิ่ม แก้ไข ลบ รายการต้นไม้และเงื่อนไขโครงการ
 'use client';
 
 import { useState } from 'react';
@@ -8,10 +9,10 @@ import { validateForm, extendSchema, notDuplicate, requiredWith, type formError 
 import { normalizeToArabicNumber, formatCondition, CONDITION_OPERATORS } from '@/lib/normalization';
 import FieldError from '@/components/FieldError';
 import { treeSchema, tverDetailSchema, type TreeField, type TverDetailField } from './schema';
-import RowActions from '@/components/RowActions'; // [แก้ไข] ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
-import { inputClass } from '@/components/formStyles'; // [แก้ไข] class ช่องกรอกกลาง
+import RowActions from '@/components/RowActions'; // ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
+import { inputClass } from '@/components/formStyles'; // class ช่องกรอกกลาง
 
-/* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
+/* สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) เดิมบันทึกค่าจากฟอร์มลง DB ตรงๆ -> ตอนนี้ผ่าน normalize + validate (schema.ts) ทุกช่อง
  * 2) เงื่อนไข: เลือกตัวดำเนินการจาก dropdown + กรอกตัวเลขแยกช่อง
  *    บันทึกเป็น condition_operator / condition_number (เลิกใช้คอลัมน์ข้อความ condition_value)
@@ -24,6 +25,7 @@ import { inputClass } from '@/components/formStyles'; // [แก้ไข] class
 
 const emptyDetailForm = { detail_name: '', unit: '', condition_operator: '', condition_number: '', detail: '' };
 
+// หน้าจอหลัก รับข้อมูลเริ่มต้นจาก page.tsx แล้วเก็บใน state เพื่อให้แก้ไขบนหน้าได้ทันที
 export default function TverProjectClient({
   initialTrees,
   initialDetails,
@@ -37,7 +39,7 @@ export default function TverProjectClient({
   const [showTreeModal, setShowTreeModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
-  // [เพิ่ม] id ของแถวที่กำลังแก้ไข (null = เพิ่มใหม่)
+  // id ของแถวที่กำลังแก้ไข (null = เพิ่มใหม่)
   const [editTreeId, setEditTreeId] = useState<string | null>(null);
   const [editDetailId, setEditDetailId] = useState<string | null>(null);
 
@@ -47,12 +49,14 @@ export default function TverProjectClient({
   const [treeErrors, setTreeErrors] = useState<formError<TreeField>>({});
   const [detailErrors, setDetailErrors] = useState<formError<TverDetailField>>({});
 
+  // เปิดฟอร์มต้นไม้ ถ้าส่ง row มาคือโหมดแก้ไข ถ้าไม่ส่งคือเพิ่มใหม่
   function openTreeModal(row?: TreeListItem) {
     setEditTreeId(row?.tree_id ?? null);
     setTreeForm({ tree_name: row?.tree_name ?? '' });
     setTreeErrors({});
     setShowTreeModal(true);
   }
+  // เปิดฟอร์มเงื่อนไข ถ้าส่ง row มาคือโหมดแก้ไข ถ้าไม่ส่งคือเพิ่มใหม่
   function openDetailModal(row?: TverProjectDetail) {
     setEditDetailId(row?.tverdetail_id ?? null);
     setDetailForm(
@@ -69,7 +73,9 @@ export default function TverProjectClient({
     setDetailErrors({});
     setShowDetailModal(true);
   }
+  // ปิดฟอร์มต้นไม้และล้างข้อความ error
   const closeTreeModal = () => { setShowTreeModal(false); setTreeErrors({}); };
+  // ปิดฟอร์มเงื่อนไขและล้างข้อความ error
   const closeDetailModal = () => { setShowDetailModal(false); setDetailErrors({}); };
 
   // ---------- Tree List ----------
@@ -99,6 +105,7 @@ export default function TverProjectClient({
     closeTreeModal();
   }
 
+  // ลบต้นไม้ สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteTree(id: string) {
     const ok = await deleteRecord('tree_list', 'tree_id', id, 'ลบต้นไม้นี้?');
     if (!ok) return;
@@ -113,7 +120,7 @@ export default function TverProjectClient({
       detailForm,
       extendSchema(tverDetailSchema, {
         detail_name: [notDuplicate('รายละเอียดโครงการ', others)],
-        // [เพิ่ม] ตัวดำเนินการกับตัวเลขต้องกรอกคู่กัน (ตรงกับ check constraint ใน DB)
+        // ตัวดำเนินการกับตัวเลขต้องกรอกคู่กัน (ตรงกับ check constraint ใน DB)
         condition_operator: [requiredWith('เงื่อนไข', detailForm.condition_number)],
         condition_number: [requiredWith('ค่าเงื่อนไข', detailForm.condition_operator)],
       })
@@ -146,6 +153,7 @@ export default function TverProjectClient({
     closeDetailModal();
   }
 
+  // ลบเงื่อนไข สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteDetail(id: string) {
     const ok = await deleteRecord('tver_project_detail', 'tverdetail_id', id, 'ลบเงื่อนไขนี้?');
     if (!ok) return;
@@ -166,7 +174,7 @@ export default function TverProjectClient({
           </h2>
           <button
             onClick={() => openTreeModal()}
-            className="flex items-center gap-1.5 rounded-lg bg-[#266955] px-3 py-2 text-sm text-white shadow-sm"
+            className="btn btn-create flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm"
           >
             + เพิ่มต้นไม้ใหม่
           </button>
@@ -209,7 +217,7 @@ export default function TverProjectClient({
           </h2>
           <button
             onClick={() => openDetailModal()}
-            className="flex items-center gap-1.5 rounded-lg bg-[#366856] px-3 py-2 text-sm text-white shadow-sm"
+            className="btn btn-create flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm"
           >
             + เพิ่มเงื่อนไขโครงการ
           </button>
@@ -232,7 +240,7 @@ export default function TverProjectClient({
                   <td className="px-4 py-4 font-bold text-[#191C1C]">{d.detail_name}</td>
                   <td className="px-4 py-4 text-[#3F4944]">{d.unit}</td>
                   <td className="px-4 py-4">
-                    {/* [แก้ไข] สร้างข้อความจาก 2 คอลัมน์ เช่น "<= 1,000 ไร่" */}
+                    {/* สร้างข้อความจาก 2 คอลัมน์ เช่น "<= 1,000 ไร่" */}
                     {d.condition_operator && (
                       <span className="inline-block px-2.5 py-1 rounded bg-[#E7E8E8] text-sm font-bold text-[#266955]">
                         {formatCondition(d.condition_operator, d.condition_number, d.unit)}
@@ -302,7 +310,7 @@ export default function TverProjectClient({
               />
               <FieldError message={detailErrors.unit} />
             </div>
-            {/* [แก้ไข] เงื่อนไข: dropdown ตัวดำเนินการ + ช่องตัวเลข (เดิมเป็นช่องข้อความช่องเดียว) */}
+            {/* เงื่อนไข: dropdown ตัวดำเนินการ + ช่องตัวเลข (เดิมเป็นช่องข้อความช่องเดียว) */}
             <div>
               <label className="mb-1 block text-xs text-[#3F4944]">เงื่อนไข (ไม่บังคับ)</label>
               <div className="flex items-center gap-2">

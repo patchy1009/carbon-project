@@ -1,9 +1,11 @@
+// ส่วนที่ทำงานฝั่ง server ของขั้นที่ 1: ดึงหัวข้อข้อมูลสำนักงาน และค่าเดิมถ้าเป็นโหมดแก้ไข
 export const dynamic = 'force-dynamic';
 
 import { createSupabaseServer } from '@/lib/supabaseServer';
 import { requireOrgId } from '@/lib/auth';
 import OfficeInfoClient, { type OfficeInfoType, type SavedInfo } from './OfficeInfoClient';
 
+// อ่านค่า edit และ resume จาก URL ดึงข้อมูล แล้วส่งให้ OfficeInfoClient
 export default async function FootprintOfficePage({
   searchParams,
 }: {
@@ -21,9 +23,9 @@ export default async function FootprintOfficePage({
     .order('updated_at', { ascending: true });
   if (typesRes.error) console.error('office_info_type error:', typesRes.error.message);
 
-  // [แก้ไข] เดิมโหลดข้อมูลสำนักงานทั้งหมดขององค์กร (ชุดเดียวใช้ร่วมทุกรายการ) จึงเห็นค่าเก่าค้างตอนสร้างรายการใหม่
+  // เดิมโหลดข้อมูลสำนักงานทั้งหมดขององค์กร (ชุดเดียวใช้ร่วมทุกรายการ) จึงเห็นค่าเก่าค้างตอนสร้างรายการใหม่
   // ตอนนี้: รายการใหม่ = ฟอร์มว่าง / แก้ไข = โหลดเฉพาะของรายการนั้น (org_office_info.orgactlist_id)
-  // [แก้ไข] org_office_info ไม่มี org_id แล้ว -> ตรวจก่อนว่ารายการนี้เป็นขององค์กรที่ล็อกอิน
+  // org_office_info ไม่มี org_id แล้ว -> ตรวจก่อนว่ารายการนี้เป็นขององค์กรที่ล็อกอิน
   // แล้วค่อยโหลดข้อมูลสำนักงานของรายการนั้นด้วย orgactlist_id
   let saved: SavedInfo[] = [];
   if (edit) {
