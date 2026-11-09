@@ -5,7 +5,8 @@ import MeetingForm, { MeetingData } from "./components/MeetingForm";
 import TravelForm, { TravelData } from "./components/TravelForm";
 import CalculationResult from "./components/CalculationResult";
 import { 
-  executeCarbonCalculation, 
+  calculateMeetingSummary, 
+  calculateTravelSummary,
   getTravelRecommendations, 
   getMeetingRecommendations, 
   VEHICLE_FUEL_MAPPINGS,
@@ -13,52 +14,41 @@ import {
 } from "./calculation";
 import FootprintStepper from "@/components/FootprintStepper";
 import { supabase } from "@/lib/supabaseClient";
-import { Sparkles, Calculator } from "lucide-react";
+import { Calculator } from "lucide-react";
 
 export default function ActivityBasedFootprintPage() {
+  // State จัดเก็บข้อมูลแบบฟอร์ม
   const [meeting, setMeeting] = useState<MeetingData | null>(null);
   const [travel, setTravel] = useState<TravelData | null>(null);
 
+  // State จัดเก็บข้อมูล Master Data & การโหลด
   const [adminActivities, setAdminActivities] = useState<any[]>([]);
   const [emissionFactorsList, setEmissionFactorsList] = useState<any[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  const [meetingRes, setMeetingRes] = useState<number>(0);
-  const [travelRes, setTravelRes] = useState<number>(0);
+  // State จัดเก็บผลลัพธ์การคำนวณ
+  const [meetingEmissionTon, setMeetingEmissionTon] = useState<number>(0);
+  const [travelEmissionTon, setTravelEmissionTon] = useState<number>(0);
+  const [meetingRawElectricityKWh, setMeetingRawElectricityKWh] = useState<number>(0);
+  const [meetingElectricityCost, setMeetingElectricityCost] = useState<number>(0);
 
+  // State จัดเก็บข้อเสนอแนะ (Recommendation)
   const [meetingRecommendation, setMeetingRecommendation] = useState<any>(null);
   const [travelRecommendation, setTravelRecommendation] = useState<any>(null);
 
+  // ดึงข้อมูล Emission Factor สำหรับคำนวณ
   useEffect(() => {
     async function fetchMasterData() {
       try {
-        const { data: actData, error: actError } = await supabase.from('activity_based').select('*');
-        if (actError) throw actError;
-
         const { data: efData, error: efError } = await supabase
           .from('emission_factor')
           .select('*, eftype:eftype_id (type_name)');
+        
         if (efError) throw efError;
-
-        if (efData) {
-          setEmissionFactorsList(efData);
-        }
-
-        if (actData) {
-          const formatted = actData.map((item: any) => {
-            const matchedEf = efData?.find((ef: any) => ef.ef_id === item.ef_id);
-            return {
-              ...item,
-              emission_factor: matchedEf ? Number(matchedEf.ef_value) : 0,
-              ef_name: matchedEf ? matchedEf.ef_name : '',
-              ef_id: matchedEf ? matchedEf.ef_id : item.ef_id,
-            };
-          });
-          setAdminActivities(formatted);
-        }
+        if (efData) setEmissionFactorsList(efData);
       } catch (err) {
-        console.error("ไม่สามารถดึงข้อมูล Master Data ได้:", err);
+        console.error("ไม่สามารถดึงข้อมูล Emission Factor ได้:", err);
       } finally {
         setLoadingActivities(false);
       }
@@ -67,6 +57,7 @@ export default function ActivityBasedFootprintPage() {
     fetchMasterData();
   }, []);
 
+  // ฟังก์ชันดึงค่า Emission Factor จากฐานข้อมูล
   const fetchEFFromTwoCategories = (fuelKey: string): number => {
     if (!fuelKey) return 0;
     const lowerKey = fuelKey.toLowerCase().trim();
@@ -74,21 +65,13 @@ export default function ActivityBasedFootprintPage() {
     let targetKeyword = lowerKey;
     if (lowerKey === 'electricity' || lowerKey === 'ev') {
       targetKeyword = 'ไฟฟ้าแบบ grid mix ปี 2022–2024';
-    } else if (lowerKey === 'gasohol_e10') {
-      targetKeyword = 'gasohol e10';
-    } else if (lowerKey === 'gasohol_e20') {
-      targetKeyword = 'gasohol e20';
-    } else if (lowerKey === 'gasohol_e85') {
-      targetKeyword = 'gasohol e85';
-    } else if (lowerKey === 'diesel_b7') {
-      targetKeyword = 'diesel b7';
-    } else if (lowerKey === 'diesel_b20' || lowerKey === 'diesel 20') {
-      targetKeyword = 'diesel 20';
-    } else if (lowerKey === 'lpg') {
-      targetKeyword = 'lpg';
-    } else if (lowerKey === 'cng') {
-      targetKeyword = 'cng';
-    }
+    } else if (lowerKey.includes('gasohol_e10')) targetKeyword = 'gasohol e10';
+    else if (lowerKey.includes('gasohol_e20')) targetKeyword = 'gasohol e20';
+    else if (lowerKey.includes('gasohol_e85')) targetKeyword = 'gasohol e85';
+    else if (lowerKey.includes('diesel_b7')) targetKeyword = 'diesel b7';
+    else if (lowerKey.includes('diesel_b20')) targetKeyword = 'diesel b20';
+    else if (lowerKey.includes('lpg')) targetKeyword = 'lpg';
+    else if (lowerKey.includes('cng')) targetKeyword = 'cng';
 
     let matchedItem = emissionFactorsList.find((ef: any) => {
       const typeName = (ef.eftype?.type_name || '').toLowerCase();
@@ -116,6 +99,7 @@ export default function ActivityBasedFootprintPage() {
     return matchedItem ? Number(matchedItem.ef_value) || 0 : 0;
   };
 
+  // ฟังก์ชันหลักคำนวณและบันทึกข้อมูลแบบ Master-Detail ลงตาราง general_activity
   const handleCalculateAndSave = async () => {
     if (!meeting && !travel) {
       alert("กรุณากรอกข้อมูลการประชุม หรือข้อมูลการเดินทางอย่างน้อย 1 หมวดก่อนทำการคำนวณและบันทึก");
@@ -133,47 +117,54 @@ export default function ActivityBasedFootprintPage() {
       }
 
       const orgId = user.id;
-      let mTotal = 0;
-      let tTotal = 0;
-      const recordsToInsert = [];
-
       const electricityEf = fetchElectricityEFFromDB();
       if (electricityEf === 0) {
-        alert("ไม่พบค่า Emission Factor ของไฟฟ้าในหมวด Electricity กรุณาตรวจสอบการตั้งค่าของแอดมิน");
+        alert("ไม่พบค่า Emission Factor ของไฟฟ้า กรุณาตรวจสอบการตั้งค่าของแอดมิน");
         setIsSaving(false);
         return;
       }
 
-      // 1. หมวดการประชุม
+      let eventCalculatedTotal = 0;
+      let travelCalculatedTotal = 0;
+      let totalElectricityKWh = 0;
+      let totalCostVal = 0;
+
+      let meetingSummaryRes = null;
+      let travelSummaryRes = null;
+
+      // 1. ประมวลผลหมวดการประชุม
       if (meeting) {
         const isMeetingEv = meeting.meetingType === 'onsite' && meeting.fuelType?.toLowerCase() === 'ev';
         const rawFuel = meeting.meetingType === 'online' ? 'electricity' : (isMeetingEv ? 'electricity' : (meeting.fuelType || 'gasohol_e10'));
-        
         const dbEfValue = meeting.meetingType === 'online' ? electricityEf : fetchEFFromTwoCategories(rawFuel);
 
         if (dbEfValue === 0) {
-          alert(`ไม่พบค่า Emission Factor สำหรับ (${rawFuel}) ในหมวด On-road vehicles หรือ Electricity กรุณาตรวจสอบการตั้งค่าของแอดมิน`);
+          alert(`ไม่พบค่า Emission Factor สำหรับ (${rawFuel})`);
           setIsSaving(false);
           return;
         }
-        
+
         const calcInput = {
           category: 'meeting' as const,
           subCategory: meeting.meetingType,
           fuelType: rawFuel.toLowerCase(),
           distance: meeting.distanceKm,
           trip: meeting.trips,
-          devices: meeting.devicesCount,
           durationHours: meeting.durationHours,
-          electricityKWh: meeting.electricityKwh,
           equipmentSets: meeting.equipmentSets,
           emissionFactor: dbEfValue,
           electricityEmissionFactor: electricityEf,
         };
 
-        const res = executeCarbonCalculation(calcInput);
-        mTotal = res.totalCalculated;
-        setMeetingRes(mTotal);
+        meetingSummaryRes = calculateMeetingSummary(calcInput);
+
+        setMeetingEmissionTon(meetingSummaryRes.totalCalculatedTon);
+        setMeetingRawElectricityKWh(meetingSummaryRes.rawElectricityKWh);
+        setMeetingElectricityCost(meetingSummaryRes.electricityCost);
+
+        eventCalculatedTotal = meetingSummaryRes.totalCalculatedTon;
+        totalElectricityKWh += meetingSummaryRes.rawElectricityKWh || 0;
+        totalCostVal += meetingSummaryRes.electricityCost || 0;
 
         const meetingOptions: OptionType[] = [
           { subCategory: 'online', fuelType: 'electricity', name: 'การประชุมออนไลน์ (Online)' },
@@ -182,77 +173,23 @@ export default function ActivityBasedFootprintPage() {
           { subCategory: 'motorcycle', fuelType: 'gasohol_e10', name: 'ประชุมออนไซต์ รถจักรยานยนต์' },
         ];
 
-        const recMeeting = getMeetingRecommendations({
-          currentEmission: mTotal,
+        setMeetingRecommendation(getMeetingRecommendations({
+          currentEmission: meetingSummaryRes.totalCalculatedTon,
           userInput: calcInput,
           allAvailableOptions: meetingOptions,
           fetchEFFromDB: fetchEFFromTwoCategories,
           fetchElectricityEFFromDB,
-        });
-        setMeetingRecommendation(recMeeting);
-
-        if (meeting.meetingType === 'online') {
-          recordsToInsert.push({
-            category_name: "การประชุม อบรม และจัดอีเวนต์",
-            sub_category: "online",
-            ef_id: meeting.ef_id || null,
-            unit: "kWh",
-            org_id: orgId,
-            activity_name: meeting.meetingName,
-            devices: meeting.devicesCount || 1,
-            hours: meeting.durationHours,
-            electricity_kwh: meeting.electricityKwh || 0,
-            total_calculated: mTotal,
-            equipment_name: "อุปกรณ์ประชุมออนไลน์",
-          });
-        } else {
-          if (meeting.equipmentSets && meeting.equipmentSets.length > 0) {
-            meeting.equipmentSets.forEach(set => {
-              const setKWhTotal = set.devices * set.durationHours * set.electricityKwh;
-              const setEmission = setKWhTotal * electricityEf;
-              recordsToInsert.push({
-                category_name: "การประชุม อบรม และจัดอีเวนต์",
-                sub_category: "onsite_equipment",
-                ef_id: meeting.ef_id || null,
-                unit: "kWh",
-                org_id: orgId,
-                activity_name: meeting.meetingName,
-                devices: set.devices,
-                hours: set.durationHours,
-                electricity_kwh: set.electricityKwh,
-                total_calculated: Number(setEmission.toFixed(4)),
-                equipment_name: set.equipmentName,
-              });
-            });
-          }
-
-          const travelPartEmission = res.breakdown?.travelEmission || 0;
-          recordsToInsert.push({
-            category_name: "การประชุม อบรม และจัดอีเวนต์",
-            sub_category: "onsite_travel",
-            ef_id: meeting.ef_id || null,
-            unit: isMeetingEv ? 'kWh' : 'km',
-            org_id: orgId,
-            activity_name: `${meeting.meetingName} (การเดินทาง)`,
-            trips: meeting.trips || 1,
-            distance: meeting.distanceKm || 0,
-            fuel_type: rawFuel.toLowerCase(),
-            electricity_kwh: meeting.electricityKwh || null,
-            total_calculated: travelPartEmission,
-            equipment_name: `เดินทาง (${rawFuel})`,
-          });
-        }
+        }));
       }
 
-      // 2. หมวดการเดินทางทั่วไป (Travel)
+      // 2. ประมวลผลหมวดการเดินทาง
       if (travel) {
         const isEv = travel.vehicleType.toLowerCase() === 'ev';
         const rawTravelFuel = isEv ? 'electricity' : (travel.fuelType || 'gasohol_e10');
-        
         const dbEfValue = fetchEFFromTwoCategories(rawTravelFuel);
 
         if (dbEfValue === 0) {
-          alert(`ไม่พบค่า Emission Factor สำหรับเชื้อเพลิง (${rawTravelFuel}) ในหมวด On-road vehicles หรือ Electricity กรุณาตรวจสอบการตั้งค่าของแอดมิน`);
+          alert(`ไม่พบค่า Emission Factor สำหรับ (${rawTravelFuel})`);
           setIsSaving(false);
           return;
         }
@@ -268,47 +205,82 @@ export default function ActivityBasedFootprintPage() {
           electricityEmissionFactor: electricityEf,
         };
 
-        const res = executeCarbonCalculation(calcInput);
-        tTotal = res.totalCalculated;
-        setTravelRes(tTotal);
+        travelSummaryRes = calculateTravelSummary(calcInput);
+
+        setTravelEmissionTon(travelSummaryRes.totalCalculatedTon);
+        travelCalculatedTotal = travelSummaryRes.totalCalculatedTon;
+        totalElectricityKWh += travel.electricityKwh || 0;
 
         const travelOptions: OptionType[] = [];
         Object.entries(VEHICLE_FUEL_MAPPINGS).forEach(([v, fuels]) => {
-          fuels.forEach(f => {
-            travelOptions.push({ subCategory: v, fuelType: f, name: `${v} (${f})` });
-          });
+          fuels.forEach(f => travelOptions.push({ subCategory: v, fuelType: f, name: `${v} (${f})` }));
         });
 
-        const recTravel = getTravelRecommendations({
-          currentEmission: tTotal,
+        setTravelRecommendation(getTravelRecommendations({
+          currentEmission: travelSummaryRes.totalCalculatedTon,
           userInput: calcInput,
           allAvailableOptions: travelOptions,
           fetchEFFromDB: fetchEFFromTwoCategories,
-        });
-        setTravelRecommendation(recTravel);
-
-        recordsToInsert.push({
-          category_name: "การเดินทาง และขนส่ง",
-          sub_category: travel.vehicleType.toLowerCase(),
-          ef_id: travel.ef_id || null,
-          unit: isEv ? 'kWh' : 'km',
-          org_id: orgId,
-          activity_name: travel.travelName,
-          trips: travel.trips,
-          distance: travel.distanceKm || null,
-          fuel_type: rawTravelFuel.toLowerCase(),
-          electricity_kwh: travel.electricityKwh || null,
-          total_calculated: tTotal,
-          equipment_name: null,
-        });
+        }));
       }
 
-      if (recordsToInsert.length > 0) {
-        const { error: insertError } = await supabase
-          .from('activity_based')
-          .insert(recordsToInsert);
+      const grandTotalCalculated = Number((eventCalculatedTotal + travelCalculatedTotal).toFixed(4));
+      
+      // ดึงค่า ef_id ที่ผู้ใช้เลือกจากฟอร์ม
+      const selectedEfId = meeting?.ef_id || travel?.ef_id || null;
 
-        if (insertError) throw insertError;
+      // 3. บันทึกข้อมูลลงตารางแม่ (general_activity)
+      const { data: parentData, error: parentError } = await supabase
+        .from("general_activity")
+        .insert([
+          {
+            org_id: orgId,
+            activity_name: meeting?.meetingName || travel?.travelName || "กิจกรรมทั่วไปขององค์กร",
+            category_name: meeting ? "การประชุม อบรม และจัดกิจกรรม" : "การเดินทาง",
+            sub_category: meeting ? meeting.meetingType : travel?.vehicleType.toLowerCase(),
+            ef_id: selectedEfId, // เชื่อมโยงรหัส ef_id ที่ถูกต้อง
+            unit: meeting ? "kWh/km" : (travel?.vehicleType.toLowerCase() === 'ev' ? 'kWh' : 'km'),
+            total_calculated: grandTotalCalculated,
+            total_event_calculated: Number(eventCalculatedTotal.toFixed(4)),
+            total_travel_calculated: Number(travelCalculatedTotal.toFixed(4)),
+            total_electricity_calculated: Number(totalElectricityKWh.toFixed(4)),
+            total_cost_calculated: Number(totalCostVal.toFixed(2)),
+            updated_at: new Date().toISOString(),
+          },
+        ])
+        .select("general_activity_id")
+        .single();
+
+      if (parentError || !parentData) {
+        throw parentError || new Error("ไม่สามารถบันทึกข้อมูลตารางแม่ได้");
+      }
+
+      const newActivityId = parentData.general_activity_id;
+
+      // 4. บันทึกข้อมูลลงตารางลูก (general_activity_event_detail)
+      if (meeting && meeting.equipmentSets && meeting.equipmentSets.length > 0) {
+        for (const set of meeting.equipmentSets) {
+          await supabase.from("general_activity_event_detail").insert([
+            {
+              general_activity_id: newActivityId,
+              hours: set.durationHours,
+              devices: set.devices,
+              equipment_name: set.equipmentName,
+            },
+          ]);
+        }
+      }
+
+      // 5. บันทึกข้อมูลลงตารางลูก (general_activity_travel_detail)
+      if (travel) {
+        await supabase.from("general_activity_travel_detail").insert([
+          {
+            general_activity_id: newActivityId,
+            trips: travel.trips,
+            distance: travel.distanceKm || 0,
+            fuel_type: travel.vehicleType.toLowerCase(),
+          },
+        ]);
       }
 
       alert("คำนวณและบันทึกข้อมูลคาร์บอนฟุตพริ้นท์เรียบร้อยแล้ว!");
@@ -329,16 +301,9 @@ export default function ActivityBasedFootprintPage() {
       <FootprintStepper current={3} />
 
       {loadingActivities ? (
-        <div className="text-center py-8 text-gray-500">กำลังโหลดรายการกิจกรรม...</div>
+        <div className="text-center py-8 text-gray-500">กำลังโหลดระบบ...</div>
       ) : (
         <div className="space-y-6">
-          <div className="flex items-start gap-3 bg-emerald-50 p-4 rounded-xl border border-emerald-100">
-            <Sparkles className="w-5 h-5 text-emerald-700 mt-0.5 flex-shrink-0" />
-            <p className="text-xs text-emerald-800">
-              บันทึกกิจกรรมการประชุมและการเดินทางขององค์กร ระบบรองรับการเพิ่มอุปกรณ์ไฟฟ้าหลายเซตสำหรับการประชุม Onsite และคำนวณตามมาตรฐาน CFO พร้อมคำแนะนำลดคาร์บอนอัตโนมัติ
-            </p>
-          </div>
-
           <div className="grid grid-cols-1 gap-6">
             <MeetingForm 
               onSubmit={(data) => setMeeting(data)} 
@@ -361,11 +326,12 @@ export default function ActivityBasedFootprintPage() {
             </button>
           </div>
 
-          {/* ส่งข้อมูลการปล่อย (แปลงเป็นตันแล้วโดยหาร 1000) และข้อมูล Recommendation ไปยัง CalculationResult */}
           <CalculationResult
-            meetingEmission={meetingRes / 1000}
-            travelEmission={travelRes / 1000}
+            meetingEmission={meetingEmissionTon}
+            travelEmission={travelEmissionTon}
             resourceEmission={0}
+            meetingRawElectricityKWh={meetingRawElectricityKWh}
+            meetingElectricityCost={meetingElectricityCost}
             meetingRecommendation={meetingRecommendation}
             travelRecommendation={travelRecommendation}
           />

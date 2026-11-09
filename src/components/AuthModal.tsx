@@ -149,7 +149,7 @@ export default function AuthModal({
 
       onClose();
       if (userData.role === "admin") {
-        router.push("/admin/recommendation");
+        router.push("/admin/ef-gwp");
       } else {
         router.push("/organization/dashboard");
       }
