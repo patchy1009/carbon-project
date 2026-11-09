@@ -41,7 +41,7 @@ const ONSITE_FUELS = [
   { id: "Diesel_B20", label: "รถยนต์/รถตู้ - Diesel B20" },
   { id: "CNG", label: "รถยนต์/รถตู้ - CNG" },
   { id: "LPG", label: "รถยนต์/รถตู้ - LPG" },
-  { id: "Electricity", label: "รถไฟฟ้า (EV) - กระแสไฟฟ้า (kWh)" },
+  { id: "Electricity", label: "รถไฟฟ้า (EV) - กระแสไฟฟ้า (kWh/km)" },
 ];
 
 export default function MeetingForm({ onSubmit, adminActivities = [] }: MeetingFormProps) {
@@ -65,7 +65,7 @@ export default function MeetingForm({ onSubmit, adminActivities = [] }: MeetingF
   const [fuelType, setFuelType] = useState("Gasohol_E10");
   const [distanceKm, setDistanceKm] = useState("10");
   const [trips, setTrips] = useState("1");
-  const [evElectricityKwh, setEvElectricityKwh] = useState("15");
+  const [evElectricityKwh, setEvElectricityKwh] = useState("0.16"); // ตั้งค่าเริ่มต้นเป็น 0.16 kWh/km ตามค่ามาตรฐานกลาง
 
   const isEvSelected = fuelType === "Electricity";
 
@@ -137,7 +137,7 @@ export default function MeetingForm({ onSubmit, adminActivities = [] }: MeetingF
       }
 
       if (isEvSelected && evKwh <= 0) {
-        alert("กรุณาระบุปริมาณกระแสไฟฟ้า (kWh) สำหรับรถไฟฟ้าให้ถูกต้อง");
+        alert("กรุณาระบุอัตราการใช้พลังงานไฟฟ้า (kWh/km) สำหรับรถไฟฟ้าให้ถูกต้อง");
         return;
       }
 
@@ -352,14 +352,15 @@ export default function MeetingForm({ onSubmit, adminActivities = [] }: MeetingF
                 {isEvSelected && (
                   <div>
                     <label className="mb-1 block text-xs font-medium text-gray-700">
-                      ปริมาณกระแสไฟฟ้าที่ใช้ชาร์จต่อเที่ยว (kWh) *
+                      อัตราการใช้พลังงานไฟฟ้า (kWh/km) *
                     </label>
                     <input
                       type="number"
-                      min="0.1"
+                      min="0.01"
                       step="0.01"
                       value={evElectricityKwh}
                       onChange={(e) => setEvElectricityKwh(e.target.value)}
+                      placeholder="เช่น 0.16"
                       className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
                       required
                     />

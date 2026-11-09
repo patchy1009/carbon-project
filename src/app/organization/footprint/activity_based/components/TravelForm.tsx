@@ -53,7 +53,7 @@ const FUEL_OPTIONS_MAP: Record<string, { id: string; label: string }[]> = {
     { id: "LPG", label: "LPG" },
   ],
   ev: [
-    { id: "Electricity", label: "กระแสไฟฟ้า (kWh)" },
+    { id: "Electricity", label: "กระแสไฟฟ้า (kWh/km)" },
   ],
 };
 
@@ -65,7 +65,7 @@ export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFor
   const [fuelType, setFuelType] = useState(availableFuels[0].id);
 
   const [distanceKm, setDistanceKm] = useState("0");
-  const [electricityKwh, setElectricityKwh] = useState("0");
+  const [electricityKwh, setElectricityKwh] = useState("0.16"); // ตั้งค่าเริ่มต้นเป็น 0.16 kWh/km ตามค่ามาตรฐานกลาง
   const [trips, setTrips] = useState("1");
 
   const handleVehicleChange = (newVehicle: string) => {
@@ -96,7 +96,7 @@ export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFor
     }
 
     if (isEvSelected && kwh <= 0) {
-      alert("กรุณาระบุปริมาณกระแสไฟฟ้า (kWh) ให้ถูกต้อง");
+      alert("กรุณาระบุอัตราการใช้พลังงานไฟฟ้า (kWh/km) ให้ถูกต้อง");
       return;
     }
 
@@ -175,15 +175,15 @@ export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFor
           {isEvSelected && (
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-700">
-                ปริมาณกระแสไฟฟ้าที่ใช้ชาร์จต่อเที่ยว (kWh) *
+                อัตราการใช้พลังงานไฟฟ้า (kWh/km) *
               </label>
               <input
                 type="number"
-                min="0.1"
+                min="0.01"
                 step="0.01"
                 value={electricityKwh}
                 onChange={(e) => setElectricityKwh(e.target.value)}
-                placeholder="ระบุหน่วย kWh"
+                placeholder="เช่น 0.16"
                 className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
                 required
               />
