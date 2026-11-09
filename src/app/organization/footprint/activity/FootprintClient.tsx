@@ -792,6 +792,14 @@ export default function FootprintClient({
               >
                 ปิด
               </button>
+              {/* [MERGE] ทางเข้าขั้นที่ 3 ของ cyn2 (บันทึกกิจกรรมพิเศษ: ประชุม/อีเวนต์ และการเดินทาง)
+                  stepper ของ aom กดไม่ได้ จึงเพิ่มปุ่มนี้แทนการกดเลข 3 — ไปหลังบันทึกขั้นที่ 2 แล้ว ข้อมูลจึงไม่หาย */}
+              <Link
+                href="/organization/footprint/activity_based"
+                className="btn btn-outline rounded-lg px-4 py-2 text-sm"
+              >
+                บันทึกกิจกรรมพิเศษ (ขั้นที่ 3)
+              </Link>
               <Link
                 href={`/organization/footprint/report/${done.id}`}
                 className="btn btn-primary rounded-lg px-4 py-2 text-sm font-semibold"

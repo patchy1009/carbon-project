@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState } from "react";
@@ -6,11 +5,12 @@ import { useRouter } from "next/navigation";
 import AuthModal from "@/components/AuthModal";
 
 // หน้าเข้าสู่ระบบ เปิดกล่องล็อกอินให้ทันทีเมื่อเข้าหน้านี้
+// [MERGE aom + cyn2] โค้ดส่วนใหญ่เป็นของ cyn2 (เอาข้อความ "กำลังโหลด..." ออก), คอมเมนต์บรรทัดนี้ของ aom
 export default function LoginPage() {
   const [isOpen, setIsOpen] = useState(true);
   const router = useRouter();
 
-  // ปิด Modal แล้วกลับหน้าแรก ไม่ใช่หน้า Dashboard
+  // จัดการเมื่อปิด Modal ปกติให้กลับหน้าแรก
   const handleClose = () => {
     setIsOpen(false);
     router.push("/");
@@ -23,10 +23,6 @@ export default function LoginPage() {
         onClose={handleClose}
         initialMode="login"
       />
-
-      <div className="text-center text-gray-400 text-sm">
-        กำลังโหลดหน้าเข้าสู่ระบบ...
-      </div>
     </div>
   );
 }

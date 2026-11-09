@@ -30,7 +30,17 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isLoginPage = request.nextUrl.pathname === "/organization/login";
+  // [MERGE aom + cyn2] หน้าที่เข้าได้โดยไม่ต้องล็อกอิน
+  //   เดิม (aom) มีแค่ /organization/login
+  //   เพิ่มหน้าของ cyn2: homepage (หน้าแรก — src/app/page.tsx redirect มาที่นี่), register, forgot_password
+  //   ถ้าไม่เพิ่ม ผู้ใช้ที่ยังไม่ล็อกอินจะถูกเด้งไปหน้า login ตลอด สมัครสมาชิก/ตั้งรหัสใหม่ไม่ได้
+  const PUBLIC_PATHS = [
+    "/organization/login", // [aom]
+    "/organization/homepage", // [cyn2]
+    "/organization/register", // [cyn2]
+    "/organization/forgot_password", // [cyn2]
+  ];
+  const isLoginPage = PUBLIC_PATHS.includes(request.nextUrl.pathname);
   if (!user && !isLoginPage) {
     return NextResponse.redirect(new URL("/organization/login", request.url));
   }

@@ -224,6 +224,7 @@ export default function OfficeInfoClient({
         <Link href={nextHref} onClick={() => clearOfficeDraft(scope)} className="text-sm text-[#6B7280] underline transition hover:text-[#27704D]">
           ข้ามขั้นตอนนี้
         </Link>
+        
       </div>
     </form>
   );

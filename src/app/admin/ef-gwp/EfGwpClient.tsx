@@ -268,7 +268,7 @@ export default function EfGwpClient({
           {efTypes.map((t) => (
             <span
               key={t.eftype_id}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F1F5F9] text-xs font-sans"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F1F5F9] text-[#0F172A] text-xs font-sans"
             >
               {/* กดที่ชื่อเพื่อแก้ไข */}
               <button onClick={() => openTypeModal(t)} className="hover:underline" title="แก้ไข" aria-label="แก้ไข">
@@ -340,8 +340,11 @@ export default function EfGwpClient({
 
       {/* Section 3: GWP Table */}
       <div className="w-full max-w-[944px] rounded-xl border border-[#E2E8F0] shadow-sm">
-        <div className="flex items-center justify-between px-6 py-6 border-b border-[#F1F5F9]">
+        {/* [MERGE] หัวตารางใช้ของ aom (เอาฟอนต์ Be_Vietnam_Pro ออกแล้ว ใช้ฟอนต์กลางของเว็บ)
+            + สีตัวอักษร text-[#0F172A] ที่ cyn2 เพิ่ม (กันตัวอักษรเป็นสีจางเมื่อ globals.css เปลี่ยนสี) */}
+        <div className="flex items-center justify-between px-6 py-6 border-b border-[#F1F5F9] text-[#0F172A]">
           <h2 className="text-xl font-bold text-[#0F172A]">
+
             ตารางค่า GWP (Global Warming Potential)
           </h2>
           <button

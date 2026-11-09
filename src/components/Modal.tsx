@@ -1,12 +1,17 @@
+/* ===================== [MERGE aom + cyn2] =====================
+ * Modal (default export)  = โครงของ cyn2 (title ไม่บังคับ, ปิดเมื่อคลิกพื้นหลังเท่านั้น)
+ *                           + ปุ่ม × ของ aom ตอนมี title
+ * ModalShell / ModalActions = โค้ด aom ทั้งหมด (ใช้ในหน้า admin) cyn2 ไม่ได้แก้ส่วนนี้
+ * ============================================================== */
 // กล่อง popup ที่ใช้ร่วมกันหลายหน้า
 "use client";
 
-import type { ReactNode } from "react";
+import type { ReactNode, MouseEvent } from "react";
 
 type ModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  title: string;
+  title?: string;
   children: ReactNode;
 };
 
@@ -19,34 +24,49 @@ export default function Modal({
 }: ModalProps) {
   if (!isOpen) return null;
 
+  // ปิด Modal เมื่อคลิกพื้นหลังด้านนอกเท่านั้น
+  const handleBackdropClick = (
+    event: MouseEvent<HTMLDivElement>
+  ) => {
+    if (event.target === event.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
+    // [cyn2] กรอบ popup แบบใหม่ (พื้นหลังเบลอ, มุมมน 3xl) — ใช้กับกล่องเข้าสู่ระบบ/ลงทะเบียนของ cyn2 (AuthModal)
     <div
-      // พื้นหลังมืดลงน้อยกว่าเดิม (50% -> 40%) และกล่องมุมมนขึ้น เงานุ่มขึ้น ให้เข้าชุดกับกล่องแจ้งเตือนกลาง
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/40 p-4"
-      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm transition-opacity"
+      onClick={handleBackdropClick}
     >
       <div
-        className="w-full max-w-lg rounded-2xl bg-white shadow-[0_20px_50px_rgba(15,23,42,0.2)]"
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title || "Dialog"}
+        className="relative w-full max-w-lg rounded-3xl bg-white shadow-2xl border border-slate-100 overflow-hidden transition-all transform scale-100"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-[#F1F5F9] px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">
-            {title}
-          </h2>
+        {/* [cyn2] Header: แสดงเฉพาะเมื่อมี title (AuthModal ไม่ส่ง title จึงไม่มีหัว) */}
+        {title && (
+          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+            <h2 className="text-lg font-bold text-slate-900">
+              {title}
+            </h2>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-2xl leading-none text-gray-400 hover:bg-[#F1F5F9] hover:text-gray-600"
-            aria-label="ปิด"
-          >
-            ×
-          </button>
-        </div>
+            {/* [MERGE] ปุ่ม × ของ aom ยังคงไว้เมื่อมี title
+                เพราะ popup ของ aom (เช่น "บันทึกเสร็จสิ้น" ใน FootprintClient.tsx) ส่ง title มาและใช้ปุ่มนี้ปิด */}
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-2xl leading-none text-gray-400 hover:bg-[#F1F5F9] hover:text-gray-600"
+              aria-label="ปิด"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {/* Content */}
-        <div className="px-6 py-5">
+        <div className="px-6 py-6 lg:px-8 lg:py-8">
           {children}
         </div>
       </div>
