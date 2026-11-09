@@ -19,7 +19,9 @@ import { formatNumber, formatThaiDate } from '@/lib/format';
 // ลบ 1 รายการบันทึกการปล่อยก๊าซ พร้อมรายละเอียดและข้อมูลสำนักงาน
 // เลิกลบบิลจาก org_bill_file และ Storage 'bills' เพราะระบบไม่เก็บรูปบิลแล้ว
 async function deleteActivity(id: string): Promise<string | null> {
-  for (const table of ['org_office_info', 'org_activity_detail']) {
+  // [MERGE aom + cyn2] เพิ่ม org_credit_allocation_detail (ของ cyn2): รายการนี้อาจถูกเลือกไปหักลบเครดิตไว้
+  //   ถ้าไม่ลบก่อน การลบรายการจะติด foreign key (orgactlist_id)
+  for (const table of ['org_credit_allocation_detail', 'org_office_info', 'org_activity_detail']) {
     const { error } = await supabase.from(table).delete().eq('orgactlist_id', id);
     if (error) return dbErrorMessage(error);
   }
@@ -31,6 +33,21 @@ async function deleteActivity(id: string): Promise<string | null> {
 
 // ลบ 1 โครงการ T-VER พร้อมรายละเอียดของโครงการ
 async function deleteTreeProject(id: string): Promise<string | null> {
+  // [MERGE aom + cyn2] ลบผลการจัดสรรเครดิตของ cyn2 (org_credit_allocation + _detail) ก่อน
+  //   ตาราง allocation อ้างถึง orgtreeproject_id ถ้าไม่ลบก่อน การลบโครงการจะติด foreign key
+  const { data: allocs, error: allocErr } = await supabase
+    .from('org_credit_allocation')
+    .select('orgallocate_id')
+    .eq('orgtreeproject_id', id);
+  if (allocErr) return dbErrorMessage(allocErr);
+  const allocIds = (allocs ?? []).map((a: { orgallocate_id: string }) => a.orgallocate_id);
+  if (allocIds.length > 0) {
+    const allocDetail = await supabase.from('org_credit_allocation_detail').delete().in('orgallocate_id', allocIds);
+    if (allocDetail.error) return dbErrorMessage(allocDetail.error);
+    const alloc = await supabase.from('org_credit_allocation').delete().in('orgallocate_id', allocIds);
+    if (alloc.error) return dbErrorMessage(alloc.error);
+  }
+  // [aom] ลบรายละเอียดโครงการ แล้วค่อยลบตัวโครงการ
   const detail = await supabase.from('org_tree_project_detail').delete().eq('orgtreeproject_id', id);
   if (detail.error) return dbErrorMessage(detail.error);
   const { data, error } = await supabase.from('org_tree_project').delete().eq('orgtreeproject_id', id).select('orgtreeproject_id');

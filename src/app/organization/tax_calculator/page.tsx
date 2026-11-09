@@ -60,31 +60,12 @@ export default function TaxCalculatorPage() {
         let currentOrgId = null;
 
         // 1. ค้นหา organization ของผู้ใช้ปัจจุบัน
+        // [MERGE-FIX] ความปลอดภัยแบบ aom: org_id = auth.uid() ของบัญชีที่ล็อกอิน
+        //   (ตรงกับ org_tree_project.org_id ที่หน้า T-VER ของ aom บันทึก และ RLS ใน supabase/rls.sql)
+        //   เดิม: ค้น organization ด้วย acc_id แล้วถ้าไม่เจอ "ดึงองค์กรแรกในระบบ" มาแทน
+        //   -> อาจแสดงโครงการ/เครดิตของบริษัทอื่น จึงเอา fallback ออก (ไม่เจอ = ไม่แสดงอะไร)
         const { data: authData } = await supabase.auth.getUser();
-        if (authData?.user) {
-          const { data: orgData } = await supabase
-            .from("organization")
-            .select("org_id")
-            .eq("acc_id", authData.user.id)
-            .maybeSingle();
-
-          if (orgData) {
-            currentOrgId = orgData.org_id;
-          }
-        }
-
-        // หากไม่เจอตาม acc_id ให้ดึงองค์กรแรกในระบบเป็น Fallback
-        if (!currentOrgId) {
-          const { data: fallbackOrg } = await supabase
-            .from("organization")
-            .select("org_id")
-            .limit(1)
-            .maybeSingle();
-
-          if (fallbackOrg) {
-            currentOrgId = fallbackOrg.org_id;
-          }
-        }
+        currentOrgId = authData?.user?.id ?? null;
 
         if (!currentOrgId) {
           setLoadingProjects(false);

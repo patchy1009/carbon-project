@@ -424,6 +424,20 @@ export default function TverSimulationClient({
                   </div>
                 ))}
               </div>
+
+              {/* [MERGE aom + cyn2] ต่อไปขั้นที่ 2 ของ cyn2: จัดสรรคาร์บอนเครดิต -> ประเมินภาษี
+                  ตกลงกันว่า: จำลองโครงการ (บันทึก / แสดงใน dashboard / แก้ไข) = ของ aom
+                               การจัดสรรเครดิตและคำนวณภาษีหลังจากนั้น = ของ cyn2
+                  ส่ง id โครงการที่บันทึกแล้วไปทาง ?project= ให้หน้า cyn2 ใช้เครดิต 3 ปีจากโครงการนี้
+                  แสดงเฉพาะเมื่อบันทึกโครงการแล้ว (มี savedProjectId) */}
+              {savedProjectId && (
+                <Link
+                  href={`/organization/tver_simulation?project=${savedProjectId}`}
+                  className="btn btn-primary mt-6 flex h-[52px] w-full items-center justify-center rounded-xl text-base font-semibold"
+                >
+                  ไปจัดสรรคาร์บอนเครดิต (ขั้นถัดไป) →
+                </Link>
+              )}
             </>
           )}
         </div>

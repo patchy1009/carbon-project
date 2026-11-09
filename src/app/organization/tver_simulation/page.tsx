@@ -2,14 +2,20 @@
 
 /* ===================== [MERGE aom + cyn2] =====================
  * หน้านี้ = โค้ด cyn2 (route: /organization/tver_simulation — ขีดล่าง)
- * ฟีเจอร์จำลอง T-VER นี้ซ้ำกับของ aom (/organization/tver-simulation — ขีดกลาง, มีหน้า [id] และบันทึกหลายโครงการ)
- * ตามที่ตกลง "ฟีเจอร์ที่ aom ทำแล้วให้คงของ aom" -> เมนู navbar ชี้ไปหน้าของ aom
- * หน้านี้เก็บไว้ไม่ลบ (ไม่แก้โค้ดของ cyn2) แต่ไม่มีเมนูลิงก์มาที่นี่ — ควรตกลงกันว่าจะลบหรือรวมเข้ากับของ aom
- * [MERGE-FIX] จุดเดียวที่แก้: เปลี่ยน supabase client (ดูด้านล่าง)
+ * ตกลงกันว่า:
+ *   - ขั้นที่ 1 "จำลองโครงการ" (บันทึก / แสดงใน dashboard / แก้ไข) = ของ aom -> /organization/tver-simulation (ขีดกลาง)
+ *   - ขั้นที่ 2 "จัดสรรเครดิตและรายงาน" -> ไปหน้าคำนวณภาษี = ของ cyn2 (หน้านี้)
+ * ทางเข้า: ปุ่ม "ไปจัดสรรคาร์บอนเครดิต" ในหน้าของ aom ส่ง ?project=<orgtreeproject_id> มา
+ *   - มี ?project= -> โหลดโครงการของ aom, ข้ามไปขั้นที่ 2 เลย, ใช้เครดิต 3 ปีที่ aom คำนวณไว้
+ *   - ไม่มี ?project= -> ส่งกลับไปหน้าของ aom (สร้างโครงการที่นั่น)
+ *   ฟอร์มขั้นที่ 1 ของ cyn2 ด้านล่างยังอยู่ (ไม่ลบโค้ด cyn2) แต่ไม่ถูกใช้แล้ว
+ * ความปลอดภัยใช้แบบ aom: org_id = auth.uid() ของผู้ที่ล็อกอิน (เดิมหยิบองค์กรแรกในตาราง organization)
+ * จุดที่แก้ทั้งหมดติดป้าย [MERGE-FIX]
  * ============================================================== */
 
 import React, { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation"; // [MERGE-FIX] ใช้ส่งกลับ/ไปหน้าโครงการของ aom
 import {
   Check,
   ChevronDown,
@@ -85,6 +91,11 @@ export default function TVERSimulationPage() {
   const [messageType, setMessageType] = useState<MessageType>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // [MERGE-FIX] โครงการที่ส่งมาจากหน้า aom (?project=) และเครดิต 3 ปีของโครงการนั้น
+  const router = useRouter();
+  const [linkedProjectId, setLinkedProjectId] = useState<string | null>(null);
+  const [linkedCredits, setLinkedCredits] = useState<[number, number, number] | null>(null);
+
   // ดึงข้อมูลรายการปล่อยก๊าซ, org_id และ target_id จาก Supabase เมื่อโหลดหน้าเว็บ
   useEffect(() => {
     const fetchData = async () => {
@@ -92,26 +103,52 @@ export default function TVERSimulationPage() {
       try {
         let fetchedOrgId = null;
 
-        // 1. ดึงข้อมูลจากตาราง organization อย่างปลอดภัย
-        const { data: orgDataList, error: orgFetchError } = await supabase
-          .from("organization")
-          .select("*")
-          .limit(1);
-
-        if (!orgFetchError && orgDataList && orgDataList.length > 0) {
-          const orgRecord = orgDataList[0];
-          fetchedOrgId = orgRecord.org_id || orgRecord.id;
-          console.log("ดึงรหัสองค์กรสำเร็จ:", fetchedOrgId);
-        } else {
-          console.warn("ไม่พบข้อมูลองค์กรในตาราง organization");
-        }
+        // [MERGE-FIX] เดิม: ดึงองค์กร "แถวแรก" ของตาราง organization (.limit(1)) มาใช้
+        //   -> ถ้ามีหลายบริษัท จะบันทึก/อ่านข้อมูลผิดบริษัท
+        //   ตอนนี้ใช้แบบ aom: org_id = auth.uid() ของบัญชีที่ล็อกอิน (ตรงกับ RLS ใน supabase/rls.sql)
+        const { data: authData } = await supabase.auth.getUser();
+        fetchedOrgId = authData?.user?.id ?? null;
 
         setOrgId(fetchedOrgId);
 
+        // [MERGE-FIX] รับโครงการจากหน้า aom ผ่าน ?project= (ใช้ window.location แทน useSearchParams
+        //   เพราะหน้านี้ prerender แบบ static, useSearchParams ต้องห่อ Suspense)
+        const projectParam = new URLSearchParams(window.location.search).get("project");
+        if (!projectParam) {
+          // ไม่มีโครงการ -> ไปสร้างที่หน้าของ aom ก่อน
+          router.replace("/organization/tver-simulation");
+          return;
+        }
+        const { data: linked, error: linkedError } = await supabase
+          .from("org_tree_project")
+          .select("orgtreeproject_id, project_name, join_date, join_year, credit_year_1, credit_year_2, credit_year_3")
+          .eq("orgtreeproject_id", projectParam)
+          .eq("org_id", fetchedOrgId) // ต้องเป็นโครงการขององค์กรที่ล็อกอินเท่านั้น
+          .maybeSingle();
+        if (linkedError || !linked) {
+          showMessage("ไม่พบโครงการนี้ หรือไม่มีสิทธิ์เข้าถึง", "error");
+        } else {
+          setLinkedProjectId(linked.orgtreeproject_id);
+          setLinkedCredits([
+            Number(linked.credit_year_1) || 0,
+            Number(linked.credit_year_2) || 0,
+            Number(linked.credit_year_3) || 0,
+          ]);
+          setProject((previous) => ({
+            ...previous,
+            projectName: linked.project_name ?? "",
+            startDate: linked.join_date ?? (linked.join_year ? `${linked.join_year}-01-01` : ""),
+          }));
+          setCalculated(true);
+          setStep(2); // ข้ามขั้นที่ 1 ของ cyn2 ไปจัดสรรเครดิตเลย
+        }
+
         // 2. ดึงข้อมูลรายการปล่อยก๊าซ (ตารางที่ 12: org_activity_list)
+        // [MERGE-FIX] กรองเฉพาะขององค์กรที่ล็อกอิน (เดิมไม่กรอง พึ่ง RLS อย่างเดียว)
         const { data: activityData, error: actError } = await supabase
           .from("org_activity_list")
-          .select("orgactlist_id, orgact_name, total_ghg_emission");
+          .select("orgactlist_id, orgact_name, total_ghg_emission")
+          .eq("org_id", fetchedOrgId);
 
         if (actError) throw actError;
 
@@ -147,14 +184,20 @@ export default function TVERSimulationPage() {
   const totalTrees = area * treesPerRai;
 
   const yearlyCredits = useMemo(() => {
-    const MAI = 9.5; 
+    // [MERGE-FIX] มาจากโครงการของ aom -> ใช้เครดิต 3 ปีที่ aom คำนวณและบันทึกไว้ (credit_year_1..3)
+    if (linkedCredits) return linkedCredits;
+    const MAI = 9.5;
     return [1, 2, 3].map((year) =>
       Math.round(totalTrees * year * MAI * 0.001 * 100) / 100
     );
-  }, [totalTrees]);
+  }, [totalTrees, linkedCredits]);
 
   const cumulativeCredits = yearlyCredits;
-  const totalCredits = cumulativeCredits[cumulativeCredits.length - 1];
+  // [MERGE-FIX] สูตรของ cyn2 เป็นยอด "สะสม" จึงใช้ค่าปีที่ 3 เป็นยอดรวม
+  //   แต่ของ aom เป็นเครดิต "รายปี" (dashboard ของ aom ก็รวม 3 ปี) -> ยอดรวม = ปี1 + ปี2 + ปี3
+  const totalCredits = linkedCredits
+    ? linkedCredits[0] + linkedCredits[1] + linkedCredits[2]
+    : cumulativeCredits[cumulativeCredits.length - 1];
 
   const allocationRatio = {
     netzero: { offset: 100, sell: 0 },
@@ -278,6 +321,13 @@ export default function TVERSimulationPage() {
       });
       const targetIdToSave = matchedTarget ? matchedTarget.target_id : null;
 
+      let projectId;
+
+      // [MERGE-FIX] มาจากโครงการของ aom -> โครงการถูกบันทึกโดยหน้า aom แล้ว ไม่สร้าง/แก้ org_tree_project ซ้ำ
+      //   (ถ้าเขียนทับ จะลบค่าที่ aom เก็บ เช่น join_date และค้นโครงการด้วยชื่อซึ่งอาจซ้ำกันได้)
+      if (linkedProjectId) {
+        projectId = linkedProjectId;
+      } else {
       // 1. บันทึกข้อมูลโครงการปลูกป่าลงตาราง org_tree_project
       const { data: existingProjects, error: searchError } = await supabase
         .from("org_tree_project")
@@ -286,7 +336,6 @@ export default function TVERSimulationPage() {
 
       if (searchError) throw searchError;
 
-      let projectId;
       const existingProject = existingProjects?.[0];
 
       if (existingProject) {
@@ -323,6 +372,7 @@ export default function TVERSimulationPage() {
         if (insertError) throw insertError;
         projectId = insertedData?.[0]?.orgtreeproject_id;
       }
+      } // [MERGE-FIX] ปิด else ของ linkedProjectId
 
       if (!projectId) throw new Error("ไม่สามารถบันทึกข้อมูลโครงการได้");
 
@@ -432,6 +482,12 @@ export default function TVERSimulationPage() {
             <p className="mt-1 text-sm text-gray-500">
               การจำลองโครงการปลูกป่าและการจัดสรรคาร์บอนเครดิต
             </p>
+            {/* [MERGE-FIX] บอกว่ากำลังจัดสรรเครดิตของโครงการไหน (โครงการที่มาจากหน้า aom) */}
+            {linkedProjectId && (
+              <p className="mt-1 text-sm font-semibold text-emerald-700">
+                โครงการ: {project.projectName} · เครดิตรวม 3 ปี {formatNumber(totalCredits)} tCO₂e
+              </p>
+            )}
           </div>
 
           {step === 2 && allocationCalculated && (
@@ -451,6 +507,11 @@ export default function TVERSimulationPage() {
           <button
             type="button"
             onClick={() => {
+              // [MERGE-FIX] ขั้นที่ 1 อยู่ที่หน้าของ aom -> กลับไปแก้โครงการที่นั่น
+              if (linkedProjectId) {
+                router.push(`/organization/tver-simulation/${linkedProjectId}`);
+                return;
+              }
               setStep(1);
               clearMessage();
             }}
@@ -884,6 +945,11 @@ export default function TVERSimulationPage() {
                   <button
                     type="button"
                     onClick={() => {
+                      // [MERGE-FIX] ย้อนกลับไปหน้าแก้ไขโครงการของ aom
+                      if (linkedProjectId) {
+                        router.push(`/organization/tver-simulation/${linkedProjectId}`);
+                        return;
+                      }
                       setStep(1);
                       clearMessage();
                     }}
