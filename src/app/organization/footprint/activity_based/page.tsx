@@ -1,7 +1,7 @@
 "use client";
 
 /* ===================== [MERGE aom + cyn2] =====================
- * หน้านี้ = ฟีเจอร์ใหม่ของ cyn2 ทั้งไฟล์ (ไม่ได้แก้โค้ด)
+ * หน้านี้ = ฟีเจอร์ใหม่ของ cyn2 ทั้งไฟล์ (แก้แค่ฟอนต์ [MERGE-FIX] ให้เหมือนหน้าอื่น)
  *   ขั้นที่ 3 ของการบันทึก Carbon Footprint: "กิจกรรมพิเศษ" — การประชุม/อบรม/อีเวนต์ และการเดินทาง
  *   คำนวณด้วย ./calculation.ts + แนะนำทางเลือกลดคาร์บอน แล้วบันทึกลงตาราง activity_based
  * ทางเข้า: ปุ่ม "บันทึกกิจกรรมพิเศษ (ขั้นที่ 3)" ในกล่องบันทึกเสร็จของขั้นที่ 2 (FootprintClient.tsx ของ aom)
@@ -330,7 +330,9 @@ export default function ActivityBasedFootprintPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 px-6 py-8 font-['Be_Vietnam_Pro'] text-gray-800">
+    // [MERGE-FIX] เดิมมี font-['Be_Vietnam_Pro'] แต่เว็บไม่ได้โหลดฟอนต์นี้ -> ทั้งหน้าแสดงเป็นฟอนต์สำรองของเครื่อง
+    //   เอาออก ให้ใช้ฟอนต์หลักของเว็บ (font-sans) เหมือนหน้าอื่นทั้งฝั่ง organization และ admin
+    <div className="mx-auto max-w-6xl space-y-8 px-6 py-8 text-gray-800">
       <h1 className="text-2xl font-bold text-gray-900">
         การประเมินคาร์บอนฟุตพริ้นท์องค์กร (Activity-Based)
       </h1>

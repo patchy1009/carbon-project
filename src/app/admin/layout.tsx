@@ -22,9 +22,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="min-h-screen bg-[#F8FAFC] text-gray-800 font-sans">
       {/* Top Navbar */}
       {/* navbar ให้หน้าตาเดียวกับฝั่ง organization (ดูคอมเมนต์ใน organization/layout.tsx):
-          สูง 76px, เงานุ่มลง, โลโก้ 26px ฟอนต์ Prompt (font-display), ขวาเหลือแค่วงกลมผู้ใช้ */}
+          [MERGE aom + cyn2] ขนาดตัวอักษรใช้ตามฝั่ง organization (navbar ของ cyn2):
+          สูง 84px, โลโก้ 28px ตัวหนา ฟอนต์ Prompt (font-display), ขวาเหลือแค่วงกลมผู้ใช้ */}
       <header
-        className="fixed top-0 left-0 right-0 z-50 h-[76px] flex items-center justify-between px-8 rounded-bl-[50px]"
+        className="fixed top-0 left-0 right-0 z-50 h-[84px] flex items-center justify-between px-8 rounded-bl-[50px]"
         style={{
           background: 'linear-gradient(90deg, #2D4A63 0%, #32885F 100%)',
           boxShadow: '0 6px 16px rgba(0, 50, 50, 0.35)',
@@ -33,7 +34,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="flex items-baseline gap-3">
           <Link
             href="/admin/ef-gwp"
-            className="font-display text-white font-semibold text-[26px] tracking-tight hover:opacity-90 transition"
+            className="font-display text-white font-bold text-[28px] tracking-tight hover:opacity-90 transition"
           >
             Carbon Calculator
           </Link>
@@ -44,10 +45,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <NavUser />
       </header>
 
-      <div className="pt-[76px] flex">
+      <div className="pt-[84px] flex">
         {/* Sidebar */}
         {/* เดิมเงาเข้มรอบเมนูซ้าย -> เส้นขอบบางด้านขวา ดูเบาและทันสมัยขึ้น (ตำแหน่ง/ความกว้างเดิม) */}
-        <aside className="fixed left-0 top-[76px] bottom-0 w-[179px] bg-white border-r border-[#E2E8F0] overflow-y-auto">
+        <aside className="fixed left-0 top-[84px] bottom-0 w-[179px] bg-white border-r border-[#E2E8F0] overflow-y-auto">
           <nav className="flex flex-col gap-1 px-3 pt-6 pb-4">
             {navItems.map((item) => {
               const isActive = pathname.startsWith(item.href);
@@ -57,7 +58,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   href={item.href}
                   // เมนูที่เปิดอยู่: คงพื้นเหลืองตามแบบเดิม เพิ่มตัวหนา / เมนูอื่นตัวสีเทาเข้ม ให้แยกกันชัดขึ้น
                   aria-current={isActive ? 'page' : undefined}
-                  className={`rounded-lg px-3 py-2.5 text-sm transition ${
+                  // [MERGE aom + cyn2] เดิม text-sm (14px) -> text-base (16px) ให้ใกล้เมนูฝั่ง organization
+                  // (ฝั่ง organization 20px แต่เมนูด้านข้างกว้างแค่ 179px ถ้าใช้ 20px ชื่อเมนูจะตัดบรรทัด)
+                  className={`rounded-lg px-3 py-2.5 text-base transition ${
                     isActive ? 'bg-[#F2D84E] font-semibold text-black' : 'font-medium text-[#334155] hover:bg-[#F1F5F9]'
                   }`}
                 >
@@ -69,7 +72,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </aside>
 
         {/* Main content */}
-        <main className="ml-[179px] flex-1 min-h-[calc(100vh-76px)]">
+        <main className="ml-[179px] flex-1 min-h-[calc(100vh-84px)]">
           {children}
         </main>
       </div>

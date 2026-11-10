@@ -7,7 +7,7 @@
 --             ใครที่มี anon key ก็อ่าน/แก้การจัดสรรเครดิตของทุกบริษัทได้
 --
 -- ยังไม่ครอบคลุม (ต้องตกลงกันก่อน ดู booklet):
---   - organization : ขึ้นกับว่าจะใช้ org_id = acc_id (แบบ aom) หรือแยก (แบบ cyn2)
+--   - organization : ย้ายไปอยู่ supabase/rls_user_organization.sql แล้ว
 --   - activity_based : หน้า activity_based ใช้ทั้งเป็น "ข้อมูลกลางของแอดมิน" (อ่านทั้งตาราง)
 --                      และ "บันทึกขององค์กร" (insert org_id) ในตารางเดียวกัน -> ควรแยกตารางก่อนเขียน policy
 

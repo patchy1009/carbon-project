@@ -1,5 +1,5 @@
 /* ===================== [MERGE aom + cyn2] =====================
- * ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (ตามที่ตกลง: Navbar ฝั่งองค์กรใช้ของ cyn2)
+ * ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (ตามที่ตกลง: Navbar ฝั่งองค์กรใช้ของ cyn2) — แก้แค่ฟอนต์ [MERGE-FIX] ให้ตรงกับฝั่งแอดมิน
  *   - navbar ของ aom (NavUser.tsx: วงกลมผู้ใช้ + เมนูอีเมล/ออกจากระบบ) ไม่ได้ใช้ในฝั่งองค์กรแล้ว
  *     แต่ยังใช้ที่ src/app/admin/layout.tsx ของ aom จึงไม่ได้ลบไฟล์ NavUser.tsx
  *   - ลิงก์เมนูของ cyn2 เข้ากับหน้าของ aom ได้เลยโดยไม่ต้องแก้:
@@ -61,22 +61,27 @@ export default function OrganizationLayout({
           boxShadow: '-1px 6px 12.1px rgba(0, 63, 66, 0.81)',
         }}
       >
-        {/* โลโก้ฝั่งซ้าย */}
+        {/* โลโก้ฝั่งซ้าย
+            [MERGE-FIX] ฟอนต์: เดิม font-['Prompt'] แต่เว็บไม่ได้โหลดฟอนต์ชื่อนี้ไว้ (เครื่องส่วนใหญ่ไม่มี)
+            จึงแสดงเป็นฟอนต์สำรองของเครื่อง -> เปลี่ยนเป็น font-display (Prompt ที่โหลดไว้ใน src/app/layout.tsx)
+            ให้ตรงกับฝั่งแอดมิน ขนาด 28px ตัวหนาคงเดิม */}
         <Link
           href="/organization/dashboard"
-          className="text-white font-bold text-[28px] font-['Prompt'] hover:opacity-90 transition"
+          className="text-white font-bold text-[28px] font-display hover:opacity-90 transition"
           style={{ textShadow: '3px 2px 2.8px rgba(0,0,0,0.25)' }}
         >
           Carbon Calculator
         </Link>
 
-        {/* เมนูตรงกลาง */}
+        {/* เมนูตรงกลาง
+            [MERGE-FIX] ฟอนต์: เดิม font-['Lato'] ซึ่งไม่ได้โหลดไว้เหมือนกัน -> เอาออก ให้ใช้ฟอนต์หลักของเว็บ (font-sans)
+            เหมือนเมนูฝั่งแอดมิน ขนาด 20px คงเดิม */}
         <div className="hidden md:flex items-center gap-8">
           {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="text-white text-[20px] font-medium font-['Lato'] text-center hover:opacity-80 transition"
+              className="text-white text-[20px] font-medium text-center hover:opacity-80 transition"
             >
               {item.label}
             </Link>

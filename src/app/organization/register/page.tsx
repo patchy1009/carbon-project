@@ -1,5 +1,5 @@
 "use client";
-/* [MERGE aom + cyn2] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (ฟีเจอร์ที่ aom ไม่มี) — ไม่ได้แก้โค้ด
+/* [MERGE aom + cyn2] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (ฟีเจอร์ที่ aom ไม่มี) — แก้เฉพาะจุด [MERGE-FIX aom] (ย้ายการบันทึก user/organization ไปหลังยืนยัน OTP)
  * หน้าลงทะเบียนองค์กร (ตามที่ตกลง: register ใช้ของ cyn2) */
 
 import React, { useEffect, useState } from "react";
@@ -204,13 +204,37 @@ export default function RegisterPage() {
     try {
       const cleanEmail = email.trim().toLowerCase();
 
-      const { error } = await supabase.auth.verifyOtp({
+      const { data: authData, error } = await supabase.auth.verifyOtp({
         email: cleanEmail,
         token,
         type: "signup",
       });
 
       if (error) throw error;
+
+      // [MERGE-FIX aom] ย้ายการบันทึกตาราง user + organization มาไว้ "หลังยืนยัน OTP"
+      // เดิมทำใน /api/auth/register ตอนยังไม่ล็อกอิน -> auth.uid() ว่าง -> ติด RLS (บันทึกไม่ลงแบบเงียบๆ)
+      // ตอนนี้ verifyOtp แล้วมี session -> ผ่าน policy "org insert own" (supabase/rls_user_organization.sql)
+      // โค้ดด้านล่างยกมาจาก AuthModal.tsx ของ cyn2 (ลำดับเดียวกัน + เช็ก error)
+      if (authData.user) {
+        const userId = authData.user.id;
+
+        const { error: userInsertError } = await supabase.from("user").insert({
+          acc_id: userId,
+          email: cleanEmail,
+          username: username.trim(),
+          role: "organization",
+          status: "active",
+        });
+        if (userInsertError) throw userInsertError;
+
+        const { error: orgInsertError } = await supabase.from("organization").insert({
+          acc_id: userId,
+          org_name: companyName.trim(),
+          business_type: industry,
+        });
+        if (orgInsertError) throw orgInsertError;
+      }
 
       setStep("success");
       setSuccessMessage("ยืนยันอีเมลและบันทึกข้อมูลองค์กรเรียบร้อยแล้ว");
