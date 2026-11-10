@@ -23,7 +23,8 @@ export type MeetingData = {
   ef_id?: string | null;
 };
 
-type MeetingFormProps = {
+export type MeetingFormProps = {
+  initialData?: MeetingData | null;
   onSubmit: (data: MeetingData) => void;
   adminActivities?: any[];
 };
@@ -73,11 +74,10 @@ const FUEL_OPTIONS_MAP: Record<string, { id: string; label: string }[]> = {
   ],
 };
 
-export default function MeetingForm({ onSubmit, adminActivities = [] }: MeetingFormProps) {
+export default function MeetingForm({ initialData, onSubmit, adminActivities = [] }: MeetingFormProps) {
   const [meetingName, setMeetingName] = useState("");
   const [meetingType, setMeetingType] = useState("online");
 
-  // กำหนดค่าเริ่มต้นเป็น Number ทั้งหมดเพื่อป้องกัน Type Mismatch
   const onlineDefaultSets = [
     { id: "1", equipmentName: "คอมพิวเตอร์", devices: 1, durationHours: 2, electricityKwh: 60}
   ];
@@ -88,19 +88,49 @@ export default function MeetingForm({ onSubmit, adminActivities = [] }: MeetingF
 
   const [equipmentSets, setEquipmentSets] = useState(onlineDefaultSets);
 
-  useEffect(() => {
-    if (meetingType === "online") {
-      setEquipmentSets(onlineDefaultSets);
-    } else {
-      setEquipmentSets(onsiteDefaultSets);
-    }
-  }, [meetingType]);
-
   const [vehicleType, setVehicleType] = useState("car");
   const [fuelType, setFuelType] = useState(FUEL_OPTIONS_MAP["car"][0].id);
   const [distanceKm, setDistanceKm] = useState("10");
   const [trips, setTrips] = useState("1");
   const [evElectricityKwh, setEvElectricityKwh] = useState("0.16");
+
+  useEffect(() => {
+    if (initialData) {
+      setMeetingName(initialData.meetingName || "");
+      setMeetingType(initialData.meetingType || "online");
+      
+      if (initialData.equipmentSets && initialData.equipmentSets.length > 0) {
+        setEquipmentSets(
+          initialData.equipmentSets.map((set, idx) => ({
+            id: String(idx + 1),
+            equipmentName: set.equipmentName,
+            devices: set.devices,
+            durationHours: set.durationHours,
+            electricityKwh: set.electricityKwh,
+          }))
+        );
+      }
+
+      if (initialData.meetingType === "onsite") {
+        setVehicleType(initialData.vehicleType || "car");
+        setFuelType(initialData.fuelType || "Gasohol_E10");
+        setDistanceKm(String(initialData.distanceKm || 10));
+        setTrips(String(initialData.trips || 1));
+        if (initialData.electricityKwh) {
+          setEvElectricityKwh(String(initialData.electricityKwh));
+        }
+      }
+    } else {
+      setMeetingName("");
+      setMeetingType("online");
+      setEquipmentSets(onlineDefaultSets);
+      setVehicleType("car");
+      setFuelType(FUEL_OPTIONS_MAP["car"][0].id);
+      setDistanceKm("10");
+      setTrips("1");
+      setEvElectricityKwh("0.16");
+    }
+  }, [initialData]);
 
   const handleVehicleChange = (newVehicle: string) => {
     setVehicleType(newVehicle);

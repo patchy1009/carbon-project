@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 export type TravelData = {
-  travelName: string;
+  travel_name: string; // ชื่อกิจกรรมการเดินทางย่อย
   distanceKm: number;
   trips: number;
   vehicleType: string;
@@ -13,6 +13,7 @@ export type TravelData = {
 };
 
 type TravelFormProps = {
+  initialData?: TravelData | null;
   onSubmit: (data: TravelData) => void;
   adminActivities?: any[];
 };
@@ -57,16 +58,36 @@ const FUEL_OPTIONS_MAP: Record<string, { id: string; label: string }[]> = {
   ],
 };
 
-export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFormProps) {
+export default function TravelForm({ initialData, onSubmit, adminActivities = [] }: TravelFormProps) {
   const [travelName, setTravelName] = useState("");
   const [vehicleType, setVehicleType] = useState("car");
   
   const availableFuels = FUEL_OPTIONS_MAP["car"];
   const [fuelType, setFuelType] = useState(availableFuels[0].id);
 
-  const [distanceKm, setDistanceKm] = useState("0");
+  const [distanceKm, setDistanceKm] = useState("10");
   const [electricityKwh, setElectricityKwh] = useState("0.16");
   const [trips, setTrips] = useState("1");
+
+  useEffect(() => {
+    if (initialData) {
+      setTravelName(initialData.travel_name || "");
+      setVehicleType(initialData.vehicleType || "car");
+      setFuelType(initialData.fuelType || "Gasohol_E10");
+      setDistanceKm(String(initialData.distanceKm || 10));
+      setTrips(String(initialData.trips || 1));
+      if (initialData.electricityKwh) {
+        setElectricityKwh(String(initialData.electricityKwh));
+      }
+    } else {
+      setTravelName("");
+      setVehicleType("car");
+      setFuelType(FUEL_OPTIONS_MAP["car"][0].id);
+      setDistanceKm("10");
+      setElectricityKwh("0.16");
+      setTrips("1");
+    }
+  }, [initialData]);
 
   const handleVehicleChange = (newVehicle: string) => {
     setVehicleType(newVehicle);
@@ -109,7 +130,7 @@ export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFor
     const matchedEfId = foundAct ? foundAct.ef_id : (adminActivities[0]?.ef_id || null);
 
     onSubmit({
-      travelName: travelName.trim(),
+      travel_name: travelName.trim(),
       distanceKm: distance,
       electricityKwh: isEvSelected ? kwh : undefined,
       trips: tripCount,
@@ -190,12 +211,9 @@ export default function TravelForm({ onSubmit, adminActivities = [] }: TravelFor
             </div>
           )}
 
-          {/* ปรับเลย์เอาต์ ระยะทาง และ จำนวนเที่ยว ให้อยู่คู่กันในแถวเดียวเหมือน Onsite */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700">
-                ระยะทาง(กิโลเมตร) *
-              </label>
+              <label className="mb-1 block text-xs font-medium text-gray-700">ระยะทาง(กิโลเมตร) *</label>
               <input
                 type="number"
                 min="0.1"

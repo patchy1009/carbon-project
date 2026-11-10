@@ -27,6 +27,8 @@ type CalculationResultProps = {
   resourceEmission?: number;
   meetingRawElectricityKWh?: number;
   meetingElectricityCost?: number;
+  travelRawElectricityKWh?: number;    
+  travelElectricityCost?: number;     
   meetingRecommendation?: GroupedVehicleRecommendation[];
   travelRecommendation?: GroupedVehicleRecommendation[];
 };
@@ -37,6 +39,8 @@ export default function CalculationResult({
   resourceEmission = 0,
   meetingRawElectricityKWh = 0,
   meetingElectricityCost = 0,
+  travelRawElectricityKWh = 0,        
+  travelElectricityCost = 0,          
   meetingRecommendation = [],
   travelRecommendation = [],
 }: CalculationResultProps) {
@@ -61,8 +65,13 @@ export default function CalculationResult({
     return name.replace(/^เปลี่ยนมาใช้\s*/i, "").trim();
   };
 
-  const hasMeetingRecs = meetingRecommendation && meetingRecommendation.length > 0;
-  const hasTravelRecs = travelRecommendation && travelRecommendation.length > 0;
+  // ตรวจสอบว่ายังมีทางเลือกอื่นหลังกรองตัวเลือกปัจจุบันออกหรือไม่
+  const hasMeetingRecs = meetingRecommendation && meetingRecommendation.some(group => 
+    group.fuels.some(fuel => !fuel.isCurrent)
+  );
+  const hasTravelRecs = travelRecommendation && travelRecommendation.some(group => 
+    group.fuels.some(fuel => !fuel.isCurrent)
+  );
   const hasAnyValidRec = hasMeetingRecs || hasTravelRecs;
 
   return (
@@ -91,10 +100,12 @@ export default function CalculationResult({
                 หมวดการประชุม อบรม และจัดอีเวนต์
               </h3>
               
-              <div className="flex items-center gap-3 pt-1 text-xs text-gray-600 font-medium">
-                <span>ปริมาณไฟฟ้า : <strong className="text-gray-700">{formatNumber(meetingRawElectricityKWh, 2)} kWh</strong></span>
-                <span>ค่าใช้จ่ายไฟฟ้า : <strong className="text-gray-700">{formatNumber(meetingElectricityCost, 2)} บาท</strong></span>
-              </div>
+              {meetingRawElectricityKWh > 0 && (
+                <div className="flex items-center gap-3 pt-1 text-xs text-gray-600 font-medium">
+                  <span>ปริมาณไฟฟ้า : <strong className="text-gray-700">{formatNumber(meetingRawElectricityKWh, 2)} kWh</strong></span>
+                  <span>ค่าใช้จ่ายไฟฟ้า : <strong className="text-gray-700">{formatNumber(meetingElectricityCost, 2)} บาท</strong></span>
+                </div>
+              )}
             </div>
             <div className="text-right">
               <span className="font-bold text-gray-900 text-lg">
@@ -106,10 +117,17 @@ export default function CalculationResult({
 
           {/* หมวดการเดินทาง และขนส่ง */}
           <div className="rounded-xl border border-gray-200 bg-white p-5 flex items-center justify-between">
-            <div>
+            <div className="space-y-1">
               <h3 className="font-semibold text-gray-800 text-base">
                 หมวดการเดินทาง
               </h3>
+              
+              {travelRawElectricityKWh > 0 && (
+                <div className="flex items-center gap-3 pt-1 text-xs text-gray-600 font-medium">
+                  <span>ปริมาณไฟฟ้า : <strong className="text-gray-700">{formatNumber(travelRawElectricityKWh, 2)} kWh</strong></span>
+                  <span>ค่าใช้จ่ายไฟฟ้า : <strong className="text-gray-700">{formatNumber(travelElectricityCost, 2)} บาท</strong></span>
+                </div>
+              )}
             </div>
             <div className="text-right">
               <span className="font-bold text-gray-900 text-lg">
@@ -156,81 +174,78 @@ export default function CalculationResult({
                 <h4 className="text-base font-bold text-gray-900">หมวดการประชุม อบรม และจัดกิจกรรม</h4>
 
                 <div className="space-y-4">
-                  {meetingRecommendation.map((group, groupIdx) => (
-                    <div key={groupIdx} className="border border-gray-100 rounded-xl p-4 bg-gray-50/50 space-y-3">
-                      <div className="flex items-center justify-between border-b border-gray-200 pb-2">
-                        <span className="text-sm font-bold text-gray-800 uppercase tracking-wide">
-                          ประเภท: {group.subCategory}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          ปล่อยน้อยที่สุดในกลุ่ม: <strong className="text-emerald-700">{formatEmission(group.bestEmissionTon)} tCO₂e</strong>
-                        </span>
-                      </div>
+                  {meetingRecommendation.map((group, groupIdx) => {
+                    // กรองเฉพาะตัวเลือกที่ไม่ใช่ปัจจุบัน
+                    const validFuels = group.fuels.filter(fuel => !fuel.isCurrent);
+                    if (validFuels.length === 0) return null;
 
-                      <div className="space-y-2">
-                        {group.fuels.map((fuelItem, fuelIdx) => (
-                          <div
-                            key={fuelIdx}
-                            className={`p-3.5 rounded-xl border text-sm flex items-center justify-between ${
-                              fuelItem.isCurrent
-                                ? "bg-emerald-50/60 border-emerald-300"
-                                : "bg-white border-gray-200"
-                            }`}
-                          >
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="font-semibold text-gray-900 text-sm">{cleanName(fuelItem.option.name)}</span>
-                                {fuelItem.isCurrent && (
-                                  <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
-                                    ตัวเลือกปัจจุบันของคุณ
-                                  </span>
-                                )}
-                                {fuelIdx === 0 && groupIdx === 0 && (
-                                  <span className="text-[10px] bg-[#32885F] text-white font-bold px-2 py-0.5 rounded-full">
-                                    แนะนำที่สุด
-                                  </span>
-                                )}
-                              </div>
-                              
-                              {(fuelItem.electricityReductionKWh !== undefined || fuelItem.electricityCostSaved !== undefined) && (
-                                <div className="flex items-center gap-3 text-xs text-gray-600 pt-0.5">
-                                  {fuelItem.electricityReductionKWh !== 0 && (
-                                    <span className="text-emerald-700 font-medium">
-                                      ไฟฟ้าลดลง: {formatNumber(fuelItem.electricityReductionKWh || 0, 2)} kWh
-                                    </span>
-                                  )}
-                                  {fuelItem.electricityCostSaved !== undefined && fuelItem.electricityCostSaved !== 0 && (
-                                    <span className="text-emerald-700 font-medium">
-                                      ประหยัดค่าไฟ: {formatNumber(fuelItem.electricityCostSaved, 2)} บาท
+                    return (
+                      <div key={groupIdx} className="border border-gray-100 rounded-xl p-4 bg-gray-50/50 space-y-3">
+                        <div className="flex items-center justify-between border-b border-gray-200 pb-2">
+                          <span className="text-sm font-bold text-gray-800 uppercase tracking-wide">
+                            ประเภท: {group.subCategory}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            ปล่อยน้อยที่สุดในกลุ่ม: <strong className="text-emerald-700">{formatEmission(group.bestEmissionTon)} tCO₂e</strong>
+                          </span>
+                        </div>
+
+                        <div className="space-y-2">
+                          {validFuels.map((fuelItem, fuelIdx) => (
+                            <div
+                              key={fuelIdx}
+                              className="p-3.5 rounded-xl border text-sm flex items-center justify-between bg-white border-gray-200"
+                            >
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-gray-900 text-sm">{cleanName(fuelItem.option.name)}</span>
+                                  {fuelIdx === 0 && (
+                                    <span className="text-[10px] bg-[#32885F] text-white font-bold px-2 py-0.5 rounded-full">
+                                      แนะนำที่สุด
                                     </span>
                                   )}
                                 </div>
-                              )}
-                            </div>
-
-                            <div className="text-right space-y-0.5">
-                              <div>
-                                <span className="text-base font-bold text-gray-900">
-                                  {formatEmission(fuelItem.emissionTon)}{" "}
-                                </span>
-                                <span className="text-xs font-medium text-gray-500">tCO₂e</span>
+                                
+                                {(fuelItem.electricityReductionKWh !== undefined || fuelItem.electricityCostSaved !== undefined) && (
+                                  <div className="flex items-center gap-3 text-xs text-gray-600 pt-0.5">
+                                    {fuelItem.electricityReductionKWh !== 0 && (
+                                      <span className="text-emerald-700 font-medium">
+                                        ไฟฟ้าลดลง: {formatNumber(fuelItem.electricityReductionKWh || 0, 2)} kWh
+                                      </span>
+                                    )}
+                                    {fuelItem.electricityCostSaved !== undefined && fuelItem.electricityCostSaved !== 0 && (
+                                      <span className="text-emerald-700 font-medium">
+                                        ประหยัดค่าไฟ: {formatNumber(fuelItem.electricityCostSaved, 2)} บาท
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
 
-                              {fuelItem.reductionTon > 0 ? (
-                                <div className="text-xs font-semibold text-emerald-600">
-                                  ลดลง {formatEmission(fuelItem.reductionTon)} tCO₂e
+                              <div className="text-right space-y-0.5">
+                                <div>
+                                  <span className="text-base font-bold text-gray-900">
+                                    {formatEmission(fuelItem.emissionTon)}{" "}
+                                  </span>
+                                  <span className="text-xs font-medium text-gray-500">tCO₂e</span>
                                 </div>
-                              ) : (
-                                <div className="text-xs text-gray-400">
-                                  -
-                                </div>
-                              )}
+
+                                {fuelItem.reductionTon > 0 ? (
+                                  <div className="text-xs font-semibold text-emerald-600">
+                                    ลดลง {formatEmission(fuelItem.reductionTon)} tCO₂e
+                                  </div>
+                                ) : (
+                                  <div className="text-xs text-gray-400">
+                                    -
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -241,81 +256,78 @@ export default function CalculationResult({
                 <h4 className="text-base font-bold text-gray-900">หมวดการเดินทางและขนส่ง</h4>
 
                 <div className="space-y-4">
-                  {travelRecommendation.map((group, groupIdx) => (
-                    <div key={groupIdx} className="border border-gray-100 rounded-xl p-4 bg-gray-50/50 space-y-3">
-                      <div className="flex items-center justify-between border-b border-gray-200 pb-2">
-                        <span className="text-sm font-bold text-gray-800 uppercase tracking-wide">
-                          พาหนะ: {group.subCategory}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          ปล่อยน้อยที่สุดในกลุ่ม: <strong className="text-emerald-700">{formatEmission(group.bestEmissionTon)} tCO₂e</strong>
-                        </span>
-                      </div>
+                  {travelRecommendation.map((group, groupIdx) => {
+                    // กรองเฉพาะตัวเลือกที่ไม่ใช่ปัจจุบัน
+                    const validFuels = group.fuels.filter(fuel => !fuel.isCurrent);
+                    if (validFuels.length === 0) return null;
 
-                      <div className="space-y-2">
-                        {group.fuels.map((fuelItem, fuelIdx) => (
-                          <div
-                            key={fuelIdx}
-                            className={`p-3.5 rounded-xl border text-sm flex items-center justify-between ${
-                              fuelItem.isCurrent
-                                ? "bg-emerald-50/60 border-emerald-300"
-                                : "bg-white border-gray-200"
-                            }`}
-                          >
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="font-semibold text-gray-900 text-sm">{cleanName(fuelItem.option.name)}</span>
-                                {fuelItem.isCurrent && (
-                                  <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
-                                    ตัวเลือกปัจจุบันของคุณ
-                                  </span>
-                                )}
-                                {fuelIdx === 0 && groupIdx === 0 && (
-                                  <span className="text-[10px] bg-[#32885F] text-white font-bold px-2 py-0.5 rounded-full">
-                                    แนะนำที่สุด
-                                  </span>
-                                )}
-                              </div>
+                    return (
+                      <div key={groupIdx} className="border border-gray-100 rounded-xl p-4 bg-gray-50/50 space-y-3">
+                        <div className="flex items-center justify-between border-b border-gray-200 pb-2">
+                          <span className="text-sm font-bold text-gray-800 uppercase tracking-wide">
+                            พาหนะ: {group.subCategory}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            ปล่อยน้อยที่สุดในกลุ่ม: <strong className="text-emerald-700">{formatEmission(group.bestEmissionTon)} tCO₂e</strong>
+                          </span>
+                        </div>
 
-                              {(fuelItem.electricityReductionKWh !== undefined || fuelItem.electricityCostSaved !== undefined) && (
-                                <div className="flex items-center gap-3 text-xs text-gray-600 pt-0.5">
-                                  {fuelItem.electricityReductionKWh !== 0 && (
-                                    <span className="text-emerald-700 font-medium">
-                                      ไฟฟ้าลดลง: {formatNumber(fuelItem.electricityReductionKWh || 0, 2)} kWh
-                                    </span>
-                                  )}
-                                  {fuelItem.electricityCostSaved !== undefined && fuelItem.electricityCostSaved !== 0 && (
-                                    <span className="text-emerald-700 font-medium">
-                                      ประหยัดค่าไฟ: {formatNumber(fuelItem.electricityCostSaved, 2)} บาท
+                        <div className="space-y-2">
+                          {validFuels.map((fuelItem, fuelIdx) => (
+                            <div
+                              key={fuelIdx}
+                              className="p-3.5 rounded-xl border text-sm flex items-center justify-between bg-white border-gray-200"
+                            >
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-gray-900 text-sm">{cleanName(fuelItem.option.name)}</span>
+                                  {fuelIdx === 0 && (
+                                    <span className="text-[10px] bg-[#32885F] text-white font-bold px-2 py-0.5 rounded-full">
+                                      แนะนำที่สุด
                                     </span>
                                   )}
                                 </div>
-                              )}
-                            </div>
 
-                            <div className="text-right space-y-0.5">
-                              <div>
-                                <span className="text-base font-bold text-gray-900">
-                                  {formatEmission(fuelItem.emissionTon)}{" "}
-                                </span>
-                                <span className="text-xs font-medium text-gray-500">tCO₂e</span>
+                                {(fuelItem.electricityReductionKWh !== undefined || fuelItem.electricityCostSaved !== undefined) && (
+                                  <div className="flex items-center gap-3 text-xs text-gray-600 pt-0.5">
+                                    {fuelItem.electricityReductionKWh !== 0 && (
+                                      <span className="text-emerald-700 font-medium">
+                                        ไฟฟ้าลดลง: {formatNumber(fuelItem.electricityReductionKWh || 0, 2)} kWh
+                                      </span>
+                                    )}
+                                    {fuelItem.electricityCostSaved !== undefined && fuelItem.electricityCostSaved !== 0 && (
+                                      <span className="text-emerald-700 font-medium">
+                                        ประหยัดค่าไฟ: {formatNumber(fuelItem.electricityCostSaved, 2)} บาท
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
 
-                              {fuelItem.reductionTon > 0 ? (
-                                <div className="text-xs font-semibold text-emerald-600">
-                                  ลดลง {formatEmission(fuelItem.reductionTon)} tCO₂e
+                              <div className="text-right space-y-0.5">
+                                <div>
+                                  <span className="text-base font-bold text-gray-900">
+                                    {formatEmission(fuelItem.emissionTon)}{" "}
+                                  </span>
+                                  <span className="text-xs font-medium text-gray-500">tCO₂e</span>
                                 </div>
-                              ) : (
-                                <div className="text-xs text-gray-400">
-                                  -
-                                </div>
-                              )}
+
+                                {fuelItem.reductionTon > 0 ? (
+                                  <div className="text-xs font-semibold text-emerald-600">
+                                    ลดลง {formatEmission(fuelItem.reductionTon)} tCO₂e
+                                  </div>
+                                ) : (
+                                  <div className="text-xs text-gray-400">
+                                    -
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

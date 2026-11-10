@@ -1,5 +1,3 @@
-// calculation.ts
-
 export type OptionType = {
   subCategory: string;
   fuelType: string;
@@ -11,8 +9,8 @@ export const FUEL_CONSUMPTION_RATES: Record<string, Record<string, number>> = {
     gasohol_e10: 14.763,
     gasohol_e20: 14.763,
     gasohol_e85: 14.763,
-    diesel_b7: 14.763,
-    diesel_b20: 14.763,
+    diesel_b7: 6.369,
+    diesel_b20: 6.369,
     cng: 11.905,
     lpg: 8.929,
   },
@@ -22,16 +20,19 @@ export const FUEL_CONSUMPTION_RATES: Record<string, Record<string, number>> = {
     gasohol_e85: 37.640,
   },
   van: {
-    diesel_b7: 10.204,
-    diesel_b20: 10.204,
+    diesel_b7: 6.369,
+    diesel_b20: 6.369,
     cng: 11.905,
     lpg: 8.929,
   },
   bus: {
-    diesel_b7: 2.850,
-    diesel_b20: 2.850,
+    diesel_b7: 6.369,
+    diesel_b20: 6.369,
     cng: 11.905,
     lpg: 8.929,
+  },
+  ev: {
+    electricity: 6.06,
   },
 };
 
@@ -63,6 +64,8 @@ export type CarbonCalcInput = {
   equipmentSets?: EquipmentSet[];
   emissionFactor: number;
   electricityEmissionFactor: number; 
+  efId?: string | null;
+  isRecommendationSimulation?: boolean;
 };
 
 export type CarbonCalcOutput = {
@@ -70,6 +73,7 @@ export type CarbonCalcOutput = {
   totalCalculatedTon: number;
   calculationMethod: string;
   rawElectricityKWh?: number; 
+  efId?: string | null;
   breakdown?: {
     equipmentTotal?: number;
     travelEmission?: number;
@@ -112,7 +116,9 @@ export function executeCarbonCalculation(input: CarbonCalcInput): CarbonCalcOutp
     electricityKWh = 0, 
     equipmentSets = [],
     emissionFactor,
-    electricityEmissionFactor 
+    electricityEmissionFactor,
+    efId = null,
+    isRecommendationSimulation = false 
   } = input;
 
   if (category === 'meeting' && subCategory === 'online') {
@@ -132,6 +138,7 @@ export function executeCarbonCalculation(input: CarbonCalcInput): CarbonCalcOutp
       totalCalculatedTon: Number((total / 1000).toFixed(4)),
       calculationMethod: 'Sum(EquipmentSets) * EF',
       rawElectricityKWh: totalKWh,
+      efId: efId,
     };
   }
 
@@ -141,7 +148,13 @@ export function executeCarbonCalculation(input: CarbonCalcInput): CarbonCalcOutp
 
   const isEvTravel = (fuelType && fuelType.toLowerCase().includes('electricity')) || subCategory === 'ev';
   
-  if (isEvTravel) {
+  if (isEvTravel && isRecommendationSimulation) {
+    const totalDistance = distance * trip;
+    const rate = 6.06;
+    const fuelUsed = totalDistance / rate;
+    travelEmission = fuelUsed * emissionFactor;
+    travelMethod = '(Distance * Trips / 6.06) * EF(EV Recommendation as Combustion)';
+  } else if (isEvTravel) {
     const kwhPerKm = electricityKWh > 0 ? electricityKWh : 0.16;
     const totalDistance = distance * trip;
     rawElectricityKWh = totalDistance * kwhPerKm;
@@ -169,13 +182,14 @@ export function executeCarbonCalculation(input: CarbonCalcInput): CarbonCalcOutp
       });
     }
     
-    rawElectricityKWh = equipmentTotalKWh + (isEvTravel ? rawElectricityKWh : 0);
+    rawElectricityKWh = equipmentTotalKWh + ((isEvTravel && !isRecommendationSimulation) ? rawElectricityKWh : 0);
     const totalOnsite = equipmentTotalEmission + travelEmission;
     return {
       totalCalculated: Number(totalOnsite.toFixed(4)),
       totalCalculatedTon: Number((totalOnsite / 1000).toFixed(4)),
       calculationMethod: 'Sum(EquipmentSets * kWh * EF) + Travel',
       rawElectricityKWh: Number(rawElectricityKWh.toFixed(4)),
+      efId: efId,
       breakdown: {
         equipmentTotal: Number(equipmentTotalEmission.toFixed(4)),
         travelEmission: Number(travelEmission.toFixed(4))
@@ -188,6 +202,7 @@ export function executeCarbonCalculation(input: CarbonCalcInput): CarbonCalcOutp
     totalCalculatedTon: Number((travelEmission / 1000).toFixed(4)),
     calculationMethod: travelMethod,
     rawElectricityKWh: Number(rawElectricityKWh.toFixed(4)),
+    efId: efId,
   };
 }
 
@@ -202,16 +217,23 @@ export function calculateMeetingSummary(input: CarbonCalcInput) {
     totalCalculatedTon: res.totalCalculatedTon,
     rawElectricityKWh: rawKWh,
     electricityCost: electricityCost,
+    efId: res.efId,
     breakdown: res.breakdown,
   };
 }
 
 export function calculateTravelSummary(input: CarbonCalcInput) {
   const res = executeCarbonCalculation(input);
+  const rawKWh = res.rawElectricityKWh || 0;
+  const isEv = input.subCategory?.toLowerCase() === 'ev' || input.fuelType?.toLowerCase().includes('electricity');
+  const electricityCost = isEv ? rawKWh * 4 : 0;
+
   return {
     totalCalculated: res.totalCalculated,
     totalCalculatedTon: res.totalCalculatedTon,
-    rawElectricityKWh: res.rawElectricityKWh || 0,
+    rawElectricityKWh: rawKWh,
+    electricityCost: electricityCost,
+    efId: res.efId,
   };
 }
 
@@ -224,7 +246,6 @@ export function getMeetingRecommendations(params: {
 }): GroupedVehicleRecommendation[] {
   const { currentEmission, userInput, allAvailableOptions, fetchEFFromDB, fetchElectricityEFFromDB } = params;
   
-  // 💡 หากผู้ใช้เลือกรูปแบบการประชุมเป็น online อยู่แล้ว ให้ซ่อนข้อเสนอแนะหมวดประชุมทันที
   const subCat = (userInput.subCategory || '').toLowerCase();
   if (subCat === 'online' || subCat === 'ไฟฟ้าแบบ grid mix ปี 2022–2024') {
     return [];
@@ -258,7 +279,10 @@ export function getMeetingRecommendations(params: {
       option.subCategory.toLowerCase() === currentUserSubCategory && 
       (isOnlineOpt || option.fuelType.toLowerCase() === currentUserFuel);
 
+    if (isCurrent) return;
+
     const ef = isOnlineOpt ? electricityEf : fetchEFFromDB(option.fuelType);
+    const isEvOption = option.subCategory.toLowerCase() === 'ev' || option.fuelType.toLowerCase().includes('electricity');
 
     const simInput: CarbonCalcInput = {
       ...userInput,
@@ -269,6 +293,7 @@ export function getMeetingRecommendations(params: {
       trip: userInput.trip,
       emissionFactor: ef,
       electricityEmissionFactor: electricityEf,
+      isRecommendationSimulation: isEvOption,
     };
 
     const simRes = executeCarbonCalculation(simInput);
@@ -289,14 +314,14 @@ export function getMeetingRecommendations(params: {
       electricityCostSaved = electricityReductionKWh * 4;
     }
 
-    if (simEmissionTon >= 0) {
+    if (simEmissionTon >= 0 && reductionTon > 0) {
       evaluatedList.push({ 
         option, 
         emissionTon: simEmissionTon, 
         reductionTon, 
         electricityReductionKWh: Number(electricityReductionKWh.toFixed(4)),
         electricityCostSaved: Number(electricityCostSaved.toFixed(2)),
-        isCurrent 
+        isCurrent: false 
       });
     }
   });
@@ -316,8 +341,8 @@ export function getMeetingRecommendations(params: {
   const meetingGroups: GroupedVehicleRecommendation[] = [];
 
   if (groupedMap.online.length > 0) {
-    const validOnlineFuels = groupedMap.online.filter(item => item.reductionTon > 0 || item.isCurrent);
-    if (validOnlineFuels.some(item => item.reductionTon > 0)) {
+    const validOnlineFuels = groupedMap.online.filter(item => item.reductionTon > 0);
+    if (validOnlineFuels.length > 0) {
       validOnlineFuels.sort((a, b) => a.emissionTon - b.emissionTon);
       meetingGroups.push({
         subCategory: 'online',
@@ -328,15 +353,32 @@ export function getMeetingRecommendations(params: {
   }
 
   if (groupedMap.onsite.length > 0) {
-    const validOnsiteFuels = groupedMap.onsite.filter(item => item.reductionTon > 0 || item.isCurrent);
-    const hasEffectiveOnsiteReduction = validOnsiteFuels.some(item => item.reductionTon > 0);
+    const items = groupedMap.onsite;
+    const gasohols = items.filter(i => i.option.fuelType.toLowerCase().includes('gasohol')).sort((a, b) => a.emissionTon - b.emissionTon);
+    const diesels = items.filter(i => i.option.fuelType.toLowerCase().includes('diesel')).sort((a, b) => a.emissionTon - b.emissionTon);
+    const gasOptions = items.filter(i => ['cng', 'lpg'].includes(i.option.fuelType.toLowerCase())).sort((a, b) => a.emissionTon - b.emissionTon);
+    const evOptions = items.filter(i => i.option.fuelType.toLowerCase().includes('electricity') || i.option.subCategory.toLowerCase() === 'ev').sort((a, b) => a.emissionTon - b.emissionTon);
+    const others = items.filter(i => 
+      !i.option.fuelType.toLowerCase().includes('gasohol') &&
+      !i.option.fuelType.toLowerCase().includes('diesel') &&
+      !['cng', 'lpg'].includes(i.option.fuelType.toLowerCase()) &&
+      !i.option.fuelType.toLowerCase().includes('electricity')
+    ).sort((a, b) => a.emissionTon - b.emissionTon);
 
-    if (hasEffectiveOnsiteReduction) {
-      validOnsiteFuels.sort((a, b) => a.emissionTon - b.emissionTon);
+    const selectedFuels: typeof items = [];
+    if (gasohols.length > 0) selectedFuels.push(gasohols[0]);
+    if (diesels.length > 0) selectedFuels.push(diesels[0]);
+    if (gasOptions.length > 0) selectedFuels.push(gasOptions[0]);
+    if (evOptions.length > 0) selectedFuels.push(evOptions[0]);
+    if (others.length > 0) selectedFuels.push(others[0]);
+
+    selectedFuels.sort((a, b) => a.emissionTon - b.emissionTon);
+
+    if (selectedFuels.some(item => item.reductionTon > 0)) {
       meetingGroups.push({
         subCategory: 'onsite',
-        bestEmissionTon: validOnsiteFuels[0].emissionTon,
-        fuels: validOnsiteFuels,
+        bestEmissionTon: selectedFuels[0].emissionTon,
+        fuels: selectedFuels,
       });
     }
   }
@@ -379,7 +421,11 @@ export function getTravelRecommendations(params: {
       option.subCategory.toLowerCase() === currentUserSubCategory && 
       option.fuelType.toLowerCase() === currentUserFuel;
 
+    if (isCurrent) return;
+
     const ef = fetchEFFromDB(option.fuelType);
+    const isEvOption = option.subCategory.toLowerCase() === 'ev' || option.fuelType.toLowerCase().includes('electricity');
+
     const simInput: CarbonCalcInput = {
       ...userInput,
       category: 'travel',
@@ -387,6 +433,7 @@ export function getTravelRecommendations(params: {
       fuelType: option.fuelType,
       emissionFactor: ef,
       electricityEmissionFactor: userInput.electricityEmissionFactor || 0,
+      isRecommendationSimulation: isEvOption,
     };
 
     const simRes = executeCarbonCalculation(simInput);
@@ -395,18 +442,16 @@ export function getTravelRecommendations(params: {
 
     const simRawKWh = simRes.rawElectricityKWh || 0;
     const electricityReductionKWh = currentRawKWh - simRawKWh;
-
-    const isEvOption = option.subCategory.toLowerCase() === 'ev' || option.fuelType.toLowerCase().includes('electricity');
     const electricityCostSaved = isEvOption ? 0 : electricityReductionKWh * 4;
 
-    if (simEmissionTon >= 0) {
+    if (simEmissionTon >= 0 && reductionTon > 0) {
       evaluatedList.push({ 
         option, 
         emissionTon: simEmissionTon, 
         reductionTon, 
         electricityReductionKWh: Number(electricityReductionKWh.toFixed(4)),
         electricityCostSaved: Number(electricityCostSaved.toFixed(2)),
-        isCurrent 
+        isCurrent: false 
       });
     }
   });
@@ -421,14 +466,34 @@ export function getTravelRecommendations(params: {
   });
 
   const vehicleGroups: GroupedVehicleRecommendation[] = Object.keys(groupedMap).map(subCategory => {
-    const fuels = groupedMap[subCategory];
-    fuels.sort((a, b) => a.emissionTon - b.emissionTon);
+    const items = groupedMap[subCategory];
+
+    const gasohols = items.filter(i => i.option.fuelType.toLowerCase().includes('gasohol')).sort((a, b) => a.emissionTon - b.emissionTon);
+    const diesels = items.filter(i => i.option.fuelType.toLowerCase().includes('diesel')).sort((a, b) => a.emissionTon - b.emissionTon);
+    const gasOptions = items.filter(i => ['cng', 'lpg'].includes(i.option.fuelType.toLowerCase())).sort((a, b) => a.emissionTon - b.emissionTon);
+    const evOptions = items.filter(i => i.option.fuelType.toLowerCase().includes('electricity') || i.option.subCategory.toLowerCase() === 'ev').sort((a, b) => a.emissionTon - b.emissionTon);
+    const others = items.filter(i => 
+      !i.option.fuelType.toLowerCase().includes('gasohol') &&
+      !i.option.fuelType.toLowerCase().includes('diesel') &&
+      !['cng', 'lpg'].includes(i.option.fuelType.toLowerCase()) &&
+      !i.option.fuelType.toLowerCase().includes('electricity')
+    ).sort((a, b) => a.emissionTon - b.emissionTon);
+
+    const selectedFuels: typeof items = [];
+    if (gasohols.length > 0) selectedFuels.push(gasohols[0]);
+    if (diesels.length > 0) selectedFuels.push(diesels[0]);
+    if (gasOptions.length > 0) selectedFuels.push(gasOptions[0]);
+    if (evOptions.length > 0) selectedFuels.push(evOptions[0]);
+    if (others.length > 0) selectedFuels.push(others[0]);
+
+    selectedFuels.sort((a, b) => a.emissionTon - b.emissionTon);
+
     return {
       subCategory,
-      bestEmissionTon: fuels[0].emissionTon,
-      fuels,
+      bestEmissionTon: selectedFuels[0].emissionTon,
+      fuels: selectedFuels,
     };
-  });
+  }).filter(group => group.fuels.some(f => f.reductionTon > 0));
 
   vehicleGroups.sort((a, b) => a.bestEmissionTon - b.bestEmissionTon);
   return vehicleGroups;
