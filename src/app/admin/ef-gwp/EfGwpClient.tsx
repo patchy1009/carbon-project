@@ -10,6 +10,7 @@ import { normalizeToArabicNumber } from '@/lib/normalization';
 import FieldError from '@/components/FieldError';
 import { efTypeSchema, efSchema, gwpSchema, type EfTypeField, type EfField, type GwpField } from './schema';
 import RowActions from '@/components/RowActions'; // ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
+import { T } from '@/components/adminTable'; // การ์ด/ตารางแบบเดียวกับหน้า T-VER Project
 import { inputClass } from '@/components/formStyles'; // class ช่องกรอกกลาง
 
 /* สรุปสิ่งที่เปลี่ยนในไฟล์นี้
@@ -246,20 +247,20 @@ export default function EfGwpClient({
   }
 
   return (
-    <div className="max-w-[1280px] px-8 pt-16 pb-8 space-y-8">
-      <h1 className="text-[32px] font-bold leading-[32px] tracking-[-0.6px] text-[#0F172A]">
+    <div className={T.page}>
+      <h1 className={T.h1}>
         ค่า Emission Factor (EF) และ ค่า GWP
       </h1>
 
       {/* Section 1: EF Categories */}
-      <div className="w-full rounded-xl border border-[#E2E8F0] shadow-sm p-6 space-y-4">
-        <div className="flex items-center justify-between border-b border-[#F1F5F9] pb-3">
-          <h2 className="text-xl font-bold text-[#0F172A]">
+      <section className={T.card}>
+        <div className={T.cardHead}>
+          <h2 className={T.h2}>
             ประเภท EF (EF Categories)
           </h2>
           <button
             onClick={() => openTypeModal()}
-            className="btn btn-create flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs"
+            className={T.addBtn}
           >
             + เพิ่มประเภท EF ใหม่
           </button>
@@ -283,51 +284,51 @@ export default function EfGwpClient({
             </span>
           ))}
         </div>
-      </div>
+      </section>
 
       {/* Section 2: EF Table */}
-      <div className="w-full rounded-xl border border-[#E2E8F0] shadow-sm">
-        <div className="flex items-center justify-between px-6 py-6 border-b border-[#F1F5F9]">
-          <h2 className="text-xl font-bold text-[#0F172A]">
+      <section className={T.card}>
+        <div className={T.cardHead}>
+          <h2 className={T.h2}>
             ตารางค่า EF (Emission Factor)
           </h2>
           <button
             onClick={() => openEfModal()}
-            className="btn btn-create flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs"
+            className={T.addBtn}
           >
             + เพิ่มค่า EF
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-              <tr className="text-xs font-bold uppercase tracking-wide text-[#64748B]">
-                <th className="px-5 py-3 text-left">ประเภท EF</th>
-                <th className="px-5 py-3 text-left">ชื่อแก๊ส</th>
-                <th className="px-5 py-3 text-right">ค่า EF</th>
-                <th className="px-5 py-3 text-left">หน่วยจริง (UNIT)</th>
-                <th className="px-5 py-3 text-center">จัดการ</th>
+        <div className={T.wrap}>
+          <table className={T.table}>
+            <thead className={T.thead}>
+              <tr className={T.headRow}>
+                <th className={`${T.th} text-left`}>ประเภท EF</th>
+                <th className={`${T.th} text-left`}>ชื่อแก๊ส</th>
+                <th className={`${T.th} text-right`}>ค่า EF</th>
+                <th className={`${T.th} text-left`}>หน่วยจริง (UNIT)</th>
+                <th className={`${T.th} text-right`}>จัดการ</th>
               </tr>
             </thead>
             <tbody>
               {efList.map((row) => {
                 const c = row.eftype_id ? colorFor(row.eftype_id, efTypes) : palette[0];
                 return (
-                  <tr key={row.ef_id} className="border-t border-[#F1F5F9]">
-                    <td className="px-5 py-4">
+                  <tr key={row.ef_id} className={T.row}>
+                    <td className={T.td}>
                       <span
                         className={`inline-block rounded-md border px-2 py-0.5 text-xs font-medium ${c.bg} ${c.border} ${c.text}`}
                       >
                         {row.ef_type?.type_name ?? '—'}
                       </span>
                     </td>
-                    <td className="px-5 py-4 text-[#0F172A]">{row.ef_name}</td>
-                    <td className="px-5 py-4 text-right font-semibold text-[#047857]">
+                    <td className={T.tdMain}>{row.ef_name}</td>
+                    <td className={`${T.td} text-right font-semibold text-[#047857]`}>
                       {row.ef_value}
                     </td>
-                    <td className="px-5 py-4 text-[#64748B]">{row.real_unit}</td>
-                    <td className="px-5 py-4 text-center space-x-2">
+                    <td className={T.td}>{row.real_unit}</td>
+                    <td className={T.tdActions}>
                       <RowActions onEdit={() => openEfModal(row)} onDelete={() => handleDeleteEf(row.ef_id)} />
                     </td>
                   </tr>
@@ -336,47 +337,47 @@ export default function EfGwpClient({
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
-      {/* Section 3: GWP Table */}
-      <div className="w-full max-w-[944px] rounded-xl border border-[#E2E8F0] shadow-sm">
-        {/* [MERGE] หัวตารางใช้ของ aom (เอาฟอนต์ Be_Vietnam_Pro ออกแล้ว ใช้ฟอนต์กลางของเว็บ)
-            + สีตัวอักษร text-[#0F172A] ที่ cyn2 เพิ่ม (กันตัวอักษรเป็นสีจางเมื่อ globals.css เปลี่ยนสี) */}
-        <div className="flex items-center justify-between px-6 py-6 border-b border-[#F1F5F9] text-[#0F172A]">
-          <h2 className="text-xl font-bold text-[#0F172A]">
-
+      {/* Section 3: GWP Table
+          [MERGE] หัวตารางใช้ของ aom + สีตัวอักษรเข้มที่ cyn2 เพิ่ม (ตอนนี้มาจาก T.h2 ใน components/adminTable.ts) */}
+      <section className={T.card}>
+        <div className={T.cardHead}>
+          <h2 className={T.h2}>
             ตารางค่า GWP (Global Warming Potential)
           </h2>
           <button
             onClick={() => openGwpModal()}
-            className="btn btn-create flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs"
+            className={T.addBtn}
           >
             + เพิ่มค่า GWP
           </button>
         </div>
-        <table className="w-full text-sm">
-          <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-            <tr className="text-xs font-bold uppercase text-[#64748B]">
-              <th className="px-5 py-3 text-left">ชื่อก๊าซ</th>
-              <th className="px-5 py-3 text-right">ค่า GWP</th>
-              <th className="px-5 py-3 text-center">จัดการ</th>
-            </tr>
-          </thead>
-          <tbody>
-            {gwpList.map((row) => (
-              <tr key={row.gwp_id} className="border-t border-[#F1F5F9]">
-                <td className="px-5 py-4 text-[#0F172A]">{row.gas_name}</td>
-                <td className="px-5 py-4 text-right font-semibold text-[#047857]">
-                  {row.gwp_value}
-                </td>
-                <td className="px-5 py-4 text-center space-x-2">
-                  <RowActions onEdit={() => openGwpModal(row)} onDelete={() => handleDeleteGwp(row.gwp_id)} />
-                </td>
+        <div className={T.wrap}>
+          <table className={T.table}>
+            <thead className={T.thead}>
+              <tr className={T.headRow}>
+                <th className={`${T.th} text-left`}>ชื่อก๊าซ</th>
+                <th className={`${T.th} text-right`}>ค่า GWP</th>
+                <th className={`${T.th} text-right`}>จัดการ</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {gwpList.map((row) => (
+                <tr key={row.gwp_id} className={T.row}>
+                  <td className={T.tdMain}>{row.gas_name}</td>
+                  <td className={`${T.td} text-right font-semibold text-[#047857]`}>
+                    {row.gwp_value}
+                  </td>
+                  <td className={T.tdActions}>
+                    <RowActions onEdit={() => openGwpModal(row)} onDelete={() => handleDeleteGwp(row.gwp_id)} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       {/* --- Modal: เพิ่ม/แก้ไขประเภท EF --- */}
       {showTypeModal && (

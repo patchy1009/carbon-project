@@ -17,7 +17,8 @@ export default function RowActions({
         onClick={onEdit}
         title="แก้ไข"
         aria-label="แก้ไข"
-        className="text-[#64748B] hover:text-[#266955]"
+        // เอาเมาส์ชี้ = สีน้ำเงิน เห็นชัดเหมือนถังขยะที่เป็นสีแดง (เดิมเขียวเข้ม #266955 ใกล้สีเทาเดิมจนแทบไม่เห็นว่าเปลี่ยน)
+        className="text-[#64748B] transition-colors hover:text-blue-600"
       >
         <PencilIcon />
       </button>
@@ -26,7 +27,7 @@ export default function RowActions({
         onClick={onDelete}
         title="ลบ"
         aria-label="ลบ"
-        className="text-[#64748B] hover:text-red-500"
+        className="text-[#64748B] transition-colors hover:text-red-500"
       >
         <TrashIcon />
       </button>

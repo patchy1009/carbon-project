@@ -10,6 +10,7 @@ import { normalizeToArabicNumber, formatCondition, CONDITION_OPERATORS } from '@
 import FieldError from '@/components/FieldError';
 import { treeSchema, tverDetailSchema, type TreeField, type TverDetailField } from './schema';
 import RowActions from '@/components/RowActions'; // ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
+import { T } from '@/components/adminTable'; // การ์ด/ตารางกลางของหน้าแอดมิน (ยกแบบมาจากหน้านี้)
 import { inputClass } from '@/components/formStyles'; // class ช่องกรอกกลาง
 
 /* สรุปสิ่งที่เปลี่ยนในไฟล์นี้
@@ -161,45 +162,45 @@ export default function TverProjectClient({
   }
 
   return (
-    <div className="max-w-[1280px] px-8 pt-6 pb-16 space-y-6">
-      <h1 className="text-[32px] font-bold leading-10 tracking-[-0.8px] text-[#191C1C]">
+    <div className={T.page}>
+      <h1 className={T.h1}>
         ข้อมูลการจัดทำโครงการปลูกป่า T-VER
       </h1>
 
       {/* Section 1: Tree Species Catalog */}
-      <section className="rounded-xl bg-white shadow-sm p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-xl font-bold text-[#191C1C]">
+      <section className={T.card}>
+        <div className={T.cardHead}>
+          <h2 className={T.h2}>
             รายการต้นไม้ (Tree Species Catalog)
           </h2>
           <button
             onClick={() => openTreeModal()}
-            className="btn btn-create flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm"
+            className={T.addBtn}
           >
             + เพิ่มต้นไม้ใหม่
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[#EDEEEE]">
-              <tr className="text-xs font-bold uppercase tracking-wide text-[#3F4944]">
-                <th className="px-4 py-3 text-left">ชื่อต้นไม้</th>
-                <th className="px-4 py-3 text-right">จัดการ</th>
+        <div className={T.wrap}>
+          <table className={T.table}>
+            <thead className={T.thead}>
+              <tr className={T.headRow}>
+                <th className={`${T.th} text-left`}>ชื่อต้นไม้</th>
+                <th className={`${T.th} text-right`}>จัดการ</th>
               </tr>
             </thead>
             <tbody>
               {trees.map((t) => (
-                <tr key={t.tree_id} className="border-b border-[#F3F4F4]">
-                  <td className="px-4 py-4 font-bold text-[#191C1C]">{t.tree_name}</td>
-                  <td className="px-4 py-4 text-right space-x-3">
+                <tr key={t.tree_id} className={T.row}>
+                  <td className={T.tdMain}>{t.tree_name}</td>
+                  <td className={T.tdActions}>
                     <RowActions onEdit={() => openTreeModal(t)} onDelete={() => handleDeleteTree(t.tree_id)} />
                   </td>
                 </tr>
               ))}
               {trees.length === 0 && (
                 <tr>
-                  <td colSpan={2} className="px-4 py-6 text-center text-[#6F7974]">
+                  <td colSpan={2} className={T.empty}>
                     ยังไม่มีข้อมูลต้นไม้
                   </td>
                 </tr>
@@ -210,36 +211,36 @@ export default function TverProjectClient({
       </section>
 
       {/* Section 2: Forestry Project Parameters & Criteria */}
-      <section className="rounded-xl bg-white shadow-sm p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-xl font-bold text-[#191C1C]">
+      <section className={T.card}>
+        <div className={T.cardHead}>
+          <h2 className={T.h2}>
             รายละเอียดโครงการปลูกป่า (Forestry Project Parameters &amp; Criteria)
           </h2>
           <button
             onClick={() => openDetailModal()}
-            className="btn btn-create flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm"
+            className={T.addBtn}
           >
             + เพิ่มเงื่อนไขโครงการ
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[#EDEEEE]">
-              <tr className="text-xs font-bold uppercase tracking-wide text-[#3F4944]">
-                <th className="px-4 py-3 text-left">รายละเอียดโครงการ</th>
-                <th className="px-4 py-3 text-left">หน่วย</th>
-                <th className="px-4 py-3 text-left">เงื่อนไข</th>
-                <th className="px-4 py-3 text-left">คำอธิบาย</th>
-                <th className="px-4 py-3 text-right">จัดการ</th>
+        <div className={T.wrap}>
+          <table className={T.table}>
+            <thead className={T.thead}>
+              <tr className={T.headRow}>
+                <th className={`${T.th} text-left`}>รายละเอียดโครงการ</th>
+                <th className={`${T.th} text-left`}>หน่วย</th>
+                <th className={`${T.th} text-left`}>เงื่อนไข</th>
+                <th className={`${T.th} text-left`}>คำอธิบาย</th>
+                <th className={`${T.th} text-right`}>จัดการ</th>
               </tr>
             </thead>
             <tbody>
               {details.map((d) => (
-                <tr key={d.tverdetail_id} className="border-b border-[#F3F4F4]">
-                  <td className="px-4 py-4 font-bold text-[#191C1C]">{d.detail_name}</td>
-                  <td className="px-4 py-4 text-[#3F4944]">{d.unit}</td>
-                  <td className="px-4 py-4">
+                <tr key={d.tverdetail_id} className={T.row}>
+                  <td className={T.tdMain}>{d.detail_name}</td>
+                  <td className={T.td}>{d.unit}</td>
+                  <td className={T.td}>
                     {/* สร้างข้อความจาก 2 คอลัมน์ เช่น "<= 1,000 ไร่" */}
                     {d.condition_operator && (
                       <span className="inline-block px-2.5 py-1 rounded bg-[#E7E8E8] text-sm font-bold text-[#266955]">
@@ -247,15 +248,15 @@ export default function TverProjectClient({
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-4 text-[#3F4944] max-w-[420px] whitespace-pre-line">{d.detail}</td>
-                  <td className="px-4 py-4 text-right space-x-3 whitespace-nowrap">
+                  <td className={`${T.td} max-w-[420px] whitespace-pre-line`}>{d.detail}</td>
+                  <td className={T.tdActions}>
                     <RowActions onEdit={() => openDetailModal(d)} onDelete={() => handleDeleteDetail(d.tverdetail_id)} />
                   </td>
                 </tr>
               ))}
               {details.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-[#6F7974]">
+                  <td colSpan={5} className={T.empty}>
                     ยังไม่มีเงื่อนไขโครงการ
                   </td>
                 </tr>

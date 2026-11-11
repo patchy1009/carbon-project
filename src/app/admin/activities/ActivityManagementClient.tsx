@@ -13,6 +13,7 @@ import FieldError from '@/components/FieldError';
 import { OCR_SOURCES } from '@/lib/bills/types';
 import { PencilIcon, TrashIcon } from '@/components/icons'; // แทนอิโมจิ ✏️ 🗑️
 import RowActions from '@/components/RowActions'; // ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
+import { T } from '@/components/adminTable'; // การ์ด/ตารางแบบเดียวกับหน้า T-VER Project
 import { inputClass } from '@/components/formStyles'; // class ช่องกรอกกลาง
 
 /* สรุปสิ่งที่เปลี่ยนในไฟล์นี้
@@ -326,24 +327,20 @@ export default function ActivityManagementClient({
     }));
 
   return (
-    <div className="max-w-[1280px] px-8 pt-16 pb-16 space-y-12">
-      <div>
-        <h1 className="text-[32px] font-bold leading-10 text-[#191C1C]">
-          ขอบเขต &amp; กิจกรรมคาร์บอน (Scopes &amp; Activity Management)
-        </h1>
-      </div>
+    <div className={T.page}>
+      <h1 className={T.h1}>
+        ขอบเขต &amp; กิจกรรมคาร์บอน (Scopes &amp; Activity Management)
+      </h1>
 
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#32885F]" />
-            <h2 className="text-xl font-bold text-[#191C1C]">
-              ขอบเขตคาร์บอน 3 สโคป (Carbon Scopes Configuration)
-            </h2>
-          </div>
+      {/* หัวข้อทุกส่วนใช้แบบเดียวกับหน้า T-VER Project (components/adminTable.ts) และเอาจุดสีเขียวหน้าหัวข้อออก */}
+      <section className="space-y-4">
+        <div className={T.cardHead}>
+          <h2 className={T.h2}>
+            ขอบเขตคาร์บอน 3 สโคป (Carbon Scopes Configuration)
+          </h2>
           <button
             onClick={() => openScopeModal()}
-            className="btn btn-create flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm"
+            className={T.addBtn}
           >
             + เพิ่มขอบเขต
           </button>
@@ -376,17 +373,18 @@ export default function ActivityManagementClient({
                   </p>
                 </div>
                 <div className="flex justify-end gap-2 items-center bg-[#F3F4F4] -mx-6 -mb-6 px-6 py-3 rounded-b-xl mt-4">
+                  {/* เอาเมาส์ชี้: แก้ไข = สีน้ำเงิน, ลบ = สีแดง (เหมือนไอคอนใน RowActions) */}
                   <button
                     onClick={() => openScopeModal(scope)}
-                    className="flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-sm text-[#266955] shadow-sm"
+                    className="flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-sm text-[#266955] shadow-sm transition-colors hover:text-blue-600"
                   >
                     <PencilIcon /> แก้ไข
                   </button>
                   <button
                     onClick={() => handleDeleteScope(scope.scope_id)}
-                    className="flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-sm text-[#266955] shadow-sm"
+                    className="flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-sm text-[#266955] shadow-sm transition-colors hover:text-red-500"
                   >
-                    <TrashIcon /> ลบขอบเขต
+                    <TrashIcon /> ลบ
                   </button>
                 </div>
               </div>
@@ -394,17 +392,14 @@ export default function ActivityManagementClient({
         </div>
       </section>
 
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#32885F]" />
-            <h2 className="text-xl font-bold text-[#191C1C]">
-              กิจกรรมที่ต้องการจากสำนักงาน (Office Required Activities)
-            </h2>
-          </div>
+      <section className="space-y-4">
+        <div className={T.cardHead}>
+          <h2 className={T.h2}>
+            กิจกรรมที่ต้องการจากสำนักงาน (Office Required Activities)
+          </h2>
           <button
             onClick={() => openActivityModal()}
-            className="btn btn-create flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm"
+            className={T.addBtn}
           >
             + เพิ่มกิจกรรม
           </button>
@@ -447,42 +442,39 @@ export default function ActivityManagementClient({
         </div>
       </section>
 
-      <section className="rounded-xl bg-white shadow-sm p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2.5 rounded-full bg-[#32885F]" />
-            <h2 className="text-xl font-bold text-[#191C1C]">
-              รายละเอียดกิจกรรม (Activity Details)
-            </h2>
-          </div>
+      <section className={T.card}>
+        <div className={T.cardHead}>
+          <h2 className={T.h2}>
+            รายละเอียดกิจกรรม (Activity Details)
+          </h2>
           <button
             onClick={() => openDetailModal()}
-            className="btn btn-create flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm"
+            className={T.addBtn}
           >
             + เพิ่มรายละเอียด
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[#F3F4F4]">
-              <tr className="text-xs font-bold uppercase tracking-wide text-[#3F4944]">
-                <th className="px-4 py-3 text-left rounded-l-lg">สโคป</th>
-                <th className="px-4 py-3 text-left">กิจกรรมที่ต้องการจากสำนักงาน</th>
-                <th className="px-4 py-3 text-left">ชื่อรายละเอียดที่บันทึก</th>
-                <th className="px-4 py-3 text-center">หน่วย</th>
-                <th className="px-4 py-3 text-center">ค่า EF</th>
-                <th className="px-4 py-3 text-left">ค่า GWP</th>
-                <th className="px-4 py-3 text-left">รายละเอียด</th>
-                <th className="px-4 py-3 text-right rounded-r-lg">จัดการ</th>
+        <div className={T.wrap}>
+          <table className={T.table}>
+            <thead className={T.thead}>
+              <tr className={T.headRow}>
+                <th className={`${T.th} text-left`}>สโคป</th>
+                <th className={`${T.th} text-left`}>กิจกรรมที่ต้องการจากสำนักงาน</th>
+                <th className={`${T.th} text-left`}>ชื่อรายละเอียดที่บันทึก</th>
+                <th className={`${T.th} text-center`}>หน่วย</th>
+                <th className={`${T.th} text-center`}>ค่า EF</th>
+                <th className={`${T.th} text-left`}>ค่า GWP</th>
+                <th className={`${T.th} text-left`}>รายละเอียด</th>
+                <th className={`${T.th} text-right`}>จัดการ</th>
               </tr>
             </thead>
             <tbody>
               {details.map((d) => {
                 const scopeNum = d.activity?.carbon_scope?.scope_number ?? 1;
                 return (
-                  <tr key={d.scopedetail_id} className="border-t border-[#F1F5F9]">
-                    <td className="px-4 py-4">
+                  <tr key={d.scopedetail_id} className={T.row}>
+                    <td className={T.td}>
                       <span
                         className={`inline-block px-2.5 py-1 rounded text-xs font-semibold ${
                           scopeBadgeStyle[scopeNum] ?? scopeBadgeStyle[1]
@@ -491,8 +483,8 @@ export default function ActivityManagementClient({
                         {scopeNum}
                       </span>
                     </td>
-                    <td className="px-4 py-4 text-[#191C1C]">{d.activity?.activity_name}</td>
-                    <td className="px-4 py-4 text-[#191C1C]">
+                    <td className={T.td}>{d.activity?.activity_name}</td>
+                    <td className={T.tdMain}>
                       {d.detail_name}
                       {/* แสดงว่ารายการนี้รับข้อมูลจากบิลประเภทไหน */}
                       {d.ocr_source && (
@@ -501,19 +493,19 @@ export default function ActivityManagementClient({
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-4 text-center">
+                    <td className={`${T.td} text-center`}>
                       <span className="px-2 py-0.5 rounded bg-[#EDEEEE] text-xs font-bold text-[#6F7974]">
                         {d.unit}
                       </span>
                     </td>
-                    <td className="px-4 py-4 text-center font-mono text-[#266955]">
+                    <td className={`${T.td} text-center font-mono text-[#266955]`}>
                       {d.emission_factor?.ef_value ?? '-'}
                     </td>
-                    <td className="px-4 py-4 text-[#3F4944]">
+                    <td className={T.td}>
                       {d.global_warming_potential?.gwp_value ?? '-'}
                     </td>
-                    <td className="px-4 py-4 text-[#3F4944] max-w-[320px] whitespace-pre-line">{d.description}</td>
-                    <td className="px-4 py-4 text-right space-x-2 whitespace-nowrap">
+                    <td className={`${T.td} max-w-[320px] whitespace-pre-line`}>{d.description}</td>
+                    <td className={T.tdActions}>
                       <RowActions onEdit={() => openDetailModal(d)} onDelete={() => handleDeleteDetail(d.scopedetail_id)} />
                     </td>
                   </tr>

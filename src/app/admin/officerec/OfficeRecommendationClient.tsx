@@ -9,6 +9,7 @@ import { normalizeToArabicNumber } from '@/lib/normalization';
 import { showConfirm, showError } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert/confirm
 import { infoSchema, recSchema, condValueSchema, type InfoField, type RecField } from './schema';
 import RowActions from '@/components/RowActions'; // ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
+import { T } from '@/components/adminTable'; // การ์ด/ตารางแบบเดียวกับหน้า T-VER Project
 import { inputClass } from '@/components/formStyles'; // class ช่องกรอกกลาง
 import { ModalShell } from '@/components/Modal';
 import FieldError from '@/components/FieldError';
@@ -670,49 +671,49 @@ export default function OfficeRecommendationClient({
     .sort((a, b) => (a.recommendation ?? '').localeCompare(b.recommendation ?? '', 'th'));
 
   return (
-    <div className="max-w-[1280px] space-y-8 px-8 pb-8 pt-16">
-      <h1 className="text-[32px] font-bold leading-[32px] tracking-[-0.6px] text-[#0F172A]">
+    <div className={T.page}>
+      <h1 className={T.h1}>
         ข้อมูลสำนักงานและแนวทางลดคาร์บอน
       </h1>
 
       {/* ============ ส่วนที่ 1: หัวข้อข้อมูลสำนักงาน ============ */}
-      <div className="w-full rounded-xl border border-[#E2E8F0] shadow-sm">
-        <div className="flex items-center justify-between border-b border-[#F1F5F9] px-6 py-6">
-          <h2 className="text-xl font-bold text-[#0F172A]">
+      <section className={T.card}>
+        <div className={T.cardHead}>
+          <h2 className={T.h2}>
             หัวข้อข้อมูลสำนักงาน (ช่องที่บริษัทต้องกรอก)
           </h2>
           <button
             onClick={() => openInfoModal()}
-            className="btn btn-create rounded-lg px-3 py-1.5 text-xs"
+            className={T.addBtn}
           >
             + เพิ่มหัวข้อ
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
-              <tr className="text-xs font-bold uppercase tracking-wide text-[#64748B]">
-                <th className="px-5 py-3 text-left">ชื่อหัวข้อ</th>
-                <th className="px-5 py-3 text-left">หน่วย</th>
-                <th className="px-5 py-3 text-left">คำอธิบาย</th>
-                <th className="px-5 py-3 text-center">จัดการ</th>
+        <div className={T.wrap}>
+          <table className={T.table}>
+            <thead className={T.thead}>
+              <tr className={T.headRow}>
+                <th className={`${T.th} text-left`}>ชื่อหัวข้อ</th>
+                <th className={`${T.th} text-left`}>หน่วย</th>
+                <th className={`${T.th} text-left`}>คำอธิบาย</th>
+                <th className={`${T.th} text-right`}>จัดการ</th>
               </tr>
             </thead>
             <tbody>
               {infoTypes.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-5 py-8 text-center text-[#94A3B8]">
+                  <td colSpan={4} className={T.empty}>
                     ยังไม่มีหัวข้อ
                   </td>
                 </tr>
               )}
               {infoTypes.map((i) => (
-                <tr key={i.info_id} className="border-t border-[#F1F5F9]">
-                  <td className="px-5 py-4 text-[#0F172A]">{i.info_name}</td>
-                  <td className="px-5 py-4 text-[#64748B]">{i.unit ?? '-'}</td>
-                  <td className="px-5 py-4 text-[#64748B] whitespace-pre-line">{i.info_detail ?? '-'}</td>
-                  <td className="px-5 py-4 text-center space-x-2 whitespace-nowrap">
+                <tr key={i.info_id} className={T.row}>
+                  <td className={T.tdMain}>{i.info_name}</td>
+                  <td className={T.td}>{i.unit ?? '-'}</td>
+                  <td className={`${T.td} whitespace-pre-line`}>{i.info_detail ?? '-'}</td>
+                  <td className={T.tdActions}>
                     <RowActions onEdit={() => openInfoModal(i)} onDelete={() => handleDeleteInfo(i.info_id)} />
                   </td>
                 </tr>
@@ -720,41 +721,41 @@ export default function OfficeRecommendationClient({
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
       {/* ============ ส่วนที่ 2: แนวทางลดคาร์บอน ============ */}
-      <div className="w-full rounded-xl border border-[#E2E8F0] shadow-sm">
-        <div className="flex items-center justify-between border-b border-[#F1F5F9] px-6 py-6">
+      <section className={T.card}>
+        <div className={T.cardHead}>
           <div>
-            <h2 className="text-xl font-bold text-[#0F172A]">แนวทางลดคาร์บอน</h2>
-            <p className="mt-1 text-xs text-[#94A3B8]">
+            <h2 className={T.h2}>แนวทางลดคาร์บอน</h2>
+            <p className="mt-1 text-xs text-[#6F7974]">
               เปอร์เซ็นต์ที่ลดได้คิดจากก๊าซของ &quot;กิจกรรมที่ผูก&quot; ขององค์กรนั้น
               บันทึกแล้วจะแนะนำในรายงานขององค์กรที่เข้าเงื่อนไขทันที
             </p>
           </div>
           <button
             onClick={() => openRecModal()}
-            className="btn btn-create rounded-lg px-3 py-1.5 text-xs"
+            className={T.addBtn}
           >
             + เพิ่มแนวทาง
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
-              <tr className="text-xs font-bold uppercase tracking-wide text-[#64748B]">
-                <th className="px-5 py-3 text-left">แนวทาง</th>
-                <th className="px-5 py-3 text-left">กิจกรรมที่ผูก</th>
-                <th className="px-5 py-3 text-right">ลดได้</th>
-                <th className="px-5 py-3 text-left">เงื่อนไข (ต้องผ่านทุกข้อ)</th>
-                <th className="px-5 py-3 text-center">จัดการ</th>
+        <div className={T.wrap}>
+          <table className={T.table}>
+            <thead className={T.thead}>
+              <tr className={T.headRow}>
+                <th className={`${T.th} text-left`}>แนวทาง</th>
+                <th className={`${T.th} text-left`}>กิจกรรมที่ผูก</th>
+                <th className={`${T.th} text-right`}>ลดได้</th>
+                <th className={`${T.th} text-left`}>เงื่อนไข (ต้องผ่านทุกข้อ)</th>
+                <th className={`${T.th} text-right`}>จัดการ</th>
               </tr>
             </thead>
             <tbody>
               {sortedRecs.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-8 text-center text-[#94A3B8]">
+                  <td colSpan={5} className={T.empty}>
                     ยังไม่มีแนวทาง
                   </td>
                 </tr>
@@ -762,15 +763,15 @@ export default function OfficeRecommendationClient({
               {sortedRecs.map((r) => {
                 const rc = r.recommendation_condition ?? [];
                 return (
-                  <tr key={r.rec_uid} className="border-t border-[#F1F5F9] align-top">
-                    <td className="px-5 py-4 font-medium text-[#0F172A]">{r.recommendation}</td>
-                    <td className="px-5 py-4 text-[#64748B]">
+                  <tr key={r.rec_uid} className={`${T.row} align-top`}>
+                    <td className={T.tdMain}>{r.recommendation}</td>
+                    <td className={T.td}>
                       {r.scopedetail_id ? actName(r.scopedetail_id) : 'ไม่ผูก (แนะนำทั่วไป)'}
                     </td>
-                    <td className="px-5 py-4 text-right font-semibold text-[#047857]">
+                    <td className={`${T.td} text-right font-semibold text-[#047857]`}>
                       {percentText(r)}
                     </td>
-                    <td className="px-5 py-4 text-xs text-[#64748B]">
+                    <td className={`${T.td} text-xs`}>
                       {rc.length === 0 ? (
                         <span className="text-[#F97316]">ไม่มีเงื่อนไข (แนะนำทุกองค์กร)</span>
                       ) : (
@@ -782,7 +783,7 @@ export default function OfficeRecommendationClient({
                       )}
                     </td>
                     {/* [ลบ] คอลัมน์สถานะ (ร่าง/เผยแพร่แล้ว) บันทึกแล้วใช้งานทันที */}
-                    <td className="px-5 py-4 text-center space-x-2 whitespace-nowrap">
+                    <td className={T.tdActions}>
                       <RowActions onEdit={() => openRecModal(r)} onDelete={() => handleDeleteRec(r.rec_uid)} />
                     </td>
                   </tr>
@@ -791,7 +792,7 @@ export default function OfficeRecommendationClient({
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
       {/* ============ Popup: เพิ่มหัวข้อข้อมูลสำนักงาน ============ */}
       {showInfoModal && (

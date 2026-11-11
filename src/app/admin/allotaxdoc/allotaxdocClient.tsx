@@ -11,7 +11,10 @@ import { normalizeToArabicNumber, safeStorageName, fileBaseName, fileExtension }
 import FieldError from '@/components/FieldError';
 import { docSchema, costSchema, DOC_FILE_RULE, type DocField, type CostField } from './schema';
 import { showError } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert
-import { DownloadIcon, FileIcon, PencilIcon, PlusIcon, TrashIcon, UploadCloudIcon } from '@/components/icons';
+import { DownloadIcon, EyeIcon, PencilIcon, PlusIcon, TrashIcon, UploadCloudIcon } from '@/components/icons';
+import RowActions from '@/components/RowActions'; // ปุ่มแก้ไข/ลบกลาง (ตารางต้นทุน + เอกสาร)
+import { inputClass } from '@/components/formStyles'; // class ช่องกรอกกลาง (popup แก้ไขต้นทุน)
+import { T } from '@/components/adminTable'; // การ์ด/ตารางแบบเดียวกับหน้า T-VER Project
 
 /* สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) เอกสาร: ชื่อผ่าน normalize + validate (ห้ามว่าง/ตัวเลขล้วน/ซ้ำ/ยาวเกิน) แสดง error ใต้ช่องแทน alert
@@ -20,7 +23,10 @@ import { DownloadIcon, FileIcon, PencilIcon, PlusIcon, TrashIcon, UploadCloudIco
  *    เดิมใช้ชื่อไฟล์จริง ถ้าเป็นภาษาไทยหรือมีอักขระพิเศษ Supabase จะปฏิเสธ (Invalid key)
  * 4) บันทึก/ลบแถวในตาราง documents ผ่านฟังก์ชันกลาง insertRecord / deleteRecord
  * 5) เพิ่มการแก้ไขชื่อเอกสาร
- * 6) ต้นทุนโครงการ: ตรวจชื่อและราคา (ไม่ติดลบ ทศนิยม 2 หลัก รับเลขไทย/comma) ก่อนเพิ่ม */
+ * 6) ต้นทุนโครงการ: ตรวจชื่อและราคา (ไม่ติดลบ ทศนิยม 2 หลัก รับเลขไทย/comma) ก่อนเพิ่ม
+ * 7) ต้นทุนโครงการ: แก้ไขรายการได้ (popup ใช้กฎตรวจเดียวกับตอนเพิ่ม) — ยังเก็บในหน้าจอเท่านั้น ไม่มีตารางใน DB
+ * 8) เอกสาร: แสดงเป็นตารางแบบหน้าอื่น ไอคอนขนาด/สีเดียวกับ RowActions เพิ่มปุ่มเปิดดู (PDF เปิดในเบราว์เซอร์,
+ *    DOCX/XLSX เปิดผ่าน Office Online Viewer) และปุ่มดาวน์โหลดโหลดไฟล์จริงแทนการเปิดแท็บ */
 
 /**
  * Storage bucket that uploaded project documents are stored in.
@@ -41,8 +47,23 @@ function formatFileSize(bytes: number) {
   return `${Math.max(1, Math.round(kb))} KB`;
 }
 
+// ป้ายชนิดไฟล์ สีเดียวกับหน้าเอกสารฝั่งองค์กร (organization/documents/DocumentsClient.tsx)
 // ใช้ fileExtension กลาง (ไฟล์ไม่มีนามสกุล / ขึ้นต้นด้วยจุด จะได้ค่าว่าง)
-const extOf = (name: string) => fileExtension(name).toUpperCase();
+function fileBadge(filePath: string | null): { label: string; color: string } {
+  if (filePath && /^https?:\/\//i.test(filePath)) return { label: 'LINK', color: 'bg-[#6B7280]' };
+  switch (fileExtension(filePath)) {
+    case 'pdf':
+      return { label: 'PDF', color: 'bg-[#D32F2F]' };
+    case 'docx':
+    case 'doc':
+      return { label: 'DOCX', color: 'bg-[#1976D2]' };
+    case 'xlsx':
+    case 'xls':
+      return { label: 'XLSX', color: 'bg-[#2E7D32]' };
+    default:
+      return { label: 'FILE', color: 'bg-[#6B7280]' };
+  }
+}
 
 /* -------------------------------------------------------------------------- */
 /*  Static section data (Project Targets / Project Cost are not backed by a  */
@@ -130,6 +151,52 @@ export default function AlloTaxDocClient({
   // เอารายการค่าใช้จ่ายออกจากรายการบนหน้า
   function handleDeleteCost(id: string) {
     setCosts((prev) => prev.filter((c) => c.id !== id));
+  }
+
+  // [เพิ่ม] แก้ไขรายการต้นทุน (ชื่อ ราคา VAT) ผ่าน popup ใช้กฎตรวจชุดเดียวกับตอนเพิ่ม
+  const [editCost, setEditCost] = useState<CostItem | null>(null);
+  const [editCostName, setEditCostName] = useState('');
+  const [editCostPrice, setEditCostPrice] = useState('');
+  const [editCostVat, setEditCostVat] = useState<number>(7);
+  const [editCostErrors, setEditCostErrors] = useState<formError<CostField>>({});
+
+  const editBase = normalizeToArabicNumber(editCostPrice);
+  const editNetPreview = editBase !== null && editBase >= 0 ? editBase * (1 + editCostVat / 100) : 0;
+
+  function openEditCost(c: CostItem) {
+    setEditCost(c);
+    setEditCostName(c.name);
+    setEditCostPrice(String(c.basePrice));
+    setEditCostVat(c.vatPct ?? 0);
+    setEditCostErrors({});
+  }
+
+  function handleSaveCost(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editCost) return;
+    // ชื่อห้ามซ้ำกับรายการอื่น (ไม่นับรายการที่กำลังแก้)
+    const result = validateForm(
+      { name: editCostName, price: editCostPrice },
+      extendSchema(costSchema, {
+        name: [notDuplicate('ชื่อรายการต้นทุน', costs.filter((c) => c.id !== editCost.id).map((c) => c.name))],
+      })
+    );
+    if (!result.ok) { setEditCostErrors(result.errors); return; }
+    if (!vatOptions.includes(editCostVat)) return;
+
+    setCosts((prev) =>
+      prev.map((c) =>
+        c.id === editCost.id
+          ? {
+              ...c,
+              name: result.clean.name,
+              basePrice: normalizeToArabicNumber(result.clean.price) ?? 0,
+              vatPct: editCostVat,
+            }
+          : c
+      )
+    );
+    setEditCost(null);
   }
 
   /* ---- Section 3: Project Documents (live, backed by Supabase) ---- */
@@ -275,7 +342,43 @@ export default function AlloTaxDocClient({
     setDocuments((prev) => prev.filter((d) => d.document_id !== doc.document_id));
   }
 
-  // ดาวน์โหลดเอกสาร ถ้าเก็บเป็นลิงก์เว็บจะเปิดลิงก์นั้น ถ้าเป็นไฟล์จะโหลดจาก Storage
+  // หาลิงก์ของไฟล์: ลิงก์เว็บใช้ตามเดิม / ไฟล์ใน Storage ใช้ลิงก์ชั่วคราว 1 ชม. (bucket public ใช้ลิงก์ public แทน)
+  async function getDocumentUrl(doc: AlloTaxDoc): Promise<string | null> {
+    if (!doc.file_path) return null;
+    if (/^https?:\/\//i.test(doc.file_path)) return doc.file_path;
+
+    const { data } = await supabase.storage.from(BUCKET).createSignedUrl(doc.file_path, 3600);
+    if (data?.signedUrl) return data.signedUrl;
+
+    const { data: publicUrlData } = supabase.storage.from(BUCKET).getPublicUrl(doc.file_path);
+    return publicUrlData.publicUrl || null;
+  }
+
+  // [เพิ่ม] เปิดดูเอกสารในแท็บใหม่
+  //   PDF เบราว์เซอร์เปิดได้เอง / DOCX, XLSX เบราว์เซอร์เปิดไม่ได้ (จะดาวน์โหลดแทน) จึงเปิดผ่าน Office Online Viewer
+  async function handleViewDocument(doc: AlloTaxDoc) {
+    // เปิดแท็บก่อนรอลิงก์ ไม่งั้นเบราว์เซอร์จะมองว่าเป็น popup แล้วบล็อก
+    const tab = window.open('', '_blank');
+    const url = await getDocumentUrl(doc);
+    if (!url) {
+      tab?.close();
+      showError('ไม่พบไฟล์สำหรับเอกสารนี้');
+      return;
+    }
+    const ext = fileExtension(doc.file_path ?? '').toLowerCase();
+    const isOffice = ['docx', 'doc', 'xlsx', 'xls'].includes(ext);
+    const viewUrl = isOffice
+      ? `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`
+      : url;
+    if (tab) {
+      tab.opener = null; // กันหน้าที่เปิดสั่งหน้านี้ได้ (แทน noopener)
+      tab.location.href = viewUrl;
+    } else {
+      window.open(viewUrl, '_blank', 'noopener,noreferrer');
+    }
+  }
+
+  // ดาวน์โหลดเอกสาร: ไฟล์ใน Storage โหลดมาเป็นไฟล์จริงแล้วบันทึกด้วยชื่อเอกสาร (เดิมแค่เปิดลิงก์ในแท็บใหม่ ซึ่งซ้ำกับการเปิดดู)
   async function handleDownloadDocument(doc: AlloTaxDoc) {
     if (!doc.file_path) return;
 
@@ -284,52 +387,43 @@ export default function AlloTaxDocClient({
       return;
     }
 
-    const { data, error } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(doc.file_path, 3600);
-
-    if (data?.signedUrl) {
-      window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+    const { data, error } = await supabase.storage.from(BUCKET).download(doc.file_path);
+    if (error || !data) {
+      showError('ดาวน์โหลดไม่สำเร็จ: ' + (error?.message ?? 'ไม่ทราบสาเหตุ'));
       return;
     }
-
-    // A public bucket may reject signed URLs while still exposing a public URL.
-    const { data: publicUrlData } = supabase.storage
-      .from(BUCKET)
-      .getPublicUrl(doc.file_path);
-
-    if (publicUrlData.publicUrl) {
-      window.open(publicUrlData.publicUrl, '_blank', 'noopener,noreferrer');
-      return;
-    }
-
-    showError('เปิดเอกสารไม่สำเร็จ: ' + (error?.message ?? 'ไม่พบลิงก์เอกสาร'));
+    const blobUrl = URL.createObjectURL(data);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    const ext = fileExtension(doc.file_path);
+    a.download = `${doc.document_name ?? 'document'}${ext ? `.${ext}` : ''}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
   }
 
   return (
-    <div className="flex max-w-[1152px] flex-col gap-4 px-6 py-8">
+    <div className={T.page}>
       {/* Page Title */}
-      <div className="flex items-center justify-between border-b border-slate-200/60 pb-2 pt-8">
-        <h1 className="text-[32px] font-bold leading-[32px] text-[#1E293B]">
-          เป้าหมาย, ต้นทุน &amp; เอกสารโครงการ
-        </h1>
-      </div>
+      <h1 className={T.h1}>
+        เป้าหมาย, ต้นทุน &amp; เอกสารโครงการ
+      </h1>
 
       {/* ---------------------------------------------------------------- */}
       {/* Section 1: เป้าหมายโครงการ                                       */}
+      {/* การ์ด/หัวข้อ/ตารางทุกส่วนใช้แบบหน้า T-VER Project (components/adminTable.ts) เอาจุดสีเขียวหน้าหัวข้อออก */}
       {/* ---------------------------------------------------------------- */}
-      <section className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-xl font-bold text-[#1E293B]">
-            <span className="h-[6px] w-[7px] rounded-full bg-[#32885F]" />
+      <section className={T.card}>
+        <div className={T.cardHead}>
+          <h2 className={T.h2}>
             เป้าหมายโครงการ
           </h2>
           <button
             type="button"
-            className="btn btn-create flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs"
+            className={T.addBtn}
           >
-            <PlusIcon className="h-2.5 w-2.5" />
-            เพิ่มเป้าหมาย
+            + เพิ่มเป้าหมาย
           </button>
         </div>
 
@@ -344,7 +438,7 @@ export default function AlloTaxDocClient({
                   {t.name}
                 </span>
                 <div className="flex items-center gap-0.5 text-slate-400">
-                  <button type="button" className="rounded p-1 hover:bg-slate-50 hover:text-slate-600">
+                  <button type="button" className="rounded p-1 hover:bg-slate-50 hover:text-blue-600">
                     <PencilIcon className="h-3 w-3" />
                   </button>
                   <button type="button" className="rounded p-1 hover:bg-slate-50 hover:text-red-500">
@@ -385,13 +479,14 @@ export default function AlloTaxDocClient({
       {/* ---------------------------------------------------------------- */}
       {/* Section 2: ต้นทุนโครงการ                                         */}
       {/* ---------------------------------------------------------------- */}
-      <section className="flex flex-col gap-4">
-        <h2 className="flex items-center gap-2 text-xl font-bold text-[#1E293B]">
-          <span className="h-[6px] w-[7px] rounded-full bg-[#32885F]" />
-          ต้นทุนโครงการ
-        </h2>
+      <section className={T.card}>
+        <div className={T.cardHead}>
+          <h2 className={T.h2}>
+            ต้นทุนโครงการ
+          </h2>
+        </div>
 
-        <div className="flex flex-col gap-5 rounded-xl border border-slate-200/70 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-5">
           <form onSubmit={handleAddCost} className="flex items-start gap-4" noValidate>
             <div className="flex flex-1 flex-col gap-1">
               <label className="text-xs text-[#475569]">ชื่อรายการต้นทุน</label>
@@ -449,47 +544,42 @@ export default function AlloTaxDocClient({
             </button>
           </form>
 
-          <div className="border-t border-[#F1F5F9] pt-3">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-[#94A3B8]">
-                  <th className="px-3 py-2 text-left font-normal">รายการต้นทุน</th>
-                  <th className="px-3 py-2 text-right font-normal">ราคาฐาน (บาท)</th>
-                  <th className="px-3 py-2 text-center font-normal">VAT</th>
-                  <th className="px-3 py-2 text-right font-normal">ราคาสุทธิ (บาท)</th>
-                  <th className="px-3 py-2" />
+          <div className={T.wrap}>
+            <table className={T.table}>
+              <thead className={T.thead}>
+                <tr className={T.headRow}>
+                  <th className={`${T.th} text-left`}>รายการต้นทุน</th>
+                  <th className={`${T.th} text-right`}>ราคาฐาน (บาท)</th>
+                  <th className={`${T.th} text-center`}>VAT</th>
+                  <th className={`${T.th} text-right`}>ราคาสุทธิ (บาท)</th>
+                  <th className={`${T.th} text-right`}>จัดการ</th>
                 </tr>
               </thead>
               <tbody>
                 {costs.map((c) => {
                   const net = c.basePrice * (1 + (c.vatPct ?? 0) / 100);
                   return (
-                    <tr key={c.id} className="border-t border-[#F1F5F9]">
-                      <td className="px-3 py-3 text-[#1E293B]">{c.name}</td>
-                      <td className="px-3 py-3 text-right text-[#475569]">
+                    <tr key={c.id} className={T.row}>
+                      <td className={T.tdMain}>{c.name}</td>
+                      <td className={`${T.td} text-right`}>
                         {c.basePrice.toFixed(2)}
                       </td>
-                      <td className="px-3 py-3 text-center text-[#64748B]">
+                      <td className={`${T.td} text-center`}>
                         {c.vatPct !== null ? `${c.vatPct}%` : '—'}
                       </td>
-                      <td className="px-3 py-3 text-right font-medium text-[#346556]">
+                      <td className={`${T.td} text-right font-semibold text-[#346556]`}>
                         {net.toFixed(2)}
                       </td>
-                      <td className="px-3 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteCost(c.id)}
-                          className="text-slate-400 hover:text-red-500"
-                        >
-                          <TrashIcon className="h-3 w-3" />
-                        </button>
+                      <td className={T.tdActions}>
+                        {/* [เพิ่ม] ปุ่มแก้ไข + ลบ แบบเดียวกับตารางอื่นของแอดมิน */}
+                        <RowActions onEdit={() => openEditCost(c)} onDelete={() => handleDeleteCost(c.id)} />
                       </td>
                     </tr>
                   );
                 })}
                 {costs.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-3 py-6 text-center text-[#94A3B8]">
+                    <td colSpan={5} className={T.empty}>
                       ยังไม่มีรายการต้นทุน
                     </td>
                   </tr>
@@ -503,11 +593,12 @@ export default function AlloTaxDocClient({
       {/* ---------------------------------------------------------------- */}
       {/* Section 3: เอกสารโครงการ (live / Supabase-backed)                */}
       {/* ---------------------------------------------------------------- */}
-      <section className="flex flex-col gap-4">
-        <h2 className="flex items-center gap-2 text-xl font-bold text-[#1E293B]">
-          <span className="h-[6px] w-[7px] rounded-full bg-[#32885F]" />
-          เอกสารโครงการ
-        </h2>
+      <section className={T.card}>
+        <div className={T.cardHead}>
+          <h2 className={T.h2}>
+            เอกสารโครงการ
+          </h2>
+        </div>
 
         <div className="flex gap-6">
           {/* Left: name + upload zone */}
@@ -570,65 +661,121 @@ export default function AlloTaxDocClient({
             </button>
           </div>
 
-          {/* Right: documents list */}
-          <div className="flex flex-1 flex-col gap-2.5">
-            {documents.length === 0 && (
-              <div className="flex items-center justify-center rounded-xl border border-dashed border-slate-200 py-10 text-xs text-[#94A3B8]">
-                ยังไม่มีเอกสารที่อัปโหลด
-              </div>
-            )}
-
-            {documents.map((doc) => (
-              <div
-                key={doc.document_id}
-                className="flex items-center justify-between gap-4 rounded-xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#F1F5F9] text-[#64748B]">
-                    <FileIcon className="h-3.5 w-4" />
-                  </span>
-                  <div className="flex flex-col">
-                    <span className="text-[11px] font-bold text-[#1E293B]">
-                      {doc.document_name ?? 'ไม่มีชื่อเอกสาร'}
-                    </span>
-                    <span className="text-[11px] text-[#94A3B8]">
-                      {doc.file_path && !/^https?:\/\//i.test(doc.file_path)
-                        ? `${extOf(doc.file_path) || 'FILE'} • ไฟล์ในระบบ`
-                        : 'ลิงก์เอกสาร'}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => openEditDoc(doc)}
-                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-50 hover:text-slate-600"
-                    aria-label="แก้ไขชื่อ"
-                  >
-                    <PencilIcon className="h-3 w-3" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDownloadDocument(doc)}
-                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-50 hover:text-slate-600"
-                    aria-label="ดาวน์โหลด"
-                  >
-                    <DownloadIcon className="h-3 w-3" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteDocument(doc)}
-                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-50 hover:text-red-500"
-                    aria-label="ลบ"
-                  >
-                    <TrashIcon className="h-3 w-3" />
-                  </button>
-                </div>
-              </div>
-            ))}
+          {/* Right: documents list
+              [แก้ไข] เดิมเป็นการ์ดตัวเล็ก ไอคอน 12px สีจาง -> ตารางแบบเดียวกับหน้าอื่น ไอคอนขนาดเดียวกับ RowActions
+              ป้ายชนิดไฟล์สีเดียวกับหน้าเอกสารฝั่งองค์กร และเพิ่มปุ่มเปิดดู */}
+          <div className={`${T.wrap} flex-1`}>
+            <table className={T.table}>
+              <thead className={T.thead}>
+                <tr className={T.headRow}>
+                  <th className={`${T.th} text-left`}>ชื่อเอกสาร</th>
+                  <th className={`${T.th} text-right`}>จัดการ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {documents.length === 0 && (
+                  <tr>
+                    <td colSpan={2} className={T.empty}>
+                      ยังไม่มีเอกสารที่อัปโหลด
+                    </td>
+                  </tr>
+                )}
+                {documents.map((doc) => {
+                  const badge = fileBadge(doc.file_path);
+                  return (
+                    <tr key={doc.document_id} className={T.row}>
+                      <td className={T.tdMain}>
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[10px] font-semibold text-white ${badge.color}`}
+                          >
+                            {badge.label}
+                          </span>
+                          <span>{doc.document_name ?? 'ไม่มีชื่อเอกสาร'}</span>
+                        </div>
+                      </td>
+                      <td className={T.tdActions}>
+                        <span className="inline-flex items-center gap-3 align-middle">
+                          <button
+                            type="button"
+                            onClick={() => handleViewDocument(doc)}
+                            title="เปิดดู"
+                            aria-label="เปิดดู"
+                            className="text-[#64748B] transition-colors hover:text-[#32885F]"
+                          >
+                            <EyeIcon />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadDocument(doc)}
+                            title="ดาวน์โหลด"
+                            aria-label="ดาวน์โหลด"
+                            className="text-[#64748B] transition-colors hover:text-[#32885F]"
+                          >
+                            <DownloadIcon />
+                          </button>
+                          {/* แก้ไขชื่อ + ลบ ใช้ปุ่มกลางเหมือนตารางอื่น */}
+                          <RowActions onEdit={() => openEditDoc(doc)} onDelete={() => handleDeleteDocument(doc)} />
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       </section>
+
+      {/* [เพิ่ม] Modal แก้ไขรายการต้นทุน */}
+      {editCost && (
+        <ModalShell onClose={() => setEditCost(null)}>
+          <form onSubmit={handleSaveCost} className="space-y-4" noValidate>
+            <h3 className="text-lg font-bold">แก้ไขรายการต้นทุน</h3>
+            <div>
+              <label className="mb-1 block text-xs text-[#475569]">ชื่อรายการต้นทุน</label>
+              <input
+                className={inputClass(!!editCostErrors.name)}
+                maxLength={150}
+                value={editCostName}
+                onChange={(e) => setEditCostName(e.target.value)}
+              />
+              <FieldError message={editCostErrors.name} />
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="mb-1 block text-xs text-[#475569]">ราคา (บาท)</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  className={inputClass(!!editCostErrors.price)}
+                  value={editCostPrice}
+                  onChange={(e) => setEditCostPrice(e.target.value)}
+                />
+                <FieldError message={editCostErrors.price} />
+              </div>
+              <div className="w-28">
+                <label className="mb-1 block text-xs text-[#475569]">VAT (%)</label>
+                <select
+                  className={inputClass(false)}
+                  value={editCostVat}
+                  onChange={(e) => setEditCostVat(Number(e.target.value))}
+                >
+                  {vatOptions.map((v) => (
+                    <option key={v} value={v}>
+                      {v}%
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <p className="text-sm text-[#475569]">
+              ราคาสุทธิ: <span className="font-semibold text-[#346556]">{editNetPreview.toFixed(2)}</span> บาท
+            </p>
+            <ModalActions onCancel={() => setEditCost(null)} />
+          </form>
+        </ModalShell>
+      )}
 
       {/* Modal แก้ไขชื่อเอกสาร */}
       {editDoc && (
