@@ -4,7 +4,7 @@ import React from "react";
 
 type FuelOptionItem = {
   option: {
-    subCategory: string;
+    category_type: string;
     fuelType: string;
     name: string;
   };
@@ -16,7 +16,7 @@ type FuelOptionItem = {
 };
 
 type GroupedVehicleRecommendation = {
-  subCategory: string;
+  category_type: string;
   bestEmissionTon: number;
   fuels: FuelOptionItem[];
 };
@@ -24,7 +24,6 @@ type GroupedVehicleRecommendation = {
 type CalculationResultProps = {
   meetingEmission: number;
   travelEmission: number;
-  resourceEmission?: number;
   meetingRawElectricityKWh?: number;
   meetingElectricityCost?: number;
   travelRawElectricityKWh?: number;    
@@ -36,7 +35,6 @@ type CalculationResultProps = {
 export default function CalculationResult({
   meetingEmission,
   travelEmission,
-  resourceEmission = 0,
   meetingRawElectricityKWh = 0,
   meetingElectricityCost = 0,
   travelRawElectricityKWh = 0,        
@@ -44,7 +42,8 @@ export default function CalculationResult({
   meetingRecommendation = [],
   travelRecommendation = [],
 }: CalculationResultProps) {
-  const totalEmission = meetingEmission + travelEmission + resourceEmission;
+
+  const totalEmission = meetingEmission + travelEmission;
 
   const formatEmission = (value: number) => {
     return Math.max(0, value).toLocaleString("th-TH", {
@@ -65,7 +64,6 @@ export default function CalculationResult({
     return name.replace(/^เปลี่ยนมาใช้\s*/i, "").trim();
   };
 
-  // ตรวจสอบว่ายังมีทางเลือกอื่นหลังกรองตัวเลือกปัจจุบันออกหรือไม่
   const hasMeetingRecs = meetingRecommendation && meetingRecommendation.some(group => 
     group.fuels.some(fuel => !fuel.isCurrent)
   );
@@ -93,7 +91,7 @@ export default function CalculationResult({
         </div>
 
         <div className="p-6 space-y-5">
-          {/* หมวดการประชุม อบรม และจัดอีเวนต์ */}
+          {/* หมวดการประชุม */}
           <div className="rounded-xl border border-gray-200 bg-white p-5 flex items-center justify-between">
             <div className="space-y-1">
               <h3 className="font-semibold text-gray-800 text-base">
@@ -115,11 +113,11 @@ export default function CalculationResult({
             </div>
           </div>
 
-          {/* หมวดการเดินทาง และขนส่ง */}
+          {/* หมวดการเดินทาง */}
           <div className="rounded-xl border border-gray-200 bg-white p-5 flex items-center justify-between">
             <div className="space-y-1">
               <h3 className="font-semibold text-gray-800 text-base">
-                หมวดการเดินทาง
+                หมวดการเดินทาง (Traveling)
               </h3>
               
               {travelRawElectricityKWh > 0 && (
@@ -175,7 +173,6 @@ export default function CalculationResult({
 
                 <div className="space-y-4">
                   {meetingRecommendation.map((group, groupIdx) => {
-                    // กรองเฉพาะตัวเลือกที่ไม่ใช่ปัจจุบัน
                     const validFuels = group.fuels.filter(fuel => !fuel.isCurrent);
                     if (validFuels.length === 0) return null;
 
@@ -183,7 +180,7 @@ export default function CalculationResult({
                       <div key={groupIdx} className="border border-gray-100 rounded-xl p-4 bg-gray-50/50 space-y-3">
                         <div className="flex items-center justify-between border-b border-gray-200 pb-2">
                           <span className="text-sm font-bold text-gray-800 uppercase tracking-wide">
-                            ประเภท: {group.subCategory}
+                            รูปแบบ: {group.category_type}
                           </span>
                           <span className="text-xs text-gray-500">
                             ปล่อยน้อยที่สุดในกลุ่ม: <strong className="text-emerald-700">{formatEmission(group.bestEmissionTon)} tCO₂e</strong>
@@ -235,9 +232,7 @@ export default function CalculationResult({
                                     ลดลง {formatEmission(fuelItem.reductionTon)} tCO₂e
                                   </div>
                                 ) : (
-                                  <div className="text-xs text-gray-400">
-                                    -
-                                  </div>
+                                  <div className="text-xs text-gray-400">-</div>
                                 )}
                               </div>
                             </div>
@@ -257,7 +252,6 @@ export default function CalculationResult({
 
                 <div className="space-y-4">
                   {travelRecommendation.map((group, groupIdx) => {
-                    // กรองเฉพาะตัวเลือกที่ไม่ใช่ปัจจุบัน
                     const validFuels = group.fuels.filter(fuel => !fuel.isCurrent);
                     if (validFuels.length === 0) return null;
 
@@ -265,7 +259,7 @@ export default function CalculationResult({
                       <div key={groupIdx} className="border border-gray-100 rounded-xl p-4 bg-gray-50/50 space-y-3">
                         <div className="flex items-center justify-between border-b border-gray-200 pb-2">
                           <span className="text-sm font-bold text-gray-800 uppercase tracking-wide">
-                            พาหนะ: {group.subCategory}
+                            พาหนะ: {group.category_type}
                           </span>
                           <span className="text-xs text-gray-500">
                             ปล่อยน้อยที่สุดในกลุ่ม: <strong className="text-emerald-700">{formatEmission(group.bestEmissionTon)} tCO₂e</strong>
@@ -317,9 +311,7 @@ export default function CalculationResult({
                                     ลดลง {formatEmission(fuelItem.reductionTon)} tCO₂e
                                   </div>
                                 ) : (
-                                  <div className="text-xs text-gray-400">
-                                    -
-                                  </div>
+                                  <div className="text-xs text-gray-400">-</div>
                                 )}
                               </div>
                             </div>

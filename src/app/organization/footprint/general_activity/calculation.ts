@@ -1,5 +1,5 @@
 export type OptionType = {
-  subCategory: string;
+  category_type: string;
   fuelType: string;
   name: string;
 };
@@ -53,8 +53,8 @@ export type EquipmentSet = {
 };
 
 export type CarbonCalcInput = {
-  category?: 'meeting' | 'travel';
-  subCategory?: string; 
+  category?: 'meeting' | 'travel' | 'traveling';
+  category_type?: string; 
   fuelType?: string;
   distance?: number;
   trip?: number;
@@ -81,7 +81,7 @@ export type CarbonCalcOutput = {
 };
 
 export type GroupedVehicleRecommendation = {
-  subCategory: string;
+  category_type: string;
   bestEmissionTon: number;
   fuels: {
     option: OptionType;
@@ -93,9 +93,9 @@ export type GroupedVehicleRecommendation = {
   }[];
 };
 
-export function getConsumptionRate(subCategory?: string, fuelType?: string): number {
-  if (!subCategory) return 14.763;
-  const v = subCategory.toLowerCase();
+export function getConsumptionRate(category_type?: string, fuelType?: string): number {
+  if (!category_type) return 14.763;
+  const v = category_type.toLowerCase();
   const f = (fuelType || 'gasohol_e10').toLowerCase();
 
   if (FUEL_CONSUMPTION_RATES[v] && FUEL_CONSUMPTION_RATES[v][f] !== undefined) {
@@ -107,7 +107,7 @@ export function getConsumptionRate(subCategory?: string, fuelType?: string): num
 export function executeCarbonCalculation(input: CarbonCalcInput): CarbonCalcOutput {
   const { 
     category, 
-    subCategory = 'online', 
+    category_type = 'online', 
     fuelType = 'gasohol_e10', 
     distance = 0, 
     trip = 1, 
@@ -121,7 +121,7 @@ export function executeCarbonCalculation(input: CarbonCalcInput): CarbonCalcOutp
     isRecommendationSimulation = false 
   } = input;
 
-  if (category === 'meeting' && subCategory === 'online') {
+  if (category === 'meeting' && category_type === 'online') {
     let totalKWh = 0;
     if (equipmentSets && equipmentSets.length > 0) {
       equipmentSets.forEach(set => {
@@ -146,7 +146,7 @@ export function executeCarbonCalculation(input: CarbonCalcInput): CarbonCalcOutp
   let travelMethod = '';
   let rawElectricityKWh = 0;
 
-  const isEvTravel = (fuelType && fuelType.toLowerCase().includes('electricity')) || subCategory === 'ev';
+  const isEvTravel = (fuelType && fuelType.toLowerCase().includes('electricity')) || category_type === 'ev';
   
   if (isEvTravel && isRecommendationSimulation) {
     const totalDistance = distance * trip;
@@ -161,15 +161,15 @@ export function executeCarbonCalculation(input: CarbonCalcInput): CarbonCalcOutp
     travelEmission = rawElectricityKWh * emissionFactor;
     travelMethod = '(Distance * Trips * kWhPerKm) * EF_Electricity';
   } else {
-    const targetSubCategory = category === 'meeting' ? 'car' : subCategory;
-    const rate = getConsumptionRate(targetSubCategory, fuelType);
+    const targetCategoryType = category === 'meeting' ? 'car' : category_type;
+    const rate = getConsumptionRate(targetCategoryType, fuelType);
     const totalDistance = distance * trip;
     const fuelUsed = totalDistance / rate;
     travelEmission = fuelUsed * emissionFactor;
     travelMethod = '(Distance * Trips / ConsumptionRate) * EF';
   }
 
-  if (category === 'meeting' && subCategory === 'onsite') {
+  if (category === 'meeting' && category_type === 'onsite') {
     let equipmentTotalEmission = 0;
     let equipmentTotalKWh = 0;
     
@@ -209,7 +209,7 @@ export function executeCarbonCalculation(input: CarbonCalcInput): CarbonCalcOutp
 export function calculateMeetingSummary(input: CarbonCalcInput) {
   const res = executeCarbonCalculation(input);
   const rawKWh = res.rawElectricityKWh || 0;
-  const isEv = input.subCategory === 'onsite' && input.fuelType?.toLowerCase() === 'ev';
+  const isEv = input.category_type === 'onsite' && input.fuelType?.toLowerCase() === 'ev';
   const electricityCost = isEv ? 0 : rawKWh * 4;
 
   return {
@@ -225,7 +225,7 @@ export function calculateMeetingSummary(input: CarbonCalcInput) {
 export function calculateTravelSummary(input: CarbonCalcInput) {
   const res = executeCarbonCalculation(input);
   const rawKWh = res.rawElectricityKWh || 0;
-  const isEv = input.subCategory?.toLowerCase() === 'ev' || input.fuelType?.toLowerCase().includes('electricity');
+  const isEv = input.category_type?.toLowerCase() === 'ev' || input.fuelType?.toLowerCase().includes('electricity');
   const electricityCost = isEv ? rawKWh * 4 : 0;
 
   return {
@@ -246,8 +246,8 @@ export function getMeetingRecommendations(params: {
 }): GroupedVehicleRecommendation[] {
   const { currentEmission, userInput, allAvailableOptions, fetchEFFromDB, fetchElectricityEFFromDB } = params;
   
-  const subCat = (userInput.subCategory || '').toLowerCase();
-  if (subCat === 'online' || subCat === 'ไฟฟ้าแบบ grid mix ปี 2022–2024') {
+  const catType = (userInput.category_type || '').toLowerCase();
+  if (catType === 'online') {
     return [];
   }
 
@@ -261,7 +261,7 @@ export function getMeetingRecommendations(params: {
 
   const currentEmissionTon = currentEmission > 10 ? currentEmission / 1000 : currentEmission;
   const electricityEf = fetchElectricityEFFromDB();
-  const currentUserSubCategory = subCat;
+  const currentUserCatType = catType;
   const currentUserFuel = (userInput.fuelType || '').toLowerCase();
 
   const evaluatedList: { 
@@ -274,20 +274,20 @@ export function getMeetingRecommendations(params: {
   }[] = [];
 
   allAvailableOptions.forEach((option: OptionType) => {
-    const isOnlineOpt = option.subCategory === 'online';
+    const isOnlineOpt = option.category_type === 'online';
     const isCurrent = 
-      option.subCategory.toLowerCase() === currentUserSubCategory && 
+      option.category_type.toLowerCase() === currentUserCatType && 
       (isOnlineOpt || option.fuelType.toLowerCase() === currentUserFuel);
 
     if (isCurrent) return;
 
     const ef = isOnlineOpt ? electricityEf : fetchEFFromDB(option.fuelType);
-    const isEvOption = option.subCategory.toLowerCase() === 'ev' || option.fuelType.toLowerCase().includes('electricity');
+    const isEvOption = option.category_type.toLowerCase() === 'ev' || option.fuelType.toLowerCase().includes('electricity');
 
     const simInput: CarbonCalcInput = {
       ...userInput,
       category: 'meeting',
-      subCategory: isOnlineOpt ? 'online' : 'onsite',
+      category_type: isOnlineOpt ? 'online' : 'onsite',
       fuelType: option.fuelType,
       distance: userInput.distance,
       trip: userInput.trip,
@@ -334,7 +334,7 @@ export function getMeetingRecommendations(params: {
   };
 
   evaluatedList.forEach(item => {
-    const mainGroup = item.option.subCategory.toLowerCase() === 'online' ? 'online' : 'onsite';
+    const mainGroup = item.option.category_type.toLowerCase() === 'online' ? 'online' : 'onsite';
     groupedMap[mainGroup].push(item);
   });
 
@@ -345,7 +345,7 @@ export function getMeetingRecommendations(params: {
     if (validOnlineFuels.length > 0) {
       validOnlineFuels.sort((a, b) => a.emissionTon - b.emissionTon);
       meetingGroups.push({
-        subCategory: 'online',
+        category_type: 'online',
         bestEmissionTon: validOnlineFuels[0].emissionTon,
         fuels: validOnlineFuels,
       });
@@ -357,7 +357,7 @@ export function getMeetingRecommendations(params: {
     const gasohols = items.filter(i => i.option.fuelType.toLowerCase().includes('gasohol')).sort((a, b) => a.emissionTon - b.emissionTon);
     const diesels = items.filter(i => i.option.fuelType.toLowerCase().includes('diesel')).sort((a, b) => a.emissionTon - b.emissionTon);
     const gasOptions = items.filter(i => ['cng', 'lpg'].includes(i.option.fuelType.toLowerCase())).sort((a, b) => a.emissionTon - b.emissionTon);
-    const evOptions = items.filter(i => i.option.fuelType.toLowerCase().includes('electricity') || i.option.subCategory.toLowerCase() === 'ev').sort((a, b) => a.emissionTon - b.emissionTon);
+    const evOptions = items.filter(i => i.option.fuelType.toLowerCase().includes('electricity') || i.option.category_type.toLowerCase() === 'ev').sort((a, b) => a.emissionTon - b.emissionTon);
     const others = items.filter(i => 
       !i.option.fuelType.toLowerCase().includes('gasohol') &&
       !i.option.fuelType.toLowerCase().includes('diesel') &&
@@ -376,7 +376,7 @@ export function getMeetingRecommendations(params: {
 
     if (selectedFuels.some(item => item.reductionTon > 0)) {
       meetingGroups.push({
-        subCategory: 'onsite',
+        category_type: 'onsite',
         bestEmissionTon: selectedFuels[0].emissionTon,
         fuels: selectedFuels,
       });
@@ -404,7 +404,7 @@ export function getTravelRecommendations(params: {
   const currentRawKWh = currentSimRes.rawElectricityKWh || 0;
 
   const currentEmissionTon = currentEmission > 10 ? currentEmission / 1000 : currentEmission;
-  const currentUserSubCategory = (userInput.subCategory || '').toLowerCase();
+  const currentUserCatType = (userInput.category_type || '').toLowerCase();
   const currentUserFuel = (userInput.fuelType || '').toLowerCase();
 
   const evaluatedList: { 
@@ -418,18 +418,18 @@ export function getTravelRecommendations(params: {
 
   allAvailableOptions.forEach((option: OptionType) => {
     const isCurrent = 
-      option.subCategory.toLowerCase() === currentUserSubCategory && 
+      option.category_type.toLowerCase() === currentUserCatType && 
       option.fuelType.toLowerCase() === currentUserFuel;
 
     if (isCurrent) return;
 
     const ef = fetchEFFromDB(option.fuelType);
-    const isEvOption = option.subCategory.toLowerCase() === 'ev' || option.fuelType.toLowerCase().includes('electricity');
+    const isEvOption = option.category_type.toLowerCase() === 'ev' || option.fuelType.toLowerCase().includes('electricity');
 
     const simInput: CarbonCalcInput = {
       ...userInput,
       category: 'travel',
-      subCategory: option.subCategory, 
+      category_type: option.category_type, 
       fuelType: option.fuelType,
       emissionFactor: ef,
       electricityEmissionFactor: userInput.electricityEmissionFactor || 0,
@@ -460,18 +460,18 @@ export function getTravelRecommendations(params: {
 
   const groupedMap: Record<string, typeof evaluatedList> = {};
   evaluatedList.forEach(item => {
-    const subCat = item.option.subCategory.toLowerCase();
-    if (!groupedMap[subCat]) groupedMap[subCat] = [];
-    groupedMap[subCat].push(item);
+    const catType = item.option.category_type.toLowerCase();
+    if (!groupedMap[catType]) groupedMap[catType] = [];
+    groupedMap[catType].push(item);
   });
 
-  const vehicleGroups: GroupedVehicleRecommendation[] = Object.keys(groupedMap).map(subCategory => {
-    const items = groupedMap[subCategory];
+  const vehicleGroups: GroupedVehicleRecommendation[] = Object.keys(groupedMap).map(category_type => {
+    const items = groupedMap[category_type];
 
     const gasohols = items.filter(i => i.option.fuelType.toLowerCase().includes('gasohol')).sort((a, b) => a.emissionTon - b.emissionTon);
     const diesels = items.filter(i => i.option.fuelType.toLowerCase().includes('diesel')).sort((a, b) => a.emissionTon - b.emissionTon);
     const gasOptions = items.filter(i => ['cng', 'lpg'].includes(i.option.fuelType.toLowerCase())).sort((a, b) => a.emissionTon - b.emissionTon);
-    const evOptions = items.filter(i => i.option.fuelType.toLowerCase().includes('electricity') || i.option.subCategory.toLowerCase() === 'ev').sort((a, b) => a.emissionTon - b.emissionTon);
+    const evOptions = items.filter(i => i.option.fuelType.toLowerCase().includes('electricity') || i.option.category_type.toLowerCase() === 'ev').sort((a, b) => a.emissionTon - b.emissionTon);
     const others = items.filter(i => 
       !i.option.fuelType.toLowerCase().includes('gasohol') &&
       !i.option.fuelType.toLowerCase().includes('diesel') &&
@@ -489,7 +489,7 @@ export function getTravelRecommendations(params: {
     selectedFuels.sort((a, b) => a.emissionTon - b.emissionTon);
 
     return {
-      subCategory,
+      category_type,
       bestEmissionTon: selectedFuels[0].emissionTon,
       fuels: selectedFuels,
     };
