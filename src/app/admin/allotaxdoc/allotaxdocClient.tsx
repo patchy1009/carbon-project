@@ -10,7 +10,7 @@ import { validateForm, extendSchema, notDuplicate, validateFile, type formError 
 import { normalizeToArabicNumber, safeStorageName, fileBaseName, fileExtension } from '@/lib/normalization';
 import FieldError from '@/components/FieldError';
 import { docSchema, costSchema, DOC_FILE_RULE, type DocField, type CostField } from './schema';
-import { showError } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert
+import { showError, showSaved } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert
 import { DownloadIcon, EyeIcon, PencilIcon, PlusIcon, TrashIcon, UploadCloudIcon } from '@/components/icons';
 import RowActions from '@/components/RowActions'; // ปุ่มแก้ไข/ลบกลาง (ตารางต้นทุน + เอกสาร)
 import { inputClass } from '@/components/formStyles'; // class ช่องกรอกกลาง (popup แก้ไขต้นทุน)
@@ -292,6 +292,7 @@ export default function AlloTaxDocClient({
     setPendingFile(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
     setUploading(false);
+    showSaved('อัปโหลดเอกสารเรียบร้อยแล้ว'); // popup แจ้งบันทึกสำเร็จ (เหมือนฝั่งองค์กร)
   }
 
   // แก้ไขชื่อเอกสาร (ไฟล์เดิมคงไว้)
@@ -315,6 +316,7 @@ export default function AlloTaxDocClient({
     if (!updated) return;
     setDocuments((prev) => prev.map((d) => (d.document_id === editDoc.document_id ? updated : d)));
     setEditDoc(null);
+    showSaved();
   }
 
   // ลบข้อมูลเอกสารในตารางก่อน แล้วจึงลบไฟล์ใน Storage
@@ -537,7 +539,7 @@ export default function AlloTaxDocClient({
             </div>
             <button
               type="submit"
-              className="btn btn-create mt-5 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg"
+              className="btn btn-create mt-5 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full"
               aria-label="เพิ่มรายการต้นทุน"
             >
               <PlusIcon className="h-3 w-3" />
@@ -654,7 +656,7 @@ export default function AlloTaxDocClient({
               type="button"
               disabled={uploading}
               onClick={handleAddDocument}
-              className="btn btn-create flex items-center justify-center gap-1.5 self-start rounded-lg px-3 py-2 text-xs"
+              className="btn btn-create flex items-center justify-center gap-1 self-center rounded-full px-4 py-1.5 text-sm font-semibold"
             >
               <PlusIcon className="h-2.5 w-2.5" />
               {uploading ? 'กำลังอัปโหลด...' : 'เพิ่มเอกสาร'}

@@ -5,6 +5,7 @@ import { useState } from 'react';
 import type { EfType, EmissionFactor, GwpValue } from '@/types/ef-gwp';
 import { ModalActions, ModalShell } from '@/components/Modal';
 import { deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
+import { showSaved } from '@/lib/dialog'; // popup แจ้งบันทึกสำเร็จ
 import { validateForm, extendSchema, notDuplicate, existsIn, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber } from '@/lib/normalization';
 import FieldError from '@/components/FieldError';
@@ -141,6 +142,7 @@ export default function EfGwpClient({
       setEfTypes((prev) => [...prev, created]);
     }
     closeTypeModal(); // เดิมเรียก setShowEfModal(false) ทำให้ modal ประเภทไม่ปิด
+    showSaved(); // popup แจ้งบันทึกสำเร็จ (เหมือนฝั่งองค์กร)
   }
 
   // ลบประเภท EF สำเร็จแล้วเอาออกจากรายการบนหน้า
@@ -201,6 +203,7 @@ export default function EfGwpClient({
       setEfList((prev) => [...prev, created]);
     }
     closeEfModal();
+    showSaved();
   }
 
   // ลบค่า EF สำเร็จแล้วเอาออกจากรายการบนหน้า
@@ -237,6 +240,7 @@ export default function EfGwpClient({
       setGwpList((prev) => [...prev, created]);
     }
     closeGwpModal();
+    showSaved();
   }
 
   // ลบค่า GWP สำเร็จแล้วเอาออกจากรายการบนหน้า

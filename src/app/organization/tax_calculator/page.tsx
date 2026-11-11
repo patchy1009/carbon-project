@@ -78,7 +78,7 @@ export default function TaxCalculatorPage() {
           .select(`
             orgtreeproject_id,
             project_name,
-            join_year,
+            join_date,
             credit_year_1,
             credit_year_2,
             credit_year_3,

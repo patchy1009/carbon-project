@@ -57,10 +57,8 @@ export default function TverSimulationClient({
   // พันธุ์ไม้เก็บอยู่ในแถวรายละเอียดของโครงการ (org_tree_project_detail.tree_id) ทุกแถวมีค่าเดียวกัน
   const [treeId, setTreeId] = useState(existingDetails.find((d) => d.tree_id)?.tree_id ?? '');
 
-  // ใช้ join_date ถ้ามี รายการเก่าที่มีแค่ปี (join_year) เติมเป็นวันที่ 1 ม.ค. ของปีนั้น
-  const [startDate, setStartDate] = useState(
-    existingProject?.join_date ?? (existingProject?.join_year ? `${existingProject.join_year}-01-01` : '')
-  );
+  // [แก้ไข] ลบ join_year แล้ว ทุกโครงการมี join_date (schema_cleanup.sql เติมให้รายการเก่า)
+  const [startDate, setStartDate] = useState(existingProject?.join_date ?? '');
 
   const [amounts, setAmounts] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
@@ -164,8 +162,6 @@ export default function TverSimulationClient({
 
     const projectValues = {
       project_name: cleanName,
-      // ตัดปีจากข้อความวันที่โดยตรง (YYYY-MM-DD) ไม่ผ่าน Date เพื่อกันเขตเวลาทำให้ปีเพี้ยน
-      join_year: startDate ? parseInt(startDate.slice(0, 4), 10) : null,
       join_date: startDate || null, // เก็บวันที่เต็ม ใช้ดูสถานะโครงการในหน้า Dashboard
       credit_year_1: credits.year1,
       credit_year_2: credits.year2,

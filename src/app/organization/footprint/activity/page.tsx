@@ -73,7 +73,7 @@ export default async function FootprintActivityPage({
     const [logRes, savedRes] = await Promise.all([
       supabase
         .from('org_activity_list')
-        .select('orgactlist_id, orgact_name, period_type, period_month')
+        .select('orgactlist_id, orgact_name, period_type, period_date')
         .eq('orgactlist_id', edit)
         .eq('org_id', orgId)
         .maybeSingle(),
@@ -86,7 +86,7 @@ export default async function FootprintActivityPage({
       const log = logRes.data as any;
       existingLogId = edit;
       existingName = log.orgact_name ?? '';
-      existingPeriod = log.period_month ?? ''; // 'YYYY-MM-DD' หรือ ''
+      existingPeriod = log.period_date ?? ''; // 'YYYY-MM-DD' หรือ ''
       existingPeriodType = log.period_type === 'year' ? 'year' : 'month';
       for (const r of (savedRes.data ?? []) as any[]) {
         if (r.scopedetail_id && r.amount != null) {

@@ -18,7 +18,7 @@ export type Condition = Operand & {
 };
 
 export type Recommendation = {
-  rec_uid: string;
+  rec_id: string; // [แก้ไข] เดิม rec_uid
   name: string;
   percent: number;      // % ตัวแทน (ค่ากลาง) 0-100
   percentMin: number;   // ขอบล่างของช่วง

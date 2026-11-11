@@ -86,6 +86,12 @@ export async function showAlert(message: string, opts: Options = {}): Promise<vo
   await open('alert', message, opts, { title: 'แจ้งเตือน', tone: 'info', confirmText: 'ตกลง', cancelText: '' });
 }
 
+// แสดงกล่องแจ้งบันทึกสำเร็จ (ไอคอนเขียว) ใช้หลังบันทึกข้อมูลเสร็จ เช่นปุ่มบันทึกในหน้าแอดมิน
+//   showSaved()  หรือ  showSaved('อัปโหลดเอกสารเรียบร้อยแล้ว')
+export function showSaved(message = 'บันทึกข้อมูลเรียบร้อยแล้ว', opts: Options = {}): Promise<void> {
+  return showAlert(message, { title: 'บันทึกสำเร็จ', tone: 'success', ...opts });
+}
+
 // แสดงกล่องแจ้งข้อผิดพลาด
 export function showError(message: string, opts: Options = {}): Promise<void> {
   return showAlert(message, { title: 'เกิดข้อผิดพลาด', tone: 'error', ...opts });

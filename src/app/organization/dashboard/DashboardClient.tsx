@@ -57,8 +57,8 @@ async function deleteTreeProject(id: string): Promise<string | null> {
 
 // ช่วงเวลาที่ผู้ใช้กรอก เช่น "มีนาคม 2569" หรือ "ปี 2569" (รายการที่ไม่มีช่วงเวลาแสดงวันที่สร้างแทน)
 function periodText(log: OrgActivityLog): string {
-  if (!log.period_month) return formatThaiDate(log.created_at);
-  const date = new Date(log.period_month);
+  if (!log.period_date) return formatThaiDate(log.created_at);
+  const date = new Date(log.period_date);
   if (log.period_type === 'year') return `ปี ${date.getUTCFullYear() + 543}`;
   return new Intl.DateTimeFormat('th-TH-u-ca-buddhist', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date);
 }
@@ -91,7 +91,8 @@ function projectSummary(p: OrgTreeProject): string {
   return [
     area !== null ? `${formatNumber(area)} ไร่` : null,
     trees !== null ? `${formatNumber(trees)} ต้น` : null,
-    p.join_year ? `เข้าร่วมปี พ.ศ. ${p.join_year + 543}` : 'ไม่ระบุปี',
+    // [แก้ไข] ลบคอลัมน์ join_year แล้ว (schema_cleanup.sql ขั้น 4.3) ตัดปีจาก join_date แทน
+    p.join_date ? `เข้าร่วมปี พ.ศ. ${Number(p.join_date.slice(0, 4)) + 543}` : 'ไม่ระบุปี',
   ]
     .filter(Boolean)
     .join(' • ');
@@ -99,11 +100,9 @@ function projectSummary(p: OrgTreeProject): string {
 
 // วันที่เข้าร่วมยังไม่ถึงเมื่อเทียบกับวันนี้ = วางแผนการดำเนินการ ถึงวันแล้ว = ดำเนินการอยู่
 // คำนวณใหม่ทุกครั้งที่เปิดหน้า ถ้าผู้ใช้แก้วันที่เป็นอนาคต สถานะก็กลับเป็นวางแผนได้
-// รายการเก่าที่ไม่มี join_date มีแค่ปี จึงเทียบกันด้วยปี
 function isPlanned(p: OrgTreeProject): boolean {
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
-  if (p.join_date) return p.join_date > today;
-  return p.join_year != null && p.join_year > Number(today.slice(0, 4));
+  return p.join_date != null && p.join_date > today; // [แก้ไข] เดิมมีกรณีรายการเก่าที่มีแค่ join_year
 }
 
 // หน้าจอหลัก รับข้อมูลจาก page.tsx แล้วเก็บใน state เพื่อให้รายการที่ลบหายจากหน้าทันที
@@ -234,7 +233,7 @@ export default function DashboardClient({
           </h2>
           <Link
             href="/organization/footprint"
-            className="btn btn-soft flex items-center gap-1 rounded-full px-4 py-1.5 text-sm font-semibold"
+            className="btn btn-create flex items-center gap-1 rounded-full px-4 py-1.5 text-sm font-semibold"
           >
             {/* เดิม "กรอกข้อมูลใหม่ ›" */}
             + บันทึกข้อมูลฟุตพรินต์
@@ -288,7 +287,7 @@ export default function DashboardClient({
           <h2 className="text-lg font-semibold text-[#0F172A]">โครงการจำลองป่า T-VER</h2>
           <Link
             href="/organization/tver-simulation"
-            className="btn btn-soft flex items-center gap-1 rounded-full px-4 py-1.5 text-sm font-semibold"
+            className="btn btn-create flex items-center gap-1 rounded-full px-4 py-1.5 text-sm font-semibold"
           >
             + จำลองโครงการใหม่
           </Link>

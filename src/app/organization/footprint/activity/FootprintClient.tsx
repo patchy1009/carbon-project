@@ -96,7 +96,7 @@ export default function FootprintClient({
   existingLogId = null,       // มีค่า = โหมดแก้ไขรายการเดิม
   existingValues = {},        // ค่าที่เคยกรอก key = scopedetail_id
   existingName = '',          // ชื่อกิจกรรมเดิม (orgact_name)
-  existingPeriod = '',        // 'YYYY-MM-DD' (period_month)
+  existingPeriod = '',        // 'YYYY-MM-DD' (period_date)
   existingPeriodType = 'month',
 }: {
   scopeGroups: ScopeGroup[];
@@ -418,22 +418,22 @@ export default function FootprintClient({
     const y = Number(periodMonth.slice(0, 4)); // ปี ค.ศ.
     let q = supabase
       .from('org_activity_list')
-      .select('orgact_name, period_type, period_month')
+      .select('orgact_name, period_type, period_date')
       .eq('org_id', orgId)
-      .gte('period_month', `${y}-01-01`)
-      .lte('period_month', `${y}-12-31`);
+      .gte('period_date', `${y}-01-01`)
+      .lte('period_date', `${y}-12-31`);
     if (existingLogId) q = q.neq('orgactlist_id', existingLogId);
     const { data } = await q;
 
     const hit = (data ?? []).find((r: any) => {
       const rType: PeriodType = r.period_type === 'year' ? 'year' : 'month';
       if (periodType === 'year') return true; // รายปี: มีรายการใดในปีนั้นก็ซ้อน
-      return rType === 'year' || r.period_month === periodMonth; // รายเดือน: ซ้ำเดือน หรือมีรายปีครอบอยู่
+      return rType === 'year' || r.period_date === periodMonth; // รายเดือน: ซ้ำเดือน หรือมีรายปีครอบอยู่
     }) as any;
     if (!hit) return null;
 
     const hitType: PeriodType = hit.period_type === 'year' ? 'year' : 'month';
-    const hitLabel = periodLabel(hitType, hit.period_month);
+    const hitLabel = periodLabel(hitType, hit.period_date);
     // โหมดแก้ไข: บอกให้ชัดว่าเป็นการอัปเดตรายการนี้ ไม่ใช่การบันทึกรายการใหม่เพิ่ม
     if (isEdit) {
       return `ช่วงเวลาที่แก้เป็น ${periodLabel(periodType, periodMonth)} ซ้อนกับรายการ "${hit.orgact_name}" (${hitLabel}) ที่มีอยู่แล้ว
@@ -585,7 +585,7 @@ export default function FootprintClient({
         .update({
           orgact_name: cleanName,
           period_type: periodType,
-          period_month: periodMonth,
+          period_date: periodMonth,
           total_ghg_emission: total,
           updated_at: new Date().toISOString(),
         })
@@ -603,7 +603,7 @@ export default function FootprintClient({
           org_id: orgId,
           orgact_name: cleanName,
           period_type: periodType,
-          period_month: periodMonth,
+          period_date: periodMonth,
           total_ghg_emission: total,
           unit: 'tCO2e',
         })

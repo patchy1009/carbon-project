@@ -11,7 +11,7 @@ export const T = {
   card: 'rounded-xl bg-white shadow-sm p-6 space-y-6',
   cardHead: 'flex items-center justify-between gap-4',
   h2: 'text-xl font-bold text-[#191C1C]',
-  addBtn: 'btn btn-create flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm',
+  addBtn: 'btn btn-create flex shrink-0 items-center gap-1 rounded-full px-4 py-1.5 text-sm font-semibold', // ทรงเดียวกับปุ่ม "+ บันทึกข้อมูลฟุตพรินต์" ฝั่งองค์กร
   wrap: 'overflow-x-auto',
   table: 'w-full text-sm',
   thead: 'bg-[#EDEEEE]',

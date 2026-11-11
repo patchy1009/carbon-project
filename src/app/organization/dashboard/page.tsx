@@ -17,15 +17,14 @@ export default async function DashboardPage() {
       .select('*')
       .eq('org_id', orgId)
       // เรียงตามช่วงเวลาที่ผู้ใช้กรอก (ล่าสุดอยู่บน) ถ้าช่วงเวลาเดียวกันค่อยดูวันที่สร้างในระบบ
-      .order('period_month', { ascending: false, nullsFirst: false })
+      .order('period_date', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false }),
     supabase
       .from('org_tree_project')
       // ดึงจำนวนที่กรอก + ชื่อเงื่อนไข เพื่อหาจำนวนไร่และจำนวนต้นไม้ (เดิมดึงชื่อพันธุ์ไม้)
       .select('*, org_tree_project_detail(amount, tver_project_detail(detail_name))')
       .eq('org_id', orgId)
-      // เรียงตามวันที่เข้าร่วมที่ผู้ใช้กรอก (ล่าสุดอยู่บน) รายการเก่าที่มีแค่ปีอยู่ท้ายสุดของปีนั้น
-      .order('join_year', { ascending: false, nullsFirst: false })
+      // เรียงตามวันที่เข้าร่วมที่ผู้ใช้กรอก (ล่าสุดอยู่บน) [แก้ไข] ลบ join_year แล้ว เรียงด้วย join_date อย่างเดียว
       .order('join_date', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false }),
   ]);

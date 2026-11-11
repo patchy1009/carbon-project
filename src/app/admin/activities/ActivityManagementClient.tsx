@@ -7,6 +7,7 @@ import type { EmissionFactor, GwpValue } from '@/types/ef-gwp';
 import { scopeSchema, activitySchema, detailSchema, type ScopeField, type ActivityField, type DetailField } from './schema';
 import { ModalActions, ModalShell } from '@/components/Modal';
 import { deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
+import { showSaved } from '@/lib/dialog'; // popup แจ้งบันทึกสำเร็จ
 import { validateForm, extendSchema, notDuplicate, existsIn, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber } from '@/lib/normalization';
 import FieldError from '@/components/FieldError';
@@ -171,6 +172,7 @@ export default function ActivityManagementClient({
       setScopes((prev) => [...prev, created]);
     }
     closeScopeModal();
+    showSaved(); // popup แจ้งบันทึกสำเร็จ (เหมือนฝั่งองค์กร)
   }
 
   // ลบขอบเขตในฐานข้อมูล สำเร็จแล้วเอาออกจากรายการบนหน้า
@@ -237,6 +239,7 @@ export default function ActivityManagementClient({
       setActivities((prev) => [...prev, created]);
     }
     closeActivityModal();
+    showSaved();
   }
 
   // ลบกิจกรรมในฐานข้อมูล สำเร็จแล้วเอาออกจากรายการบนหน้า
@@ -304,6 +307,7 @@ export default function ActivityManagementClient({
       setDetails((prev) => [...prev, created]);
     }
     closeDetailModal();
+    showSaved();
   }
 
   // ลบรายการย่อยในฐานข้อมูล สำเร็จแล้วเอาออกจากรายการบนหน้า

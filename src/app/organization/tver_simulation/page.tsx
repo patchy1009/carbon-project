@@ -121,7 +121,7 @@ export default function TVERSimulationPage() {
         }
         const { data: linked, error: linkedError } = await supabase
           .from("org_tree_project")
-          .select("orgtreeproject_id, project_name, join_date, join_year, credit_year_1, credit_year_2, credit_year_3")
+          .select("orgtreeproject_id, project_name, join_date, credit_year_1, credit_year_2, credit_year_3") // [MERGE-FIX] ลบ join_year แล้ว
           .eq("orgtreeproject_id", projectParam)
           .eq("org_id", fetchedOrgId) // ต้องเป็นโครงการขององค์กรที่ล็อกอินเท่านั้น
           .maybeSingle();
@@ -137,7 +137,7 @@ export default function TVERSimulationPage() {
           setProject((previous) => ({
             ...previous,
             projectName: linked.project_name ?? "",
-            startDate: linked.join_date ?? (linked.join_year ? `${linked.join_year}-01-01` : ""),
+            startDate: linked.join_date ?? "",
           }));
           setCalculated(true);
           setStep(2); // ข้ามขั้นที่ 1 ของ cyn2 ไปจัดสรรเครดิตเลย
@@ -343,7 +343,7 @@ export default function TVERSimulationPage() {
           .from("org_tree_project")
           .update({
             org_id: orgId,
-            join_year: new Date(project.startDate).getFullYear(),
+            join_date: project.startDate || null, // [MERGE-FIX] เดิม join_year (ลบคอลัมน์แล้ว)
             credit_year_1: yearlyCredits[0],
             credit_year_2: yearlyCredits[1],
             credit_year_3: yearlyCredits[2],
@@ -361,7 +361,7 @@ export default function TVERSimulationPage() {
             {
               org_id: orgId,
               project_name: project.projectName,
-              join_year: new Date(project.startDate).getFullYear(),
+              join_date: project.startDate || null, // [MERGE-FIX] เดิม join_year (ลบคอลัมน์แล้ว)
               credit_year_1: yearlyCredits[0],
               credit_year_2: yearlyCredits[1],
               credit_year_3: yearlyCredits[2],

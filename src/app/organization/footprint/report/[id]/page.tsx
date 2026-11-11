@@ -85,7 +85,7 @@ export default async function FootprintReportPage({
     .map((r) => {
       const mid = Number(r.carbon_reduction_amount) || 0;
       return {
-        rec_uid: r.rec_uid as string,
+        rec_id: r.rec_id as string, // [แก้ไข] เดิม rec_uid (schema_cleanup.sql ขั้น 4.2)
         name: String(r.recommendation ?? ''),
         percent: mid,
         percentMin: Number(r.percent_min) || mid,

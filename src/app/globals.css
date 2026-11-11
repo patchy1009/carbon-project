@@ -70,10 +70,10 @@ body {
  * ปุ่มตามหน้าที่ (ใช้คู่กัน: className="btn btn-primary ...")
  *   ปุ่มแต่ละแบบมีสีต่างกัน ให้รู้ว่ากดแล้วจะเกิดอะไร:
  *   btn-primary  เขียวหลัก   — บันทึก / คำนวณ / ถัดไป / เข้าสู่ระบบ (การกระทำหลักของหน้า)
- *   btn-create   น้ำเงินเทา  — ปุ่ม "+ เพิ่ม..." หัวตารางฝั่งแอดมิน (สีเดียวกับต้น navbar)
+ *   btn-create   น้ำเงินเทาอ่อน — ปุ่ม "+ เพิ่ม/บันทึกใหม่..." ทั้งแอดมินและองค์กร ชี้แล้วเป็นน้ำเงินเทาเข้ม (สีต้น navbar)
  *   btn-accent   เหลืองทอง   — ชวนไปทำต่อ เช่น ดาวน์โหลดรายงาน / เริ่มจำลองโครงการ
  *   btn-outline  ขาวมีเส้นขอบ — ยกเลิก / กลับ / แก้ไข (การกระทำรอง)
- *   btn-soft     เขียวอ่อน    — ลิงก์สร้างรายการใหม่ใน Dashboard
+ *   (btn-soft เดิม เขียวอ่อน ถูกรวมเข้า btn-create แล้ว)
  * ลูกเล่น: เอาเมาส์ชี้ = ปุ่มลอยขึ้นเล็กน้อย + สีเข้มขึ้น + มีเงา, กด = ยุบลงนิดหนึ่ง
  *   ลูกศร "›" ที่ใส่ class btn-arrow จะเลื่อนไปทางขวาตอนชี้
  * ข้อควรระวัง: อย่าใส่ class สีของ Tailwind (bg-[...], text-[...], border-[...]) ซ้ำบนปุ่มเดียวกัน
@@ -91,8 +91,10 @@ body {
   .btn-primary { background: #32885f; color: #fff; box-shadow: 0 1px 2px rgba(16, 60, 40, 0.15); }
   .btn-primary:hover:not(:disabled) { background: #27704d; box-shadow: 0 6px 16px rgba(50, 136, 95, 0.3); }
 
-  .btn-create { background: #2d4a63; color: #fff; }
-  .btn-create:hover:not(:disabled) { background: #22394d; box-shadow: 0 6px 16px rgba(45, 74, 99, 0.28); }
+  /* ปุ่มสร้าง/เพิ่ม (ใช้ร่วมกันทั้งฝั่งแอดมินและองค์กร): ปกติพื้นอ่อน ตัวอักษรน้ำเงินเทา -> ชี้แล้วพื้นเข้ม ตัวอักษรขาว
+   * รวมกับ btn-soft เดิม (เขียวอ่อน ฝั่งองค์กร) ให้เหลือแบบเดียว: ท่าทางแบบองค์กร + สีแบบแอดมิน */
+  .btn-create { background: #e6edf3; color: #2d4a63; }
+  .btn-create:hover:not(:disabled) { background: #2d4a63; color: #fff; box-shadow: 0 6px 16px rgba(45, 74, 99, 0.28); }
 
   .btn-accent { background: #f2c94c; color: #3a2e06; }
   .btn-accent:hover:not(:disabled) { background: #e9b829; box-shadow: 0 6px 16px rgba(233, 184, 41, 0.35); }
@@ -100,8 +102,6 @@ body {
   .btn-outline { background: #fff; color: #475569; border: 1px solid #cbd5e1; }
   .btn-outline:hover:not(:disabled) { border-color: #32885f; color: #27704d; background: #f2f8f5; }
 
-  .btn-soft { background: #eaf5ef; color: #27704d; }
-  .btn-soft:hover:not(:disabled) { background: #32885f; color: #fff; }
 
   .btn-arrow { display: inline-block; transition: transform 0.18s; }
   .btn:hover .btn-arrow { transform: translateX(3px); }

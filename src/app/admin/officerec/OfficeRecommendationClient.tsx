@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { dbErrorMessage, deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
 import { validateForm, extendSchema, notDuplicate, existsIn, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber } from '@/lib/normalization';
-import { showConfirm, showError } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert/confirm
+import { showConfirm, showError, showSaved } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert/confirm
 import { infoSchema, recSchema, condValueSchema, type InfoField, type RecField } from './schema';
 import RowActions from '@/components/RowActions'; // ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
 import { T } from '@/components/adminTable'; // การ์ด/ตารางแบบเดียวกับหน้า T-VER Project
@@ -59,14 +59,14 @@ type CondRow = {
   den_metric: Metric | null;
 };
 type RecRow = {
-  rec_uid: string;
+  rec_id: string; // [แก้ไข] เดิม rec_uid (คอลัมน์ซ้ำ) -> ใช้ PK rec_id ตรงๆ (supabase/schema_cleanup.sql ขั้น 4.2)
   recommendation: string | null;
   carbon_reduction_amount: number | null; // % ตัวแทน (ค่ากลาง)
   percent_min: number | null;
   percent_max: number | null;
   scopedetail_id: string | null;
   calc_method: string | null;
-  status: string | null;
+  // [ลบ] status (ร่าง/เผยแพร่) คอลัมน์ถูกลบแล้ว (schema_cleanup.sql ขั้น 4.1)
   recommendation_condition?: CondRow[];
 };
 
@@ -375,6 +375,7 @@ export default function OfficeRecommendationClient({
 
     setShowInfoModal(false);
     setInfoForm({ info_name: '', unit: '', info_detail: '' });
+    showSaved(); // popup แจ้งบันทึกสำเร็จ (เหมือนฝั่งองค์กร)
   }
 
   // ลบหัวข้อข้อมูลสำนักงาน ถ้ามีแนวทางใช้อยู่จะถามยืนยันก่อน
@@ -408,7 +409,7 @@ export default function OfficeRecommendationClient({
   // ================= แนวทางลดคาร์บอน =================
   // รับ row ได้ เพื่อเปิดในโหมดแก้ไข (เติมค่าเดิม + เงื่อนไขเดิม)
   function openRecModal(row?: RecRow) {
-    setEditRecId(row?.rec_uid ?? null);
+    setEditRecId(row?.rec_id ?? null);
     setRecForm(
       row
         ? {
@@ -444,7 +445,7 @@ export default function OfficeRecommendationClient({
   // ตรวจข้อมูลแนวทางและเงื่อนไขทั้งหมด แล้วคืน error กับค่าที่พร้อมบันทึก
   function validateRec() {
     // ---- ช่องหลักของแนวทาง: ใช้ schema กลาง + ห้ามชื่อซ้ำ + กิจกรรมที่ผูกต้องมีอยู่จริง ----
-    const others = recs.filter((r) => r.rec_uid !== editRecId).map((r) => r.recommendation);
+    const others = recs.filter((r) => r.rec_id !== editRecId).map((r) => r.recommendation);
     const result = validateForm(
       recForm,
       extendSchema(recSchema, {
@@ -554,9 +555,9 @@ export default function OfficeRecommendationClient({
       calc_method: 'percent',
     };
     // แถวเงื่อนไขที่จะบันทึก (ค่าที่เทียบใช้ค่าที่ normalize แล้วจาก validateRec)
-    const condRows = (recUid: string) =>
+    const condRows = (recId: string) =>
       conds.map((c, i) => ({
-        rec_uid: recUid,
+        rec_id: recId,
         ...numCols(c.num),
         ...denCols(c.mode === 'ratio' ? c.den : null),
         operator: c.operator,
@@ -565,10 +566,10 @@ export default function OfficeRecommendationClient({
 
     // ===== โหมดแก้ไข =====
     if (editRecId) {
-      const old = recs.find((r) => r.rec_uid === editRecId);
-      // 1) แก้แนวทาง ตั้ง status = 'published' ด้วย (แนวทางเก่าที่เคยเป็นร่าง แก้แล้วกลายเป็นใช้งาน)
+      const old = recs.find((r) => r.rec_id === editRecId);
+      // 1) แก้แนวทาง (ไม่มี status แล้ว: บันทึก = ใช้งานทันที)
       const updated = await updateRecord<RecRow>(
-        'carbon_reduction_recommendation', 'rec_uid', editRecId, { ...recValues, status: 'published' }, '*', 'แก้ไขแนวทาง'
+        'carbon_reduction_recommendation', 'rec_id', editRecId, recValues, '*', 'แก้ไขแนวทาง'
       );
       if (!updated) {
         setSaving(false);
@@ -596,19 +597,19 @@ export default function OfficeRecommendationClient({
         }
       }
       setRecs((prev) =>
-        prev.map((r) => (r.rec_uid === editRecId ? { ...updated, recommendation_condition: savedConds } : r))
+        prev.map((r) => (r.rec_id === editRecId ? { ...updated, recommendation_condition: savedConds } : r))
       );
       setSaving(false);
       setShowRecModal(false);
+      showSaved();
       return;
     }
 
     // ===== โหมดเพิ่มใหม่ =====
-    // 1) บันทึกแนวทาง เดิมเริ่มเป็น 'draft' ต้องกด "เผยแพร่" ก่อน
-    //    ตอนนี้บันทึกแล้วพร้อมแนะนำทันที (คอลัมน์ status ยังอยู่ใน DB จึงเก็บเป็น 'published')
+    // 1) บันทึกแนวทาง บันทึกแล้วพร้อมแนะนำทันที (คอลัมน์ status ถูกลบแล้ว)
     const created = await insertRecord<RecRow>(
       'carbon_reduction_recommendation',
-      { ...recValues, status: 'published' },
+      recValues,
       '*',
       'เพิ่มแนวทาง'
     );
@@ -622,14 +623,14 @@ export default function OfficeRecommendationClient({
     if (conds.length > 0) {
       const { data, error } = await supabase
         .from('recommendation_condition')
-        .insert(condRows(created.rec_uid))
+        .insert(condRows(created.rec_id))
         .select('*');
 
       if (error) {
         await supabase
           .from('carbon_reduction_recommendation')
           .delete()
-          .eq('rec_uid', created.rec_uid);
+          .eq('rec_id', created.rec_id);
         setSaving(false);
         return showError('บันทึกเงื่อนไขไม่สำเร็จ: ' + dbErrorMessage(error));
       }
@@ -639,6 +640,7 @@ export default function OfficeRecommendationClient({
     setRecs((prev) => [...prev, { ...created, recommendation_condition: savedConds }]);
     setSaving(false);
     setShowRecModal(false);
+    showSaved();
   }
 
   // ลบแนวทาง เงื่อนไขของแนวทางจะถูกลบตามอัตโนมัติ
@@ -646,12 +648,12 @@ export default function OfficeRecommendationClient({
     // เงื่อนไขของแนวทางนี้ถูกลบตามอัตโนมัติ
     const ok = await deleteRecord(
       'carbon_reduction_recommendation',
-      'rec_uid',
+      'rec_id',
       id,
       'ลบแนวทางนี้พร้อมเงื่อนไขทั้งหมด?'
     );
     if (!ok) return;
-    setRecs((prev) => prev.filter((r) => r.rec_uid !== id));
+    setRecs((prev) => prev.filter((r) => r.rec_id !== id));
   }
 
   /* [ปิดใช้งาน] toggleStatus (สลับ ร่าง/เผยแพร่) ไม่ใช้แล้ว
@@ -763,7 +765,7 @@ export default function OfficeRecommendationClient({
               {sortedRecs.map((r) => {
                 const rc = r.recommendation_condition ?? [];
                 return (
-                  <tr key={r.rec_uid} className={`${T.row} align-top`}>
+                  <tr key={r.rec_id} className={`${T.row} align-top`}>
                     <td className={T.tdMain}>{r.recommendation}</td>
                     <td className={T.td}>
                       {r.scopedetail_id ? actName(r.scopedetail_id) : 'ไม่ผูก (แนะนำทั่วไป)'}
@@ -784,7 +786,7 @@ export default function OfficeRecommendationClient({
                     </td>
                     {/* [ลบ] คอลัมน์สถานะ (ร่าง/เผยแพร่แล้ว) บันทึกแล้วใช้งานทันที */}
                     <td className={T.tdActions}>
-                      <RowActions onEdit={() => openRecModal(r)} onDelete={() => handleDeleteRec(r.rec_uid)} />
+                      <RowActions onEdit={() => openRecModal(r)} onDelete={() => handleDeleteRec(r.rec_id)} />
                     </td>
                   </tr>
                 );

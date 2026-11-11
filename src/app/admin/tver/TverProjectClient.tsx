@@ -5,6 +5,7 @@ import { useState } from 'react';
 import type { TreeListItem, TverProjectDetail } from '@/types/tver-project';
 import { ModalActions, ModalShell } from '@/components/Modal';
 import { deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
+import { showSaved } from '@/lib/dialog'; // popup แจ้งบันทึกสำเร็จ
 import { validateForm, extendSchema, notDuplicate, requiredWith, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber, formatCondition, CONDITION_OPERATORS } from '@/lib/normalization';
 import FieldError from '@/components/FieldError';
@@ -104,6 +105,7 @@ export default function TverProjectClient({
       setTrees((prev) => [...prev, created]);
     }
     closeTreeModal();
+    showSaved(); // popup แจ้งบันทึกสำเร็จ (เหมือนฝั่งองค์กร)
   }
 
   // ลบต้นไม้ สำเร็จแล้วเอาออกจากรายการบนหน้า
@@ -152,6 +154,7 @@ export default function TverProjectClient({
       setDetails((prev) => [...prev, created]);
     }
     closeDetailModal();
+    showSaved();
   }
 
   // ลบเงื่อนไข สำเร็จแล้วเอาออกจากรายการบนหน้า
