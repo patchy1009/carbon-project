@@ -95,13 +95,31 @@ function isMissingTable(error: { code?: string } | null): boolean {
   return !!error && (error.code === "PGRST205" || error.code === "42P01");
 }
 
+// [แก้ไข] ตาราง organization มีทั้ง acc_id (id บัญชีล็อกอิน) และ org_id (id ขององค์กร ซึ่งเป็นคนละค่ากัน)
+// ตารางข้อมูลอื่นๆ ใช้ org_id จึงต้องดึง org_id ของผู้ใช้คนนี้มาก่อน แล้วลบด้วยค่านั้น
+// (ใส่ acc_id ไว้ด้วยเผื่อบางตารางเก็บค่านี้ในคอลัมน์ org_id ทั้งสองค่าเป็นของผู้ใช้คนนี้เท่านั้น)
+async function getOwnerIds(admin: AdminClient, userId: string): Promise<string[]> {
+  const { data, error } = await admin
+    .from("organization")
+    .select("org_id")
+    .eq("acc_id", userId)
+    .maybeSingle();
+
+  if (error && !isMissingTable(error)) {
+    throw new Error(`อ่านตาราง organization ไม่สำเร็จ: ${error.message}`);
+  }
+
+  const orgId = (data as { org_id?: string } | null)?.org_id;
+  return orgId && orgId !== userId ? [orgId, userId] : [userId];
+}
+
 // ดึง id ของตารางแม่ทั้งหมดของผู้ใช้
 async function getParentIds(
   admin: AdminClient,
   { parent, parentKey, column }: ParentChild,
-  userId: string
+  ownerIds: string[]
 ): Promise<{ ids: string[]; missing: boolean }> {
-  const { data, error } = await admin.from(parent).select(parentKey).eq(column, userId);
+  const { data, error } = await admin.from(parent).select(parentKey).in(column, ownerIds);
 
   if (error) {
     if (isMissingTable(error)) return { ids: [], missing: true };
@@ -117,9 +135,12 @@ async function getParentIds(
 async function deleteOrgData(admin: AdminClient, userId: string): Promise<string[]> {
   const warnings: string[] = [];
 
+  // [แก้ไข] ต้องดึง org_id ก่อนลบตาราง organization (ไม่งั้นหาไม่เจอ)
+  const ownerIds = await getOwnerIds(admin, userId);
+
   // 1) ตารางแม่-ลูก: ลบลูกที่เป็น NO ACTION ก่อน แล้วลบแม่ (ลูกแบบ CASCADE ฐานข้อมูลลบให้เอง)
   for (const rel of PARENT_CHILD) {
-    const { ids, missing } = await getParentIds(admin, rel, userId);
+    const { ids, missing } = await getParentIds(admin, rel, ownerIds);
 
     if (missing) {
       warnings.push(`ข้ามตาราง ${rel.parent}: ไม่พบตารางนี้ในฐานข้อมูล`);
@@ -139,16 +160,21 @@ async function deleteOrgData(admin: AdminClient, userId: string): Promise<string
       }
     }
 
-    const { error: parentError } = await admin.from(rel.parent).delete().eq(rel.column, userId);
+    const { error: parentError } = await admin.from(rel.parent).delete().in(rel.column, ownerIds);
 
     if (parentError && !isMissingTable(parentError)) {
       throw new Error(`ลบตาราง ${rel.parent} ไม่สำเร็จ: ${parentError.message}`);
     }
   }
 
-  // 2) ตารางข้อมูลที่ผูกกับ org_id โดยตรง และ 3) ตารางบัญชี (organization, user)
-  for (const { table, column } of [...DIRECT_TABLES, ...ACCOUNT_TABLES]) {
-    const { error } = await admin.from(table).delete().eq(column, userId);
+  // 2) ตารางข้อมูลที่ผูกกับ org_id โดยตรง (ใช้ org_id) และ 3) ตารางบัญชี organization, user (ใช้ acc_id)
+  const deleteSteps = [
+    ...DIRECT_TABLES.map(({ table, column }) => ({ table, column, values: ownerIds })),
+    ...ACCOUNT_TABLES.map(({ table, column }) => ({ table, column, values: [userId] })),
+  ];
+
+  for (const { table, column, values } of deleteSteps) {
+    const { error } = await admin.from(table).delete().in(column, values);
 
     if (error) {
       if (isMissingTable(error)) {
