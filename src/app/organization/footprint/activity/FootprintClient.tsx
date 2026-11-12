@@ -113,8 +113,8 @@ export default function FootprintClient({
   // ลิงก์ย้อนกลับไปขั้นที่ 1 (ปุ่มกลับ และลิงก์เตือนข้อมูลสำนักงาน)
   // ?resume=1 = เอาค่าที่กรอกไว้กลับมา ไม่ล้างเหมือนเข้ามาใหม่ / ?edit= = ยังอยู่ในโหมดแก้ไขรายการเดิม
   const backHref = isEdit
-    ? `/organization/footprint?edit=${existingLogId}&resume=1`
-    : '/organization/footprint?resume=1';
+    ? `/organization/footprint/office_info?edit=${existingLogId}&resume=1`
+    : '/organization/footprint/office_info?resume=1';
 
   // รายการใหม่: ดูว่ากรอกข้อมูลสำนักงานในขั้นที่ 1 ไว้ไหม (ค่าที่ค้างใน sessionStorage)
   // ฝั่ง server ถือว่ามี เพื่อไม่ให้กล่องเตือนกะพริบตอนโหลด
@@ -817,7 +817,7 @@ export default function FootprintClient({
                 บันทึกกิจกรรมพิเศษ (ขั้นที่ 3)
               </Link>
               <Link
-                href={`/organization/footprint/report/${done.id}`}
+                href={`/organization/footprint/report?id=${done.id}`}
                 className="btn btn-primary rounded-lg px-4 py-2 text-sm font-semibold"
               >
                 ดูรายงานการคำนวณ
@@ -831,7 +831,7 @@ export default function FootprintClient({
       <div className="mb-4">
         {isEdit && (
           <Link
-            href={`/organization/footprint/report/${existingLogId}`}
+            href={`/organization/footprint/report?id=${existingLogId}`}
             className="text-sm text-[#6B7280] hover:underline"
           >
             ‹ กลับไปหน้ารายงาน

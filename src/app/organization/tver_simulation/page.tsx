@@ -16,6 +16,8 @@
 import React, { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation"; // [MERGE-FIX] ใช้ส่งกลับ/ไปหน้าโครงการของ aom
+import { TVER_TREE_COUNT_NAME } from "@/types/tver-project"; // [MERGE-FIX] ชื่อเงื่อนไข "จำนวนต้นไม้" ที่แอดมินตั้ง (ใช้เป็น T)
+import { calculateTverCredits } from "@/lib/tverCredits"; // [MERGE-FIX] สูตรเดียวกับ yearlyCredits ด้านล่าง (ใช้ร่วมกับหน้า aom)
 import {
   Check,
   ChevronDown,
@@ -91,10 +93,11 @@ export default function TVERSimulationPage() {
   const [messageType, setMessageType] = useState<MessageType>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // [MERGE-FIX] โครงการที่ส่งมาจากหน้า aom (?project=) และเครดิต 3 ปีของโครงการนั้น
+  // [MERGE-FIX] โครงการที่ส่งมาจากหน้า aom (?project=) และจำนวนต้นไม้ของโครงการนั้น
+  //   หน้า aom กรอก+ตรวจ+บันทึกโครงการ / หน้านี้ (cyn2) คำนวณเครดิตด้วยสูตรของ cyn2 จากจำนวนต้นไม้นั้น
   const router = useRouter();
   const [linkedProjectId, setLinkedProjectId] = useState<string | null>(null);
-  const [linkedCredits, setLinkedCredits] = useState<[number, number, number] | null>(null);
+  const [linkedTotalTrees, setLinkedTotalTrees] = useState<number | null>(null);
 
   // ดึงข้อมูลรายการปล่อยก๊าซ, org_id และ target_id จาก Supabase เมื่อโหลดหน้าเว็บ
   useEffect(() => {
@@ -121,7 +124,7 @@ export default function TVERSimulationPage() {
         }
         const { data: linked, error: linkedError } = await supabase
           .from("org_tree_project")
-          .select("orgtreeproject_id, project_name, join_date, credit_year_1, credit_year_2, credit_year_3") // [MERGE-FIX] ลบ join_year แล้ว
+          .select("orgtreeproject_id, project_name, join_date, credit_year_1, credit_year_2, credit_year_3, org_tree_project_detail(amount, tverdetail_id)") // [MERGE-FIX] ลบ join_year แล้ว + ค่าที่กรอกในหน้า aom
           .eq("orgtreeproject_id", projectParam)
           .eq("org_id", fetchedOrgId) // ต้องเป็นโครงการขององค์กรที่ล็อกอินเท่านั้น
           .maybeSingle();
@@ -129,11 +132,33 @@ export default function TVERSimulationPage() {
           showMessage("ไม่พบโครงการนี้ หรือไม่มีสิทธิ์เข้าถึง", "error");
         } else {
           setLinkedProjectId(linked.orgtreeproject_id);
-          setLinkedCredits([
-            Number(linked.credit_year_1) || 0,
-            Number(linked.credit_year_2) || 0,
-            Number(linked.credit_year_3) || 0,
-          ]);
+
+          // [MERGE-FIX] T = ค่า "จำนวนต้นไม้" ที่กรอกในหน้า aom (หน้า aom ไม่มีช่อง ต้นต่อไร่ จึงใช้ พื้นที่ × ต้นต่อไร่ ไม่ได้)
+          const { data: treeCountRow } = await supabase
+            .from("tver_project_detail")
+            .select("tverdetail_id")
+            .eq("detail_name", TVER_TREE_COUNT_NAME)
+            .maybeSingle();
+          const details = (linked.org_tree_project_detail ?? []) as { amount: number | null; tverdetail_id: string | null }[];
+          const trees = Math.max(
+            0,
+            Number(details.find((d) => d.tverdetail_id === treeCountRow?.tverdetail_id)?.amount) || 0
+          );
+          setLinkedTotalTrees(trees);
+
+          // [MERGE-FIX] หน้า aom บันทึกเครดิตด้วยสูตรเดียวกันแล้ว ถ้าค่าในโครงการไม่ตรง (เช่น โครงการเก่าที่ใช้สูตรเดิม) บันทึกทับให้
+          const credits = calculateTverCredits(trees);
+          if (
+            Number(linked.credit_year_1) !== credits[0] ||
+            Number(linked.credit_year_2) !== credits[1] ||
+            Number(linked.credit_year_3) !== credits[2]
+          ) {
+            const { error: creditError } = await supabase
+              .from("org_tree_project")
+              .update({ credit_year_1: credits[0], credit_year_2: credits[1], credit_year_3: credits[2] })
+              .eq("orgtreeproject_id", linked.orgtreeproject_id);
+            if (creditError) console.error("Error saving credits:", creditError);
+          }
           setProject((previous) => ({
             ...previous,
             projectName: linked.project_name ?? "",
@@ -181,23 +206,20 @@ export default function TVERSimulationPage() {
 
   const area = Math.max(0, Number(project.area) || 0);
   const treesPerRai = Math.max(0, Number(project.treesPerRai) || 0);
-  const totalTrees = area * treesPerRai;
+  // [MERGE-FIX] มาจากโครงการของ aom -> T = จำนวนต้นไม้ที่กรอกไว้ / ไม่มี -> พื้นที่ × ต้นต่อไร่ (ฟอร์มเดิมของ cyn2)
+  const totalTrees = linkedTotalTrees ?? area * treesPerRai;
 
   const yearlyCredits = useMemo(() => {
-    // [MERGE-FIX] มาจากโครงการของ aom -> ใช้เครดิต 3 ปีที่ aom คำนวณและบันทึกไว้ (credit_year_1..3)
-    if (linkedCredits) return linkedCredits;
     const MAI = 9.5;
     return [1, 2, 3].map((year) =>
       Math.round(totalTrees * year * MAI * 0.001 * 100) / 100
     );
-  }, [totalTrees, linkedCredits]);
+  }, [totalTrees]);
 
   const cumulativeCredits = yearlyCredits;
-  // [MERGE-FIX] สูตรของ cyn2 เป็นยอด "สะสม" จึงใช้ค่าปีที่ 3 เป็นยอดรวม
-  //   แต่ของ aom เป็นเครดิต "รายปี" (dashboard ของ aom ก็รวม 3 ปี) -> ยอดรวม = ปี1 + ปี2 + ปี3
-  const totalCredits = linkedCredits
-    ? linkedCredits[0] + linkedCredits[1] + linkedCredits[2]
-    : cumulativeCredits[cumulativeCredits.length - 1];
+  // สูตรของ cyn2 เป็นยอด "สะสม" จึงใช้ค่าปีที่ 3 เป็นยอดรวม
+  // [MERGE-FIX] เดิมโครงการจาก aom ใช้ ปี1 + ปี2 + ปี3 (เพราะเครดิตของ aom เป็นรายปี) -> ตอนนี้คำนวณด้วยสูตร cyn2 แล้ว ใช้แบบ cyn2
+  const totalCredits = cumulativeCredits[cumulativeCredits.length - 1];
 
   const allocationRatio = {
     netzero: { offset: 100, sell: 0 },
@@ -507,9 +529,9 @@ export default function TVERSimulationPage() {
           <button
             type="button"
             onClick={() => {
-              // [MERGE-FIX] ขั้นที่ 1 อยู่ที่หน้าของ aom -> กลับไปแก้โครงการที่นั่น
+              // [MERGE-FIX] ขั้นที่ 1 อยู่ที่หน้าของ aom -> กลับไปแก้โครงการที่นั่น (aom ย้ายหน้าแก้ไขเป็น ?edit=)
               if (linkedProjectId) {
-                router.push(`/organization/tver-simulation/${linkedProjectId}`);
+                router.push(`/organization/tver-simulation?edit=${linkedProjectId}`);
                 return;
               }
               setStep(1);
@@ -945,9 +967,9 @@ export default function TVERSimulationPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      // [MERGE-FIX] ย้อนกลับไปหน้าแก้ไขโครงการของ aom
+                      // [MERGE-FIX] ย้อนกลับไปหน้าแก้ไขโครงการของ aom (aom ย้ายหน้าแก้ไขเป็น ?edit=)
                       if (linkedProjectId) {
-                        router.push(`/organization/tver-simulation/${linkedProjectId}`);
+                        router.push(`/organization/tver-simulation?edit=${linkedProjectId}`);
                         return;
                       }
                       setStep(1);

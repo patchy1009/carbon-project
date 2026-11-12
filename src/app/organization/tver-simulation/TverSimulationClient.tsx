@@ -5,6 +5,7 @@ import Select, { ChevronDown } from '@/components/Select'; // dropdown กลา
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation'; // dropdown "โครงการที่บันทึกไว้" -> เปิดหน้าของโครงการนั้น
+import { calculateTverCredits } from '@/lib/tverCredits'; // [MERGE aom + cyn2] สูตรเครดิตของ cyn2
 import { supabase } from '@/lib/supabaseClient';
 import { TVER_TREE_COUNT_NAME, type TreeListItem, type TverProjectDetail } from '@/types/tver-project';
 import type { OrgTreeProject, OrgTreeProjectDetail } from '@/types/tver-simulation';
@@ -14,7 +15,7 @@ import {
 } from '@/lib/validation';
 import { normalizeNumberString, normalizeToArabicNumber, formatCondition } from '@/lib/normalization';
 import { dbErrorMessage } from '@/lib/supabaseCrud';
-import { showAlert, showError } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert
+import { showError } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert
 
 /* normalize / validate ฟอร์มจำลองโครงการ T-VER
  * 1) ชื่อโครงการ: ห้ามว่าง / ตัวเลขล้วน / ยาวเกิน 150 ตัวอักษร
@@ -29,11 +30,11 @@ const MIN_START_YEAR = 2000;
 const MAX_START_YEAR = new Date().getFullYear() + 10;
 
 
-// ⚠️ PLACEHOLDER: ยังไม่มีค่าอัตรากักเก็บคาร์บอนจริงต่อต้นในระบบ (tree_list ไม่มีคอลัมน์นี้)
-// ต้องแทนที่ด้วยค่าจริงจาก DB เมื่อเพิ่มคอลัมน์ carbon_rate_kg_per_tree_per_year แล้ว
-const PLACEHOLDER_KG_CO2E_PER_TREE_PER_YEAR = 10;
-const GROWTH_RATE_YEAR_2 = 1.18; // +18% (ค่าสมมติตามตัวอย่างใน Figma)
-const GROWTH_RATE_YEAR_3 = 1.38; // +38%
+/* [MERGE aom + cyn2] แบ่งงานหน้า T-VER
+ *   หน้านี้ (aom)          : กรอกข้อมูลโครงการ + ตรวจกับเงื่อนไขที่แอดมินตั้ง + บันทึก แล้วแสดงกราฟเครดิตในหน้าเดิม
+ *                            เครดิตคำนวณด้วยสูตรของ cyn2 (lib/tverCredits.ts = T-VER สูตรที่ 4)
+ *   tver_simulation (cyn2) : จัดสรรเครดิต -> ภาษี (กดปุ่ม "ไปจัดสรรคาร์บอนเครดิต" ใต้กราฟ)
+ *   [ลบ] สูตรเดิมของ aom (T × 10 ÷ 1000, ×1.18, ×1.38 ค่าสมมติ) */
 
 type CreditResult = { year1: number; year2: number; year3: number };
 
@@ -59,9 +60,9 @@ export default function TverSimulationClient({
   const isEditMode = existingProject !== null;
   const router = useRouter();
 
-  // เลือกจาก dropdown: ค่าว่าง = เริ่มโครงการใหม่ / id = เปิดโครงการนั้น (หน้าแก้ไขเดิม /tver-simulation/[id])
+  // เลือกจาก dropdown: ค่าว่าง = เริ่มโครงการใหม่ / id = เปิดโครงการนั้น (/tver-simulation?edit=<id>)
   function openSavedProject(id: string) {
-    router.push(id ? `/organization/tver-simulation/${encodeURIComponent(id)}` : '/organization/tver-simulation');
+    router.push(id ? `/organization/tver-simulation?edit=${encodeURIComponent(id)}` : '/organization/tver-simulation');
   }
 
   // รายการใต้ช่องชื่อโครงการ: null = ปิด / 'filter' = กรองตามที่พิมพ์ / 'all' = ทั้งหมด (กดปุ่มลูกศร)
@@ -94,6 +95,7 @@ export default function TverSimulationClient({
     return initial;
   });
 
+  // ผลเครดิต 3 ปี (โหมดแก้ไขเริ่มจากค่าที่บันทึกไว้)
   const [result, setResult] = useState<CreditResult | null>(
     existingProject && existingProject.credit_year_1 !== null
       ? {
@@ -141,24 +143,11 @@ export default function TverSimulationClient({
     return schema;
   }
 
-  // จับคู่ช่องกรอกจากชื่อเงื่อนไขแบบตรงทุกตัวอักษร (เดิมค้นคำที่ไม่ตรงกับชื่อจริง ทำให้เครดิตเป็น 0)
+  // T ของสูตรเครดิต = ช่อง "จำนวนต้นไม้" (จับคู่ชื่อเงื่อนไขแบบตรงทุกตัวอักษร)
+  //   cyn2 ใช้ พื้นที่ × ต้นต่อไร่ แต่เงื่อนไขที่แอดมินตั้งไม่มี "ต้นไม้ต่อไร่" -> ใช้จำนวนต้นที่กรอกตรงๆ (ตรงกับนิยาม T ของสูตร)
   const totalTreesDetail = criteria.find((c) => c.detail_name === TVER_TREE_COUNT_NAME);
 
-  // เดิม parseFloat (ไม่รู้จักเลขไทย/comma) -> normalizeToArabicNumber
-  function valueOf(d?: TverProjectDetail): number {
-    return d ? normalizeToArabicNumber(amounts[d.tverdetail_id]) ?? 0 : 0;
-  }
-
-  // คำนวณเครดิต 3 ปีจากจำนวนต้นไม้
-  function calculateCredits(): CreditResult {
-    // เอาสูตร พื้นที่ x จำนวนต้นต่อไร่ ออก เพราะไม่มีเงื่อนไข "ต้นไม้ต่อไร่" ในตาราง
-    const totalTrees = valueOf(totalTreesDetail);
-
-    const year1 = (totalTrees * PLACEHOLDER_KG_CO2E_PER_TREE_PER_YEAR) / 1000; // kg -> tCO2e
-    return { year1, year2: year1 * GROWTH_RATE_YEAR_2, year3: year1 * GROWTH_RATE_YEAR_3 };
-  }
-
-  // กดปุ่ม "คำนวณและดูรายงาน": คำนวณ + บันทึกลงรายการโครงการในระบบ พร้อมกัน
+  // กดปุ่ม "บันทึกและคำนวณคาร์บอนเครดิต": ตรวจ + คำนวณ (สูตร cyn2) + บันทึก แล้วแสดงกราฟในหน้าเดิม
   async function handleCalculate(e: React.FormEvent) {
     e.preventDefault();
 
@@ -180,18 +169,24 @@ export default function TverSimulationClient({
 
     setErrors(errs);
     if (Object.keys(errs).length > 0) return;
+    if (!totalTreesDetail) {
+      return showError(`ยังไม่มีเงื่อนไข "${TVER_TREE_COUNT_NAME}" ในหน้าแอดมิน T-VER Project จึงคำนวณคาร์บอนเครดิตไม่ได้`);
+    }
 
     setSaving(true);
 
-    const credits = calculateCredits();
     const cleanName = result.clean.projectName; // ชื่อที่ normalize แล้ว
+    // [MERGE aom + cyn2] สูตรเครดิตของ cyn2: T × t × 9.5 × 10^-3
+    const [year1, year2, year3] = calculateTverCredits(
+      normalizeToArabicNumber(result.clean[totalTreesDetail.tverdetail_id]) ?? 0
+    );
 
     const projectValues = {
       project_name: cleanName,
       join_date: startDate || null, // เก็บวันที่เต็ม ใช้ดูสถานะโครงการในหน้า Dashboard
-      credit_year_1: credits.year1,
-      credit_year_2: credits.year2,
-      credit_year_3: credits.year3,
+      credit_year_1: year1,
+      credit_year_2: year2,
+      credit_year_3: year3,
       updated_at: new Date().toISOString(),
     };
 
@@ -254,10 +249,10 @@ export default function TverSimulationClient({
       }
     }
 
-    setResult(credits);
+    // อยู่หน้าเดิม แสดงกราฟเครดิตในการ์ดขวา (ใต้กราฟมีปุ่มไปจัดสรรคาร์บอนเครดิตของ cyn2)
+    setResult({ year1, year2, year3 });
     setSaving(false);
-    // เดิมแสดงแถบแจ้งเตือนลอยค้างไว้ -> popup สั้นๆ แทน (ครั้งถัดไปที่กดจะอัปเดตโครงการเดิม ไม่สร้างซ้ำ)
-    showAlert('จำลองโครงการเรียบร้อย', { title: 'สำเร็จ', tone: 'success' });
+    // ไม่เด้ง popup แล้ว: กราฟที่ขึ้นในการ์ดขวาบอกผลอยู่แล้ว
   }
 
   const maxValue = result ? Math.max(result.year1, result.year2, result.year3) : 0;
@@ -265,7 +260,7 @@ export default function TverSimulationClient({
 
   return (
     <div className="max-w-[1280px] mx-auto px-8 py-8">
-      {/* [ลบ] แถบแจ้งเตือนลอย (มีลิงก์ไปแดชบอร์ด) -> ใช้ popup "จำลองโครงการเรียบร้อย" ของกล่องแจ้งเตือนกลางแทน */}
+      {/* [ลบ] แถบแจ้งเตือนลอย (มีลิงก์ไปแดชบอร์ด) -> บันทึกเสร็จแสดงกราฟในการ์ดขวาแทน ไม่มี popup */}
 
       <div className="mb-6">
         {isEditMode && (
@@ -428,8 +423,8 @@ export default function TverSimulationClient({
             disabled={saving}
             className="btn btn-primary w-[239px] h-[60px] rounded-[20px] text-base font-semibold"
           >
-            {/* เดิม "คำนวณและดูรายงาน" / "คำนวณและอัปเดตโครงการ" */}
-            {saving ? 'กำลังบันทึก...' : 'จำลองโครงการปลูกป่า'}
+            {/* เดิม "จำลองโครงการปลูกป่า" */}
+            {saving ? 'กำลังบันทึก...' : 'บันทึกและคำนวณคาร์บอนเครดิต'}
           </button>
         </form>
 
@@ -440,7 +435,7 @@ export default function TverSimulationClient({
 
           {!result && (
             <p className="text-center text-[#9CA3AF] py-20">
-              กรอกข้อมูลด้านซ้ายแล้วกด &quot;จำลองโครงการปลูกป่า&quot; เพื่อดูผลลัพธ์
+              กรอกข้อมูลด้านซ้ายแล้วกด &quot;บันทึกและคำนวณคาร์บอนเครดิต&quot; เพื่อดูผลลัพธ์
             </p>
           )}
 
@@ -505,7 +500,7 @@ export default function TverSimulationClient({
               {/* [MERGE aom + cyn2] ต่อไปขั้นที่ 2 ของ cyn2: จัดสรรคาร์บอนเครดิต -> ประเมินภาษี
                   ตกลงกันว่า: จำลองโครงการ (บันทึก / แสดงใน dashboard / แก้ไข) = ของ aom
                                การจัดสรรเครดิตและคำนวณภาษีหลังจากนั้น = ของ cyn2
-                  ส่ง id โครงการที่บันทึกแล้วไปทาง ?project= ให้หน้า cyn2 ใช้เครดิต 3 ปีจากโครงการนี้
+                  ส่ง id โครงการที่บันทึกแล้วไปทาง ?project= ให้หน้า cyn2 ใช้โครงการนี้
                   แสดงเฉพาะเมื่อบันทึกโครงการแล้ว (มี savedProjectId) */}
               {savedProjectId && (
                 <Link

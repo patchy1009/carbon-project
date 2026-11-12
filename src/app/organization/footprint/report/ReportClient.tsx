@@ -192,7 +192,7 @@ export default function ReportClient({
           </Link>
           {/* แก้ไขข้อมูลเริ่มที่ขั้นที่ 1 (ข้อมูลสำนักงาน) ของรายการนี้ แล้วกด "ถัดไป" ไปขั้นที่ 2 */}
           <Link
-            href={`/organization/footprint?edit=${logId}`}
+            href={`/organization/footprint/office_info?edit=${logId}`}
             className="btn btn-create rounded-lg px-4 py-2 text-sm font-semibold"
           >
             แก้ไขข้อมูล

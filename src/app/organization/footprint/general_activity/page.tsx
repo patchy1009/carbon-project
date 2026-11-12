@@ -38,7 +38,7 @@ export default function ActivityBasedFootprintPage() {
     const editId = params.get("edit");
     // มาจากปุ่มในหน้ารายงาน (&from=report) -> กลับไปหน้ารายงานเดิม
     if (editId && params.get("from") === "report") {
-      router.push(`/organization/footprint/report/${encodeURIComponent(editId)}`);
+      router.push(`/organization/footprint/report?id=${encodeURIComponent(editId)}`);
       return;
     }
     router.push(editId ? `/organization/footprint/activity?edit=${encodeURIComponent(editId)}` : "/organization/footprint/activity");
