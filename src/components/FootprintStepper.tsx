@@ -1,6 +1,6 @@
 /* ===================== [MERGE aom + cyn2] =====================
  * โครงหลักของ component นี้ = โค้ด aom (แถบขั้นตอนแบบกดไม่ได้ บอกสถานะด้วยสี)
- * ส่วนที่รับมาจาก cyn2 = ขั้นที่ 3 "ข้อมูลการดำเนินกิจกรรมพื้นฐาน" (หน้า /organization/footprint/activity_based)
+ * ส่วนที่รับมาจาก cyn2 = ขั้นที่ 3 "ข้อมูลการดำเนินกิจกรรมพื้นฐาน" (หน้า /organization/footprint/general_activity — cyn2 เปลี่ยนชื่อจาก activity_based)
  *   - cyn2 เดิมทำเป็นลิงก์ (กดข้ามขั้นได้) แต่ aom ตั้งใจให้กดไม่ได้ เพราะกดข้ามขั้นแล้วค่าที่กรอกค้างหาย
  *     จึงคงแบบของ aom และเข้าขั้นที่ 3 ผ่านปุ่มในกล่อง "บันทึกเสร็จสิ้น" ของขั้นที่ 2 แทน (ดู FootprintClient.tsx)
  * ============================================================== */
@@ -11,7 +11,7 @@
  *   - ขั้นที่ผ่านมาแล้ว/ขั้นปัจจุบัน: วงกลมสีเขียว
  *   - ขั้นปัจจุบัน: ชื่อขั้นตัวดำ
  *   - ขั้นที่ยังไม่ถึง: สีเทา */
-// [MERGE] current รับค่า 3 ได้ด้วย (cyn2 ใช้ <FootprintStepper current={3} /> ในหน้า activity_based)
+// [MERGE] current รับค่า 3 ได้ด้วย (cyn2 ใช้ <FootprintStepper current={3} /> ในหน้า general_activity)
 export default function FootprintStepper({ current }: { current: 1 | 2 | 3 }) {
   const steps = [
     { n: 1, label: 'ข้อมูลสำนักงาน' }, // [aom]
