@@ -1,6 +1,7 @@
 // หน้าจัดการกิจกรรมของแอดมิน: เพิ่ม แก้ไข ลบ ขอบเขต (Scope) กิจกรรม และรายการย่อยของกิจกรรม
 'use client';
 
+import Select from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
 import { useState } from 'react';
 import type { CarbonScope, Activity, ActivityDetail } from '@/types/activity-management';
 import type { EmissionFactor, GwpValue } from '@/types/ef-gwp';
@@ -566,18 +567,15 @@ export default function ActivityManagementClient({
           <form onSubmit={handleSaveActivity} className="space-y-4" noValidate>
             <h3 className="text-lg font-bold">{editActivityId ? 'แก้ไขกิจกรรม' : 'เพิ่มกิจกรรมใหม่'}</h3>
             <div>
-              <select
+              <Select
                 className={inputClass(!!activityErrors.scope_id)}
                 value={activityForm.scope_id}
-                onChange={(e) => setActivityForm({ ...activityForm, scope_id: e.target.value })}
-              >
-                <option value="">เลือกขอบเขต (Scope)</option>
-                {scopes.map((s) => (
-                  <option key={s.scope_id} value={s.scope_id}>
-                    Scope {s.scope_number} — {s.scope_name}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setActivityForm({ ...activityForm, scope_id: v })}
+                options={[
+                  { value: '', label: 'เลือกขอบเขต (Scope)', placeholder: true },
+                  ...scopes.map((s) => ({ value: s.scope_id, label: `Scope ${s.scope_number} — ${s.scope_name}` })),
+                ]}
+              />
               <FieldError message={activityErrors.scope_id} />
             </div>
             <div>
@@ -600,18 +598,15 @@ export default function ActivityManagementClient({
           <form onSubmit={handleSaveDetail} className="space-y-4 max-h-[80vh] overflow-y-auto" noValidate>
             <h3 className="text-lg font-bold">{editDetailId ? 'แก้ไขรายละเอียดกิจกรรม' : 'เพิ่มรายละเอียดกิจกรรม'}</h3>
             <div>
-              <select
+              <Select
                 className={inputClass(!!detailErrors.activity_id)}
                 value={detailForm.activity_id}
-                onChange={(e) => setDetailForm({ ...detailForm, activity_id: e.target.value })}
-              >
-                <option value="">เลือกกิจกรรม</option>
-                {activities.map((a) => (
-                  <option key={a.activity_id} value={a.activity_id}>
-                    {a.activity_name}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setDetailForm({ ...detailForm, activity_id: v })}
+                options={[
+                  { value: '', label: 'เลือกกิจกรรม', placeholder: true },
+                  ...activities.map((a) => ({ value: a.activity_id, label: a.activity_name })),
+                ]}
+              />
               <FieldError message={detailErrors.activity_id} />
             </div>
             <div>
@@ -636,50 +631,38 @@ export default function ActivityManagementClient({
               <FieldError message={detailErrors.unit} />
             </div>
             <div>
-              <select
+              <Select
                 className={inputClass(!!detailErrors.ef_id)}
                 value={detailForm.ef_id}
-                onChange={(e) => setDetailForm({ ...detailForm, ef_id: e.target.value })}
-              >
-                <option value="">เลือกค่า EF (ไม่บังคับ)</option>
-                {efOptions.map((ef) => (
-                  <option key={ef.ef_id} value={ef.ef_id}>
-                    {ef.ef_name} ({ef.ef_value} {ef.real_unit})
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setDetailForm({ ...detailForm, ef_id: v })}
+                options={[
+                  { value: '', label: 'ไม่ใช้ค่า EF' },
+                  ...efOptions.map((ef) => ({ value: ef.ef_id, label: `${ef.ef_name} (${ef.ef_value} ${ef.real_unit})` })),
+                ]}
+              />
               <FieldError message={detailErrors.ef_id} />
             </div>
             <div>
-              <select
+              <Select
                 className={inputClass(!!detailErrors.gwp_id)}
                 value={detailForm.gwp_id}
-                onChange={(e) => setDetailForm({ ...detailForm, gwp_id: e.target.value })}
-              >
-                <option value="">เลือกค่า GWP (ไม่บังคับ)</option>
-                {gwpOptions.map((g) => (
-                  <option key={g.gwp_id} value={g.gwp_id}>
-                    {g.gas_name} ({g.gwp_value})
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setDetailForm({ ...detailForm, gwp_id: v })}
+                options={[
+                  { value: '', label: 'ไม่ใช้ค่า GWP' },
+                  ...gwpOptions.map((g) => ({ value: g.gwp_id, label: `${g.gas_name} (${g.gwp_value})` })),
+                ]}
+              />
               <FieldError message={detailErrors.gwp_id} />
             </div>
             {/* ผูกรายการนี้กับบิลที่อ่านด้วย OCR: ปริมาณจากบิลประเภทนี้จะถูกเติมลงช่องนี้ในหน้าบันทึกกิจกรรม */}
             <div>
               <label className="mb-1 block text-xs text-[#3F4944]">รับข้อมูลจากบิล (OCR ช่วยกรอก)</label>
-              <select
+              <Select
                 className={inputClass(!!detailErrors.ocr_source)}
                 value={detailForm.ocr_source}
-                onChange={(e) => setDetailForm({ ...detailForm, ocr_source: e.target.value })}
-              >
-                <option value="">ไม่รับข้อมูลจากบิล</option>
-                {OCR_SOURCES.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setDetailForm({ ...detailForm, ocr_source: v })}
+                options={[{ value: '', label: 'ไม่รับข้อมูลจากบิล' }, ...OCR_SOURCES]}
+              />
               <FieldError message={detailErrors.ocr_source} />
             </div>
             <div>

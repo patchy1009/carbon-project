@@ -1,6 +1,7 @@
 // หน้าจัดการเอกสารภาษีของแอดมิน: อัปโหลด แก้ชื่อ ลบ และดาวน์โหลดเอกสาร
 'use client';
 
+import Select from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
 import { useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import type { AlloTaxDoc } from '@/types/allotaxdoc';
@@ -516,17 +517,12 @@ export default function AlloTaxDocClient({
             </div>
             <div className="flex w-[120px] flex-col gap-1">
               <label className="text-xs text-[#475569]">VAT (%)</label>
-              <select
+              <Select
                 value={costVat}
-                onChange={(e) => setCostVat(Number(e.target.value))}
+                onChange={(v) => setCostVat(Number(v))}
                 className="rounded-lg border border-[#E2E8F0] px-3 py-2 text-xs text-[#334155] focus:outline-none focus:ring-1 focus:ring-[#266955]"
-              >
-                {vatOptions.map((v) => (
-                  <option key={v} value={v}>
-                    {v}%
-                  </option>
-                ))}
-              </select>
+                options={vatOptions.map((v) => ({ value: v, label: `${v}%` }))}
+              />
             </div>
             <div className="flex w-[180px] flex-col gap-1">
               <label className="text-xs text-[#475569]">ราคาสุทธิคำนวณ</label>
@@ -758,17 +754,12 @@ export default function AlloTaxDocClient({
               </div>
               <div className="w-28">
                 <label className="mb-1 block text-xs text-[#475569]">VAT (%)</label>
-                <select
+                <Select
                   className={inputClass(false)}
                   value={editCostVat}
-                  onChange={(e) => setEditCostVat(Number(e.target.value))}
-                >
-                  {vatOptions.map((v) => (
-                    <option key={v} value={v}>
-                      {v}%
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setEditCostVat(Number(v))}
+                  options={vatOptions.map((v) => ({ value: v, label: `${v}%` }))}
+                />
               </div>
             </div>
             <p className="text-sm text-[#475569]">

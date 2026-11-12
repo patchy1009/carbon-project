@@ -1,6 +1,11 @@
 export const dynamic = 'force-dynamic';
 
-import { notFound } from 'next/navigation';
+/* หน้ารายงาน: /organization/footprint/report?id=<orgactlist_id>
+ * เดิมเป็นโฟลเดอร์ report/[id] (id อยู่ใน path) ตอนนี้ส่ง id ทาง query แทน
+ * id = เลขของ "รายการบันทึก" (องค์กรหนึ่งมีหลายรายงาน) ส่วนองค์กรมาจากบัญชีที่ล็อกอิน (requireOrgId)
+ * ไม่ส่ง id มา = เปิดรายงานล่าสุดขององค์กร / ยังไม่มีรายงานเลย = กลับแดชบอร์ด */
+
+import { notFound, redirect } from 'next/navigation';
 import { createSupabaseServer } from '@/lib/supabaseServer';
 import { requireOrgId } from '@/lib/auth';
 import { evaluate, type OrgData, type Recommendation } from '@/lib/recommendation';
@@ -16,13 +21,26 @@ const toNum = (v: unknown): number | null => {
 
 // ดึงรายการบันทึก คำนวณยอดแต่ละ Scope และแนวทางลดคาร์บอน แล้วส่งให้หน้ารายงาน
 export default async function FootprintReportPage({
-  params,
+  searchParams,
 }: {
-  params: Promise<{ id: string }>;
+  searchParams: Promise<{ id?: string }>;
 }) {
   const orgId = await requireOrgId(); // org_id = auth.uid() ของบัญชีที่ล็อกอิน
   const supabase = await createSupabaseServer();
-  const { id } = await params;
+  let { id } = await searchParams;
+
+  // ไม่มี ?id= -> ใช้รายการล่าสุดขององค์กรนี้
+  if (!id) {
+    const { data: latest } = await supabase
+      .from('org_activity_list')
+      .select('orgactlist_id')
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!latest) redirect('/organization/dashboard');
+    id = latest.orgactlist_id as string;
+  }
 
   const [logRes, detailRes, recRes, officeRes] = await Promise.all([
     supabase

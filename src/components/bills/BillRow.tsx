@@ -7,6 +7,7 @@
  * - แสดงว่าจะเติมลงช่องกิจกรรมไหน เป็นปริมาณเท่าไรหลังแปลงหน่วย
  * - ยืนยันแล้วช่องจะล็อก ต้องกด "แก้ไข" ก่อน (ยกเลิกการยืนยัน)
  * - รูปย่อของบิลที่แนบ กดแล้วเปิดดูเต็มจอ ซูมได้ (ImageViewer) เพื่อตรวจทานค่าที่ OCR อ่านเทียบกับรูปจริง */
+import Select from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
 import { useEffect, useState, type ReactNode } from 'react';
 import ImageViewer from '@/components/ImageViewer';
 import { normalizeNumberString, normalizeToArabicNumber } from '@/lib/normalization';
@@ -138,39 +139,33 @@ export default function BillRow(props: {
             <label className="block">
               <span className="text-xs text-slate-500">เดือน/ปีของบิล</span>
               <div className="flex gap-1">
-                <select
+                <Select
                   disabled={locked}
                   value={item.month}
-                  onChange={(e) => onEdit({ month: +e.target.value })}
+                  onChange={(v) => onEdit({ month: +v })}
                   className={field}
-                >
-                  <option value={0}>เลือกเดือน</option>
-                  {MONTHS.map((n, i) => <option key={n} value={i + 1}>{n}</option>)}
-                </select>
-                <select
+                  options={[{ value: 0, label: 'เลือกเดือน', placeholder: true }, ...MONTHS.map((n, i) => ({ value: i + 1, label: n }))]}
+                />
+                <Select
                   disabled={locked}
                   value={item.year}
-                  onChange={(e) => onEdit({ year: +e.target.value })}
+                  onChange={(v) => onEdit({ year: +v })}
                   className="rounded border px-2 py-1 disabled:bg-slate-100"
-                >
-                  <option value={0}>ปี</option>
-                  {years.map((y) => <option key={y} value={y}>{y + 543}</option>)}
-                </select>
+                  options={[{ value: 0, label: 'ปี', placeholder: true }, ...years.map((y) => ({ value: y, label: y + 543 }))]}
+                />
               </div>
             </label>
 
             {item.billType === 'fuel' && (
               <label className="block">
                 <span className="text-xs text-slate-500">ชนิดน้ำมัน</span>
-                <select
+                <Select
                   disabled={locked}
                   value={item.fuelType}
-                  onChange={(e) => onEdit({ fuelType: e.target.value as FuelType | '' })}
+                  onChange={(v) => onEdit({ fuelType: v as FuelType | '' })}
                   className={`${field} ${item.fuelType === '' ? 'border-amber-400' : ''}`}
-                >
-                  <option value="">เลือกชนิดน้ำมัน</option>
-                  {FUEL_TYPES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-                </select>
+                  options={[{ value: '', label: 'เลือกชนิดน้ำมัน', placeholder: true }, ...FUEL_TYPES]}
+                />
               </label>
             )}
 

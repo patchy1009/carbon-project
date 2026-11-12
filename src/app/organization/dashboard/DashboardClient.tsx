@@ -63,9 +63,11 @@ function periodText(log: OrgActivityLog): string {
   return new Intl.DateTimeFormat('th-TH-u-ca-buddhist', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date);
 }
 
-// รวมเครดิต 3 ปีของโครงการเดียว (ปีไหนไม่มีค่าให้นับเป็น 0)
+// เครดิตรวมของโครงการเดียว
+// [MERGE-FIX] เครดิตคำนวณด้วยสูตรของ cyn2 (T × t × MAI) ซึ่งเป็นยอด "สะสม" -> ยอดรวม = ปีที่ 3 (แบบเดียวกับหน้าจัดสรรของ cyn2)
+//   เดิม: ปี1 + ปี2 + ปี3 (ตอนที่ aom คำนวณเป็นรายปี)
 function sumCredits(p: OrgTreeProject): number {
-  return (p.credit_year_1 ?? 0) + (p.credit_year_2 ?? 0) + (p.credit_year_3 ?? 0);
+  return p.credit_year_3 ?? 0;
 }
 
 // รวมเครดิตของหลายโครงการ
@@ -232,7 +234,7 @@ export default function DashboardClient({
             บันทึกการปล่อยก๊าซเรือนกระจกขององค์กร
           </h2>
           <Link
-            href="/organization/footprint"
+            href="/organization/footprint/office_info"
             className="btn btn-create flex items-center gap-1 rounded-full px-4 py-1.5 text-sm font-semibold"
           >
             {/* เดิม "กรอกข้อมูลใหม่ ›" */}
@@ -251,7 +253,7 @@ export default function DashboardClient({
               className={`flex items-center gap-2 ${idx > 0 ? 'border-t border-[#F1F5F9]' : ''}`}
             >
               <Link
-                href={`/organization/footprint/report/${log.orgactlist_id}`}
+                href={`/organization/footprint/report?id=${log.orgactlist_id}`}
                 className="flex flex-1 items-center justify-between py-5 hover:bg-[#F8FAFC] transition"
               >
                 <div>
@@ -301,7 +303,7 @@ export default function DashboardClient({
           {treeProjects.map((p) => (
             <div key={p.orgtreeproject_id} className="flex items-start gap-2 border-b border-[#F8FAFC] last:border-b-0">
             <Link
-              href={`/organization/tver-simulation/${p.orgtreeproject_id}`}
+              href={`/organization/tver-simulation?edit=${p.orgtreeproject_id}`}
               className="block flex-1 space-y-4 rounded-lg p-3 -ml-3 hover:bg-[#F8FAFC] transition"
             >
               <div className="flex items-start justify-between">

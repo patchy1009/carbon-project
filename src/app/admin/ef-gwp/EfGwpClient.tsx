@@ -1,6 +1,7 @@
 // หน้าจัดการค่า EF และ GWP ของแอดมิน: เพิ่ม แก้ไข ลบ ประเภท EF, ค่า EF และค่า GWP
 'use client';
 
+import Select from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
 import { useState } from 'react';
 import type { EfType, EmissionFactor, GwpValue } from '@/types/ef-gwp';
 import { ModalActions, ModalShell } from '@/components/Modal';
@@ -411,18 +412,15 @@ export default function EfGwpClient({
             <h3 className="text-lg font-bold">{editEfId ? 'แก้ไขค่า EF' : 'เพิ่มค่า EF ใหม่'}</h3>
 
             <div>
-              <select
+              <Select
                 className={inputClass(!!efError.eftype_id)}
                 value={efForm.eftype_id}
-                onChange={(e) => setEfForm({ ...efForm, eftype_id: e.target.value })}
-              >
-                <option value="">เลือกประเภท EF</option>
-                {efTypes.map((t) => (
-                  <option key={t.eftype_id} value={t.eftype_id}>
-                    {t.type_name}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setEfForm({ ...efForm, eftype_id: v })}
+                options={[
+                  { value: '', label: 'เลือกประเภท EF', placeholder: true },
+                  ...efTypes.map((t) => ({ value: t.eftype_id, label: t.type_name })),
+                ]}
+              />
               <FieldError message={efError.eftype_id} />
             </div>
 

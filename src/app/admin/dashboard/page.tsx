@@ -1,4 +1,6 @@
 // หน้า Dashboard ของแอดมิน ตอนนี้ยังเป็นตัวเลขตัวอย่าง ยังไม่ได้ดึงข้อมูลจริง
+import Select from '@/components/Select'; // dropdown กลาง (แทน select ของ browser)
+
 const recentActivities = [
   ["บริษัท กรีนเวิลด์ จำกัด", "ส่งรายงานการปล่อยก๊าซ Q2", "02 ส.ค. 2569", "สำเร็จ", "success"],
   ["บริษัท ไทยเอเนอร์จี โซลูชั่น", "ยื่นเอกสารโครงการ T-VER", "02 ส.ค. 2569", "รอตรวจสอบ", "warning"],
@@ -33,11 +35,14 @@ export default function DashboardPage() {
           <p className="mt-1 text-sm text-[#67766F]">อัปเดตล่าสุด 3 ส.ค. 2569 · 09:41 น.</p>
         </div>
         <div className="flex gap-2">
-          <select className="rounded-xl border border-[#E7ECE9] bg-white px-3 py-2 text-sm text-[#3A4A44]">
-            <option>7 วันล่าสุด</option>
-            <option>30 วันล่าสุด</option>
-            <option>ไตรมาสนี้</option>
-          </select>
+          <Select
+            className="rounded-xl border border-[#E7ECE9] bg-white px-3 py-2 text-sm text-[#3A4A44]"
+            options={[
+              { value: '7d', label: '7 วันล่าสุด' },
+              { value: '30d', label: '30 วันล่าสุด' },
+              { value: 'quarter', label: 'ไตรมาสนี้' },
+            ]}
+          />
           <button className="rounded-xl border border-[#E7ECE9] bg-white px-3 py-2 text-sm hover:bg-[#F0FBF7]">
             ส่งออกรายงาน
           </button>
