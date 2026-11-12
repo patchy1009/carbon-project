@@ -141,7 +141,7 @@ export default function CalculationResult({
             <div className="h-3 w-3 rounded-full bg-[#32885F]"></div>
             <div>
               <h2 className="text-base font-semibold text-gray-800">
-                สรุปผลการประเมินคาร์บอนฟุตพริ้นท์องค์กร
+                สรุปผลการประเมินคาร์บอนฟุตพรินต์องค์กร
               </h2>
               <p className="text-xs text-gray-500">
                 แสดงปริมาณการปล่อยก๊าซเรือนกระจกจำแนกตามหมวดหมู่กิจกรรม (หน่วย: ตันคาร์บอนไดออกไซด์เทียบเท่า)

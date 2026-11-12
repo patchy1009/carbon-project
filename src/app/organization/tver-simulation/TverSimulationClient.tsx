@@ -1,8 +1,10 @@
 // หน้าจำลองโครงการปลูกป่า T-VER: กรอกข้อมูล ตรวจเงื่อนไข คำนวณเครดิต และบันทึกโครงการ
 'use client';
 
+import Select, { ChevronDown } from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation'; // dropdown "โครงการที่บันทึกไว้" -> เปิดหน้าของโครงการนั้น
 import { supabase } from '@/lib/supabaseClient';
 import { TVER_TREE_COUNT_NAME, type TreeListItem, type TverProjectDetail } from '@/types/tver-project';
 import type { OrgTreeProject, OrgTreeProjectDetail } from '@/types/tver-simulation';
@@ -35,6 +37,9 @@ const GROWTH_RATE_YEAR_3 = 1.38; // +38%
 
 type CreditResult = { year1: number; year2: number; year3: number };
 
+// โครงการที่องค์กรบันทึกไว้ (ใช้แค่ id + ชื่อ แสดงใน dropdown)
+export type SavedProjectOption = { orgtreeproject_id: string; project_name: string | null };
+
 // หน้าจอหลัก รองรับทั้งโครงการใหม่ และการแก้ไขโครงการเดิม
 export default function TverSimulationClient({
   orgId,
@@ -42,17 +47,38 @@ export default function TverSimulationClient({
   criteria,
   existingProject = null,
   existingDetails = [],
+  savedProjects = [],
 }: {
   orgId: string; // auth.uid() ของบัญชีที่ล็อกอิน
   trees: TreeListItem[];
   criteria: TverProjectDetail[];
   existingProject?: OrgTreeProject | null; // ถ้ามีค่า = โหมดแก้ไขโครงการเดิม
   existingDetails?: OrgTreeProjectDetail[];
+  savedProjects?: SavedProjectOption[]; // โครงการที่บันทึกไว้ขององค์กรนี้ (page.tsx ดึงมา)
 }) {
   const isEditMode = existingProject !== null;
+  const router = useRouter();
+
+  // เลือกจาก dropdown: ค่าว่าง = เริ่มโครงการใหม่ / id = เปิดโครงการนั้น (หน้าแก้ไขเดิม /tver-simulation/[id])
+  function openSavedProject(id: string) {
+    router.push(id ? `/organization/tver-simulation/${encodeURIComponent(id)}` : '/organization/tver-simulation');
+  }
+
+  // รายการใต้ช่องชื่อโครงการ: null = ปิด / 'filter' = กรองตามที่พิมพ์ / 'all' = ทั้งหมด (กดปุ่มลูกศร)
+  const [listMode, setListMode] = useState<'filter' | 'all' | null>(null);
 
   // ค่าเริ่มต้นของฟอร์ม: โหมดแก้ไขจะดึงจากโครงการเดิม โหมดสร้างใหม่จะว่างเปล่า
   const [projectName, setProjectName] = useState(existingProject?.project_name ?? '');
+
+  // โครงการที่แสดงในรายการใต้ช่องชื่อ (ไม่รวมโครงการที่เปิดอยู่)
+  const otherProjects = savedProjects.filter((p) => p.orgtreeproject_id !== existingProject?.orgtreeproject_id);
+  const query = projectName.trim().toLowerCase();
+  // ถ้าชื่อในช่องยังเป็นชื่อเดิมของโครงการที่เปิดอยู่ ถือว่ายังไม่ได้พิมพ์ค้น -> แสดงทั้งหมด
+  const isSearching = query !== '' && query !== (existingProject?.project_name ?? '').trim().toLowerCase();
+  const shownProjects =
+    listMode === 'filter' && isSearching
+      ? otherProjects.filter((p) => (p.project_name ?? '').toLowerCase().includes(query))
+      : otherProjects;
 
   // พันธุ์ไม้เก็บอยู่ในแถวรายละเอียดของโครงการ (org_tree_project_detail.tree_id) ทุกแถวมีค่าเดียวกัน
   const [treeId, setTreeId] = useState(existingDetails.find((d) => d.tree_id)?.tree_id ?? '');
@@ -265,38 +291,93 @@ export default function TverSimulationClient({
         >
           <h2 className="text-xl font-bold text-[#1F2937]">ตั้งค่าโครงการปลูกป่า</h2>
 
+          {/* ชื่อโครงการแบบ combobox: พิมพ์ชื่อใหม่เองได้ หรือเลือกโครงการที่บันทึกไว้จากรายการ (เลือกแล้วเปิดโครงการนั้น)
+              - คลิก/พิมพ์ในช่อง: รายการกรองตามข้อความที่พิมพ์ / ปุ่มลูกศร: แสดงทั้งหมด */}
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-[#374151]">ชื่อโครงการ</label>
-            <input
-              value={projectName}
-              maxLength={150}
-              onChange={(e) => {
-                setProjectName(e.target.value);
-                clearError('projectName');
-              }}
-              placeholder="เช่น โครงการปลูกป่าสัก ที่ราบสูงตอนเหนือ"
-              className={`w-full border rounded-xl px-3 py-3 text-base ${errors.projectName ? 'border-red-500' : 'border-[#E5E7EB]'}`}
-            />
+            <div className="relative">
+              <input
+                value={projectName}
+                maxLength={150}
+                onChange={(e) => {
+                  setProjectName(e.target.value);
+                  clearError('projectName');
+                  setListMode('filter');
+                }}
+                onFocus={() => setListMode('filter')}
+                onBlur={() => setListMode(null)}
+                onKeyDown={(e) => e.key === 'Escape' && setListMode(null)}
+                placeholder={savedProjects.length > 0 ? 'พิมพ์ชื่อโครงการใหม่ หรือเลือกโครงการที่บันทึกไว้' : 'เช่น โครงการปลูกป่าสัก ที่ราบสูงตอนเหนือ'}
+                autoComplete="off"
+                className={`w-full border rounded-xl px-3 py-3 text-base ${savedProjects.length > 0 ? 'pr-10' : ''} ${errors.projectName ? 'border-red-500' : 'border-[#E5E7EB]'}`}
+              />
+              {savedProjects.length > 0 && (
+                <button
+                  type="button"
+                  aria-label="แสดงโครงการที่บันทึกไว้"
+                  // onMouseDown + preventDefault: ไม่ให้ช่อง input เสีย focus (ไม่งั้นรายการปิดก่อน)
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setListMode(listMode === 'all' ? null : 'all');
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 px-2 text-[#6B7280] hover:text-[#1F2937]"
+                >
+                  <ChevronDown />
+                </button>
+              )}
+              {listMode && (shownProjects.length > 0 || isEditMode) && (
+                <ul className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-[#E5E7EB] bg-white py-1 shadow-lg">
+                  {shownProjects.map((p) => (
+                    <li key={p.orgtreeproject_id}>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setListMode(null);
+                          openSavedProject(p.orgtreeproject_id);
+                        }}
+                        className="w-full px-3 py-2 text-left text-base hover:bg-[#F3F4F6]"
+                      >
+                        {p.project_name || '(ไม่มีชื่อ)'}
+                      </button>
+                    </li>
+                  ))}
+                  {/* กำลังเปิดโครงการเดิมอยู่ -> มีทางกลับไปเริ่มโครงการใหม่ */}
+                  {isEditMode && (
+                    <li className="border-t border-[#F3F4F6]">
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setListMode(null);
+                          openSavedProject('');
+                        }}
+                        className="w-full px-3 py-2 text-left text-base text-[#2d4a63] hover:bg-[#F3F4F6]"
+                      >
+                        + สร้างโครงการใหม่
+                      </button>
+                    </li>
+                  )}
+                </ul>
+              )}
+            </div>
             {errors.projectName && <p className="text-xs text-red-600">{errors.projectName}</p>}
           </div>
 
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-[#374151]">พันธุ์ไม้</label>
-            <select
+            <Select
               value={treeId}
-              onChange={(e) => {
-                setTreeId(e.target.value);
+              onChange={(v) => {
+                setTreeId(v);
                 clearError('treeId');
               }}
               className={`w-full border rounded-xl px-3 py-3 text-base ${errors.treeId ? 'border-red-500' : 'border-[#E5E7EB]'}`}
-            >
-              <option value="">เลือกพันธุ์ไม้</option>
-              {trees.map((t) => (
-                <option key={t.tree_id} value={t.tree_id}>
-                  {t.tree_name}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: 'เลือกพันธุ์ไม้', placeholder: true },
+                ...trees.map((t) => ({ value: t.tree_id, label: t.tree_name })),
+              ]}
+            />
             {errors.treeId && <p className="text-xs text-red-600">{errors.treeId}</p>}
           </div>
 

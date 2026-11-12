@@ -1,6 +1,7 @@
 // หน้าจัดการโครงการ T-VER ของแอดมิน: เพิ่ม แก้ไข ลบ รายการต้นไม้และเงื่อนไขโครงการ
 'use client';
 
+import Select from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
 import { useState } from 'react';
 import type { TreeListItem, TverProjectDetail } from '@/types/tver-project';
 import { ModalActions, ModalShell } from '@/components/Modal';
@@ -319,21 +320,19 @@ export default function TverProjectClient({
               <label className="mb-1 block text-xs text-[#3F4944]">เงื่อนไข (ไม่บังคับ)</label>
               <div className="flex items-center gap-2">
                 {/* แสดงเฉพาะสัญลักษณ์ ตัวอักษรใหญ่ อ่านง่าย (ความหมายแสดงใต้ช่อง) */}
-                <select
+                <Select
                   className={`w-24 shrink-0 rounded-lg border px-3 py-2 text-center text-lg font-bold ${
                     detailErrors.condition_operator ? 'border-red-500' : ''
                   }`}
                   value={detailForm.condition_operator}
-                  onChange={(e) => setDetailForm({ ...detailForm, condition_operator: e.target.value })}
-                  aria-label="เงื่อนไข"
-                >
-                  <option value="">–</option>
-                  {CONDITION_OPERATORS.map((o) => (
-                    <option key={o.value} value={o.value} title={o.label}>
-                      {o.value}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setDetailForm({ ...detailForm, condition_operator: v })}
+                  ariaLabel="เงื่อนไข"
+                  options={[
+                    { value: '', label: '–', placeholder: true },
+                    // ในรายการแสดงทั้งเครื่องหมายและคำอธิบาย (เดิมคำอธิบายอยู่ใน title)
+                    ...CONDITION_OPERATORS.map((o) => ({ value: o.value, label: `${o.value}  ${o.label}` })),
+                  ]}
+                />
                 <input
                   className={`${inputClass(!!detailErrors.condition_number)} flex-1`}
                   placeholder="เช่น 1000"

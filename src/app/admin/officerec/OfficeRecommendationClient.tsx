@@ -1,6 +1,7 @@
 // หน้าจัดการแนวทางลดคาร์บอนของแอดมิน: เพิ่มหัวข้อข้อมูลสำนักงาน แนวทาง และเงื่อนไขของแนวทาง
 'use client';
 
+import Select from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
 import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { dbErrorMessage, deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
@@ -161,67 +162,64 @@ function OperandPicker({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <select
+      <Select
         className="rounded border px-2 py-1"
         value={v.source_type}
-        onChange={(e) => set({ source_type: e.target.value as SourceType })}
-      >
-        <option value="activity">ค่าของกิจกรรม</option>
-        <option value="office_info">ข้อมูลสำนักงาน</option>
-        <option value="scope">ก๊าซรวมของ Scope</option>
-        <option value="total">ก๊าซรวมทั้งหมด</option>
-      </select>
+        onChange={(val) => set({ source_type: val as SourceType })}
+        options={[
+          { value: 'activity', label: 'ค่าของกิจกรรม' },
+          { value: 'office_info', label: 'ข้อมูลสำนักงาน' },
+          { value: 'scope', label: 'ก๊าซรวมของ Scope' },
+          { value: 'total', label: 'ก๊าซรวมทั้งหมด' },
+        ]}
+      />
 
       {v.source_type === 'activity' && (
         <>
-          <select
+          <Select
             className="max-w-[200px] rounded border px-2 py-1"
             value={v.scopedetail_id}
-            onChange={(e) => set({ scopedetail_id: e.target.value })}
-          >
-            <option value="">เลือกกิจกรรม</option>
-            {activityOptions.map((a) => (
-              <option key={a.scopedetail_id} value={a.scopedetail_id}>
-                {a.detail_name} {a.unit ? `(${a.unit})` : ''}
-              </option>
-            ))}
-          </select>
-          <select
+            onChange={(val) => set({ scopedetail_id: val })}
+            options={[
+              { value: '', label: 'เลือกกิจกรรม', placeholder: true },
+              ...activityOptions.map((a) => ({ value: a.scopedetail_id, label: `${a.detail_name} ${a.unit ? `(${a.unit})` : ''}` })),
+            ]}
+          />
+          <Select
             className="rounded border px-2 py-1"
             value={v.metric}
-            onChange={(e) => set({ metric: e.target.value as Metric })}
-          >
-            <option value="amount">ปริมาณที่ใช้</option>
-            <option value="ghg_emission">ก๊าซที่ปล่อย (tCO2e)</option>
-          </select>
+            onChange={(val) => set({ metric: val as Metric })}
+            options={[
+              { value: 'amount', label: 'ปริมาณที่ใช้' },
+              { value: 'ghg_emission', label: 'ก๊าซที่ปล่อย (tCO2e)' },
+            ]}
+          />
         </>
       )}
 
       {v.source_type === 'office_info' && (
-        <select
+        <Select
           className="max-w-[240px] rounded border px-2 py-1"
           value={v.info_id}
-          onChange={(e) => set({ info_id: e.target.value })}
-        >
-          <option value="">เลือกข้อมูลสำนักงาน</option>
-          {infoTypes.map((o) => (
-            <option key={o.info_id} value={o.info_id}>
-              {o.info_name} {o.unit ? `(${o.unit})` : ''}
-            </option>
-          ))}
-        </select>
+          onChange={(val) => set({ info_id: val })}
+          options={[
+            { value: '', label: 'เลือกข้อมูลสำนักงาน', placeholder: true },
+            ...infoTypes.map((o) => ({ value: o.info_id, label: `${o.info_name} ${o.unit ? `(${o.unit})` : ''}` })),
+          ]}
+        />
       )}
 
       {v.source_type === 'scope' && (
-        <select
+        <Select
           className="rounded border px-2 py-1"
           value={v.scope_number}
-          onChange={(e) => set({ scope_number: e.target.value })}
-        >
-          <option value="1">Scope 1</option>
-          <option value="2">Scope 2</option>
-          <option value="3">Scope 3</option>
-        </select>
+          onChange={(val) => set({ scope_number: val })}
+          options={[
+            { value: '1', label: 'Scope 1' },
+            { value: '2', label: 'Scope 2' },
+            { value: '3', label: 'Scope 3' },
+          ]}
+        />
       )}
     </div>
   );
@@ -878,18 +876,15 @@ export default function OfficeRecommendationClient({
               <label className="mb-1 block text-xs font-semibold text-[#374151]">
                 กิจกรรมที่เกี่ยวข้อง (ฐานที่ใช้คำนวณ %)
               </label>
-              <select
+              <Select
                 className={inputClass(!!recErrors.scopedetail_id)}
                 value={recForm.scopedetail_id}
-                onChange={(e) => setRecForm({ ...recForm, scopedetail_id: e.target.value })}
-              >
-                <option value="">ไม่ผูก (แนะนำทั่วไป ไม่คำนวณตัวเลข)</option>
-                {activityOptions.map((a) => (
-                  <option key={a.scopedetail_id} value={a.scopedetail_id}>
-                    {a.detail_name} {a.unit ? `(${a.unit})` : ''}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setRecForm({ ...recForm, scopedetail_id: v })}
+                options={[
+                  { value: '', label: 'ไม่ผูก (แนะนำทั่วไป ไม่คำนวณตัวเลข)' },
+                  ...activityOptions.map((a) => ({ value: a.scopedetail_id, label: `${a.detail_name} ${a.unit ? `(${a.unit})` : ''}` })),
+                ]}
+              />
               <FieldError message={recErrors.scopedetail_id} />
               <p className="mt-1 text-xs text-[#94A3B8]">
                 % ที่กรอกด้านล่างต้องนิยามเทียบกับกิจกรรมนี้เท่านั้น (เช่น % ของก๊าซจากไฟฟ้า)
@@ -1009,17 +1004,18 @@ export default function OfficeRecommendationClient({
                       )}
 
                       <div className="flex flex-wrap items-center gap-2">
-                        <select
+                        <Select
                           className="rounded border px-2 py-1"
                           value={c.operator}
-                          onChange={(e) => setCond(i, { operator: e.target.value as Operator })}
-                        >
-                          <option value=">">มากกว่า</option>
-                          <option value=">=">มากกว่าหรือเท่ากับ</option>
-                          <option value="<">น้อยกว่า</option>
-                          <option value="<=">น้อยกว่าหรือเท่ากับ</option>
-                          <option value="=">เท่ากับ</option>
-                        </select>
+                          onChange={(v) => setCond(i, { operator: v as Operator })}
+                          options={[
+                            { value: '>', label: 'มากกว่า' },
+                            { value: '>=', label: 'มากกว่าหรือเท่ากับ' },
+                            { value: '<', label: 'น้อยกว่า' },
+                            { value: '<=', label: 'น้อยกว่าหรือเท่ากับ' },
+                            { value: '=', label: 'เท่ากับ' },
+                          ]}
+                        />
                         <input
                           className="w-32 rounded border px-2 py-1"
                           inputMode="decimal"

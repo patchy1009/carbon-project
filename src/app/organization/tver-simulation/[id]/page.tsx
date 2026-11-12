@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 import { notFound } from 'next/navigation';
 import { createSupabaseServer } from '@/lib/supabaseServer';
 import { requireOrgId } from '@/lib/auth';
-import TverSimulationClient from '../TverSimulationClient';
+import TverSimulationClient, { type SavedProjectOption } from '../TverSimulationClient';
 import type { TreeListItem, TverProjectDetail } from '@/types/tver-project';
 import type { OrgTreeProject, OrgTreeProjectDetail } from '@/types/tver-simulation';
 
@@ -18,7 +18,7 @@ export default async function EditTverProjectPage({
   const supabase = await createSupabaseServer();
   const { id } = await params;
 
-  const [projectRes, detailsRes, treesRes, criteriaRes] = await Promise.all([
+  const [projectRes, detailsRes, treesRes, criteriaRes, savedRes] = await Promise.all([
     supabase
       .from('org_tree_project')
       .select('*')
@@ -28,6 +28,8 @@ export default async function EditTverProjectPage({
     supabase.from('org_tree_project_detail').select('*').eq('orgtreeproject_id', id),
     supabase.from('tree_list').select('*').order('tree_name'),
     supabase.from('tver_project_detail').select('*').order('updated_at'),
+    // รายชื่อโครงการที่องค์กรนี้บันทึกไว้ (dropdown สลับไปเปิดโครงการอื่น)
+    supabase.from('org_tree_project').select('orgtreeproject_id, project_name').eq('org_id', orgId).order('project_name'),
   ]);
 
   if (!projectRes.data) notFound(); // ไม่พบโครงการ -> แสดงหน้า 404
@@ -39,6 +41,7 @@ export default async function EditTverProjectPage({
       criteria={(criteriaRes.data ?? []) as TverProjectDetail[]}
       existingProject={projectRes.data as OrgTreeProject}
       existingDetails={(detailsRes.data ?? []) as OrgTreeProjectDetail[]}
+      savedProjects={(savedRes.data ?? []) as SavedProjectOption[]}
     />
   );
 }

@@ -179,12 +179,16 @@ export default function ReportClient({
         </div>
 
         {/* ปุ่มต่างๆ ไม่ถูกรวมใน PDF (data-no-export) */}
-        <div className="flex gap-2" data-no-export="true">
+        {/* whitespace-nowrap: ข้อความในปุ่มไม่ตัดเป็น 2 บรรทัด */}
+        <div className="flex shrink-0 gap-2 whitespace-nowrap" data-no-export="true">
+          {/* [ลบ] ปุ่ม "กลับแดชบอร์ด" (ไปแดชบอร์ดได้จากเมนูด้านบนอยู่แล้ว)
+              -> แทนด้วยปุ่มไปขั้นที่ 3 กิจกรรมพิเศษ (ประชุม/อีเวนต์ และการเดินทาง ของ cyn2)
+              ผลขั้นที่ 3 แยกจากรายงานนี้ ไม่ถูกรวมในยอดด้านล่าง ส่ง ?edit=&from=report ไป ให้ปุ่ม "‹ กลับ" ของขั้นที่ 3 กลับมาหน้ารายงานนี้ */}
           <Link
-            href="/organization/dashboard"
+            href={`/organization/footprint/general_activity?edit=${logId}&from=report`}
             className="btn btn-outline rounded-lg px-4 py-2 text-sm font-semibold"
           >
-            กลับแดชบอร์ด
+            กิจกรรมพิเศษ (ขั้นที่ 3) <span className="btn-arrow">›</span>
           </Link>
           {/* แก้ไขข้อมูลเริ่มที่ขั้นที่ 1 (ข้อมูลสำนักงาน) ของรายการนี้ แล้วกด "ถัดไป" ไปขั้นที่ 2 */}
           <Link

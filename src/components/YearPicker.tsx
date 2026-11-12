@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { DROPDOWN_LIST, dropdownItem } from './Select'; // หน้าตารายการเหมือน dropdown กลาง
 
 /* ช่องเลือกปี พ.ศ. แบบพิมพ์ค้นหาได้ (ใช้แทน <select> ที่มีให้เลือกแค่ไม่กี่ปี)
  * - คลิกช่อง = เปิดรายการปีทั้งหมดในช่วง min..max (ใหม่สุดอยู่บน)
@@ -199,7 +200,7 @@ export default function YearPicker({
           id={listId}
           role="listbox"
           style={{ top: pos.top, left: pos.left, width: Math.max(pos.width, 140) }}
-          className="scroll-list fixed z-[90] max-h-60 rounded-xl border border-[#E2E8F0] bg-white py-1 font-sans shadow-lg"
+          className={`${DROPDOWN_LIST} fixed z-[90] text-sm`}
         >
           {filtered.length === 0 && <li className="px-4 py-2 text-sm text-[#94A3B8]">ไม่พบปีที่ค้นหา</li>}
           {filtered.map((y, i) => (
@@ -211,9 +212,7 @@ export default function YearPicker({
               onMouseDown={(e) => e.preventDefault()} // ไม่ให้ input เสียโฟกัสก่อนเลือก
               onMouseEnter={() => setActive(i)}
               onClick={() => pick(y)}
-              className={`cursor-pointer px-4 py-2 text-sm ${
-                i === active ? 'bg-[#F0FDF4]' : ''
-              } ${y === value ? 'font-semibold text-[#32885F]' : 'text-[#191C1E]'}`}
+              className={dropdownItem(i === active, y === value)}
             >
               {y}
             </li>

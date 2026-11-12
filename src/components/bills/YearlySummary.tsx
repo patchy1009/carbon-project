@@ -4,6 +4,7 @@
  * - เดือนที่มีบิล: แสดงผลรวมจากบิลของเดือนนั้น
  * - เดือนที่ไม่มีบิล: ให้เลือก "กรอกเอง" หรือ "ใช้ค่าเดือนก่อนหน้า"
  * - แถวล่างสุดแสดงผลรวมทั้งปี */
+import Select from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
 import { resolveYear, type GapChoice, type TargetSummary } from '@/lib/bills/aggregate';
 
 const MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
@@ -47,20 +48,20 @@ export default function YearlySummary({
                   ) : (
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-amber-700">ไม่มีบิล:</span>
-                      <select
+                      <Select
                         value={g?.mode ?? ''}
-                        onChange={(e) => {
-                          const mode = e.target.value;
+                        onChange={(mode) => {
                           if (mode === 'prev') onGapChange(month, { mode: 'prev' });
                           else if (mode === 'manual') onGapChange(month, { mode: 'manual', value: '' });
                           else onGapChange(month, null);
                         }}
                         className="rounded border px-1 py-0.5"
-                      >
-                        <option value="">เลือกวิธี</option>
-                        <option value="manual">กรอกเอง</option>
-                        {month > 1 && <option value="prev">ใช้ค่าเดือนก่อนหน้า</option>}
-                      </select>
+                        options={[
+                          { value: '', label: 'เลือกวิธี', placeholder: true },
+                          { value: 'manual', label: 'กรอกเอง' },
+                          ...(month > 1 ? [{ value: 'prev', label: 'ใช้ค่าเดือนก่อนหน้า' }] : []),
+                        ]}
+                      />
                       {g?.mode === 'manual' && (
                         <input
                           inputMode="decimal"

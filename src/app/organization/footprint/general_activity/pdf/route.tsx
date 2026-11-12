@@ -316,7 +316,7 @@ export async function POST(request: Request) {
       <Document>
         <Page size="A4" style={styles.page}>
           <Text style={styles.header}>
-            สรุปผลการประเมินคาร์บอนฟุตพริ้นท์องค์กร
+            สรุปผลการประเมินคาร์บอนฟุตพรินต์องค์กร
           </Text>
 
           {/* สรุปผลการคำนวณหลัก */}

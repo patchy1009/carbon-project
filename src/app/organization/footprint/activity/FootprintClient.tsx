@@ -1,8 +1,10 @@
 // ขั้นที่ 2 ของการบันทึกฟุตพรินต์: กรอกข้อมูลกิจกรรม แนบบิลให้ OCR ช่วยกรอก คำนวณ และบันทึก
 'use client';
 
+import Select from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
 import { useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation'; // ใช้เปลี่ยนหน้าไปขั้นที่ 3
 import { supabase } from '@/lib/supabaseClient';
 import Modal from '@/components/Modal';
 import FootprintStepper from '@/components/FootprintStepper';
@@ -125,6 +127,19 @@ export default function FootprintClient({
   );
 
   const [values, setValues] = useState<Record<string, string>>(existingValues);
+  const router = useRouter();
+
+  // ไปขั้นที่ 3 ถ้ามีค่าที่ยังไม่บันทึก (ต่างจากค่าตอนเปิดหน้า) ถามยืนยันก่อน
+  async function goToStep3() {
+    const changed =
+      Object.keys({ ...existingValues, ...values }).some((k) => (values[k] ?? '') !== (existingValues[k] ?? ''));
+    if (changed && !(await showConfirm(
+      'ข้อมูลที่กรอกในหน้านี้ยังไม่ได้บันทึก ถ้าไปขั้นที่ 3 ตอนนี้ ค่าที่กรอกจะหาย\nต้องการไปต่อหรือไม่? (ถ้าต้องการเก็บไว้ ให้กด "' + (isEdit ? 'บันทึกและคำนวณ' : 'คำนวณและดูรายงาน') + '" ก่อน)',
+      { confirmText: 'ไปขั้นที่ 3' }
+    ))) return;
+    // ส่ง ?edit= ไปด้วย ให้ปุ่ม "กลับ" ของขั้นที่ 3 กลับมาที่รายการเดิมได้
+    router.push(`/organization/footprint/general_activity${isEdit ? `?edit=${existingLogId}` : ''}`);
+  }
   // error ใต้ช่อง: key = 'name' หรือ scopedetail_id
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -796,7 +811,7 @@ export default function FootprintClient({
                   stepper ของ aom กดไม่ได้ จึงเพิ่มปุ่มนี้แทนการกดเลข 3 — ไปหลังบันทึกขั้นที่ 2 แล้ว ข้อมูลจึงไม่หาย */}
               <Link
                 // [MERGE รอบ 2] cyn2 ย้ายหน้าจาก activity_based เป็น general_activity
-                href="/organization/footprint/general_activity"
+                href={`/organization/footprint/general_activity?edit=${done.id}`}
                 className="btn btn-outline rounded-lg px-4 py-2 text-sm"
               >
                 บันทึกกิจกรรมพิเศษ (ขั้นที่ 3)
@@ -921,22 +936,17 @@ export default function FootprintClient({
             </label>
             <div className="flex gap-3">
               {periodType === 'month' && (
-                <select
+                <Select
                   value={selMonth || ''}
-                  onChange={(e) => updatePeriod('month', Number(e.target.value), selYear || nowBE)}
+                  onChange={(v) => updatePeriod('month', Number(v), selYear || nowBE)}
                   className={`h-11 w-48 rounded-[20px] border bg-[#F7F9FB] px-4 text-sm ${
                     fieldErrors.period && !selMonth ? 'border-red-500' : 'border-[#BDC9C1]'
                   }`}
-                >
-                  <option value="" disabled>
-                    เดือน
-                  </option>
-                  {TH_MONTHS_FULL.map((m, i) => (
-                    <option key={m} value={i + 1}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: '', label: 'เดือน', placeholder: true },
+                    ...TH_MONTHS_FULL.map((m, i) => ({ value: i + 1, label: m })),
+                  ]}
+                />
               )}
               {/* เดิมเป็น <select> -> ช่องเลือกปีที่พิมพ์ค้นหาได้ */}
               <YearPicker
@@ -1090,15 +1100,26 @@ export default function FootprintClient({
           href={backHref}
           className="btn btn-outline flex h-[60px] items-center rounded-[20px] px-8 text-base font-semibold"
         >
-          กลับ
+          ‹ กลับ
         </Link>
+        {/* ปุ่มที่ 2: ไปขั้นที่ 3 (กิจกรรมพิเศษ: ประชุม/อีเวนต์ และการเดินทาง ของ cyn2) ได้ทันทีโดยไม่ต้องบันทึกก่อน
+            ถ้ามีค่าที่แก้แล้วยังไม่บันทึก ถามก่อน เพราะออกจากหน้านี้แล้วค่าที่กรอกจะหาย */}
+        <button
+          type="button"
+          onClick={goToStep3}
+          disabled={loading}
+          className="btn btn-outline flex h-[60px] items-center gap-1 rounded-[20px] px-8 text-base font-semibold"
+        >
+          ถัดไป <span className="btn-arrow">›</span>
+        </button>
         <button
           onClick={handleCalculate}
           disabled={loading}
           className="btn btn-primary h-[60px] w-[280px] rounded-[20px] text-base font-semibold tracking-wide"
         >
           {loading && 'กำลังบันทึก...'}
-          {!loading && isEdit && 'บันทึกการแก้ไขและคำนวณใหม่'}
+          {/* เดิมโหมดแก้ไขเขียนว่า "บันทึกการแก้ไขและคำนวณใหม่" -> ใช้คำสั้นลง */}
+          {!loading && isEdit && 'บันทึกและคำนวณ'}
           {!loading && !isEdit && 'คำนวณและดูรายงาน'}
         </button>
       </div>

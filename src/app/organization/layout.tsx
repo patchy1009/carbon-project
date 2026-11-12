@@ -3,7 +3,7 @@
  *   - navbar ของ aom (NavUser.tsx: วงกลมผู้ใช้ + เมนูอีเมล/ออกจากระบบ) ไม่ได้ใช้ในฝั่งองค์กรแล้ว
  *     แต่ยังใช้ที่ src/app/admin/layout.tsx ของ aom จึงไม่ได้ลบไฟล์ NavUser.tsx
  *   - ลิงก์เมนูของ cyn2 เข้ากับหน้าของ aom ได้เลยโดยไม่ต้องแก้:
- *       แดชบอร์ด/คาร์บอนฟุตพรินท์/จำลอง T-VER (/organization/tver-simulation)/เอกสาร = หน้าของ aom
+ *       แดชบอร์ด/คาร์บอนฟุตพรินต์/จำลอง T-VER (/organization/tver-simulation)/เอกสาร = หน้าของ aom
  *       คำนวณภาษี (/organization/tax_calculator) และไอคอนบัญชี (/organization/account_user) = หน้าของ cyn2
  * ============================================================== */
 'use client';
@@ -45,7 +45,7 @@ export default function OrganizationLayout({
       label: email ? 'แดชบอร์ด' : 'หน้าหลัก', 
       href: email ? '/organization/dashboard' : '/' // ปรับลิงก์หน้าหลักตามต้องการ เช่น '/' หรือหน้า Home ทั่วไป
     },
-    { label: 'คาร์บอนฟุตพรินท์', href: '/organization/footprint' },
+    { label: 'คาร์บอนฟุตพรินต์', href: '/organization/footprint' },
     { label: 'จำลองโครงการ T-VER', href: '/organization/tver-simulation' },
     { label: 'คำนวณภาษี', href: '/organization/tax_calculator' },
     { label: 'เอกสาร', href: '/organization/documents' },

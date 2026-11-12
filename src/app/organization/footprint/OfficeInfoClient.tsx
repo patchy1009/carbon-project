@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import FootprintStepper from '@/components/FootprintStepper';
 import { validateForm, isDecimal, maxLength, type formSchema } from '@/lib/validation';
 import { normalizeNumberString, normalizeText } from '@/lib/normalization';
 import { clearOfficeDraft, draftScope, readOfficeDraft, writeOfficeDraft } from '@/lib/officeDraft';
+import { showConfirm } from '@/lib/dialog'; // popup ถามเมื่อยังไม่กรอกข้อมูลสักช่อง (กลับไปกรอก / ข้ามไปขั้นถัดไป)
 
 /* ข้อมูลสำนักงานเป็นของ "แต่ละรายการ" (org_office_info.orgactlist_id) ไม่ใช่ชุดเดียวทั้งองค์กร
  * - รายการใหม่: ฟอร์มว่างเสมอ / แก้ไข: เริ่มจากค่าที่บันทึกไว้ของรายการนั้น
@@ -120,8 +120,18 @@ export default function OfficeInfoClient({
 
   // ปุ่ม "ถัดไป": ตรวจข้อมูลแล้วพักค่าไว้ ยังไม่บันทึกลง DB
   // (บันทึกจริงตอนกด "คำนวณและดูรายงาน" ในขั้นที่ 2 ทั้งรายการใหม่และรายการที่แก้ไข)
-  function handleNext(e: React.FormEvent) {
+  async function handleNext(e: React.FormEvent) {
     e.preventDefault();
+
+    // เอาปุ่ม "ข้ามขั้นตอนนี้" ออกแล้ว -> ถ้ายังไม่กรอกสักช่อง เด้ง popup ให้เลือกว่าจะกลับไปกรอก หรือข้ามไปขั้นที่ 2
+    // (ข้อมูลส่วนนี้ไม่บังคับ ใช้แค่แนะนำแนวทางลดคาร์บอน / ถ้าแอดมินยังไม่ได้ตั้งหัวข้อเลย ไม่มีช่องให้กรอก ไปต่อได้เลย)
+    if (types.length > 0 && types.every((t) => (form[t.info_id] ?? '').trim() === '')) {
+      const skip = await showConfirm(
+        'ข้อมูลนี้ใช้ในการแนะนำแนวทางลดคาร์บอนฟุตพรินต์ขององค์กร\nถ้าข้ามไป หน้ารายงานจะไม่มีคำแนะนำในส่วนนี้',
+        { title: 'ยังไม่ได้กรอกข้อมูลสำนักงาน', tone: 'warning', confirmText: 'ข้ามไปขั้นถัดไป', cancelText: 'กลับไปกรอก' },
+      );
+      if (!skip) return;
+    }
 
     const { errors: errs, clean } = validate(types, form);
     setErrors(errs);
@@ -151,11 +161,15 @@ export default function OfficeInfoClient({
           <span className="h-3 w-3 rounded-full bg-[#6FB898]" />
           <h2 className="text-base text-[#191C1E]">ข้อมูลสำนักงาน</h2>
         </div>
+        {/* คำชี้แจงว่ากรอกข้อมูลส่วนนี้ไปทำอะไร */}
+        <p className="px-4 pt-4 text-sm text-[#4B5563]">
+          ข้อมูลสำนักงานใช้ในการแนะนำแนวทางลดคาร์บอนฟุตพรินต์ที่เหมาะกับองค์กรของคุณ (แสดงในหน้ารายงาน)
+        </p>
 
         <div className="grid grid-cols-2 gap-x-8 gap-y-5 p-4">
           {types.length === 0 && (
             <p className="col-span-2 py-6 text-center text-sm text-[#6B7280]">
-              ผู้ดูแลระบบยังไม่ได้ตั้งค่าหัวข้อข้อมูลสำนักงาน สามารถข้ามไปขั้นตอนถัดไปได้
+              ผู้ดูแลระบบยังไม่ได้ตั้งค่าหัวข้อข้อมูลสำนักงาน กด &quot;ถัดไป&quot; เพื่อไปขั้นตอนถัดไปได้
             </p>
           )}
 
@@ -215,16 +229,12 @@ export default function OfficeInfoClient({
         {/* ปุ่ม "ถัดไป" ไปหน้ากรอกข้อมูลการดำเนินกิจกรรม (ยังไม่บันทึกลง DB) */}
         <button
           type="submit"
-          // ปุ่มหลัก (btn-primary) ชี้แล้วลอย+เงา และลูกศรเลื่อนไปทางขวา
-          className="btn btn-primary h-[60px] rounded-full px-10 text-base font-semibold tracking-wide"
+          // ทรงเดียวกับปุ่ม "ถัดไป" ในหน้าข้อมูลการดำเนินกิจกรรม (ขั้นที่ 2)
+          className="btn btn-outline flex h-[60px] items-center gap-1 rounded-[20px] px-8 text-base font-semibold"
         >
           ถัดไป <span className="btn-arrow">›</span>
         </button>
-        {/* ข้ามขั้นตอน = ไม่ใช้ค่าในหน้านี้ (รายการใหม่: ไม่มีข้อมูลสำนักงาน / แก้ไข: คงค่าเดิมใน DB) */}
-        <Link href={nextHref} onClick={() => clearOfficeDraft(scope)} className="text-sm text-[#6B7280] underline transition hover:text-[#27704D]">
-          ข้ามขั้นตอนนี้
-        </Link>
-        
+        {/* [ลบ] ลิงก์ "ข้ามขั้นตอนนี้" -> ตอนนี้ข้ามได้จาก popup ตอนกด "ถัดไป" โดยไม่กรอก (ดู handleNext) */}
       </div>
     </form>
   );

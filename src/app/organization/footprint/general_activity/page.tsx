@@ -26,9 +26,23 @@ import {
 import FootprintStepper from "@/components/FootprintStepper";
 import { supabase } from "@/lib/supabaseClient";
 import { Calculator } from "lucide-react";
+import { useRouter } from "next/navigation"; // [MERGE รอบ 2] ปุ่ม "‹ กลับ" ไปขั้นที่ 2
 
 export default function ActivityBasedFootprintPage() {
   const [orgId, setOrgId] = useState<string | null>(null);
+  const router = useRouter();
+
+  // [MERGE รอบ 2] ปุ่ม "‹ กลับ": กลับไปขั้นที่ 2 ถ้ามาจากรายการที่แก้อยู่ (?edit=) กลับไปรายการนั้น
+  const goBack = () => {
+    const params = new URLSearchParams(window.location.search);
+    const editId = params.get("edit");
+    // มาจากปุ่มในหน้ารายงาน (&from=report) -> กลับไปหน้ารายงานเดิม
+    if (editId && params.get("from") === "report") {
+      router.push(`/organization/footprint/report/${encodeURIComponent(editId)}`);
+      return;
+    }
+    router.push(editId ? `/organization/footprint/activity?edit=${encodeURIComponent(editId)}` : "/organization/footprint/activity");
+  };
   const [emissionFactorsList, setEmissionFactorsList] = useState<any[]>([]);
   const [loadingSystem, setLoadingSystem] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -54,7 +68,7 @@ export default function ActivityBasedFootprintPage() {
       try {
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         if (authError || !user) {
-          alert("กรุณาเข้าสู่ระบบก่อนใช้งานระบบประเมินคาร์บอนฟุตพริ้นท์");
+          alert("กรุณาเข้าสู่ระบบก่อนใช้งานระบบประเมินคาร์บอนฟุตพรินต์");
           return;
         }
         setOrgId(user.id);
@@ -277,14 +291,22 @@ export default function ActivityBasedFootprintPage() {
   return (
     // [MERGE-FIX] เดิมมี font-['Be_Vietnam_Pro'] แต่เว็บไม่ได้โหลดฟอนต์นี้ -> เอาออก ใช้ฟอนต์หลักของเว็บเหมือนหน้าอื่น
     <div className="mx-auto max-w-6xl space-y-8 px-6 py-8 text-gray-800">
-      <h1 className="text-2xl font-bold text-gray-900">การประเมินคาร์บอนฟุตพริ้นท์องค์กร</h1>
+      <h1 className="text-2xl font-bold text-gray-900">การประเมินคาร์บอนฟุตพรินต์องค์กร</h1>
       <FootprintStepper current={3} />
 
       <div className="space-y-6">
         <MeetingForm orgId={orgId!} onDataChange={setMeetingData} fetchElectricityEF={fetchElectricityEFFromDB} getEFDetail={getEFDetail} />
         <TravelForm orgId={orgId!} onDataChange={setTravelingData} fetchElectricityEF={fetchElectricityEFFromDB} getEFDetail={getEFDetail} />
 
-        <div className="pt-2">
+        {/* [MERGE รอบ 2] เพิ่มปุ่ม "‹ กลับ" (ทรงเดียวกับขั้นที่ 1-2) ข้างปุ่มคำนวณของ cyn2 */}
+        <div className="flex flex-wrap items-center gap-4 pt-2">
+          <button
+            type="button"
+            onClick={goBack}
+            className="btn btn-outline flex h-[60px] items-center rounded-[20px] px-8 text-base font-semibold"
+          >
+            ‹ กลับ
+          </button>
           <button
             type="button"
             onClick={handleCalculateAndSave}
