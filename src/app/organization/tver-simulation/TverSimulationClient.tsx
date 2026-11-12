@@ -428,7 +428,7 @@ export default function TverSimulationClient({
                   แสดงเฉพาะเมื่อบันทึกโครงการแล้ว (มี savedProjectId) */}
               {savedProjectId && (
                 <Link
-                  href={`/organization/tver_simulation?project=${savedProjectId}`}
+                  href={`/organization/tver-allocation?project=${savedProjectId}`}
                   className="btn btn-primary mt-6 flex h-[52px] w-full items-center justify-center rounded-xl text-base font-semibold"
                 >
                   ไปจัดสรรคาร์บอนเครดิต (ขั้นถัดไป) →
