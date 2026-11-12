@@ -30,8 +30,14 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isLoginPage = request.nextUrl.pathname === "/organization/login";
-  if (!user && !isLoginPage) {
+  // หน้าที่เปิดได้โดยไม่ต้องล็อกอิน
+  const publicPaths = [
+    "/organization/login",
+    "/organization/forgot_password",
+  ];
+  const isPublicPage = publicPaths.includes(request.nextUrl.pathname);
+
+  if (!user && !isPublicPage) {
     return NextResponse.redirect(new URL("/organization/login", request.url));
   }
 
