@@ -1,11 +1,3 @@
-/* ===================== [MERGE aom + cyn2] =====================
- * ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (ตามที่ตกลง: Navbar ฝั่งองค์กรใช้ของ cyn2) — แก้แค่ฟอนต์ [MERGE-FIX] ให้ตรงกับฝั่งแอดมิน
- *   - navbar ของ aom (NavUser.tsx: วงกลมผู้ใช้ + เมนูอีเมล/ออกจากระบบ) ไม่ได้ใช้ในฝั่งองค์กรแล้ว
- *     แต่ยังใช้ที่ src/app/admin/layout.tsx ของ aom จึงไม่ได้ลบไฟล์ NavUser.tsx
- *   - ลิงก์เมนูของ cyn2 เข้ากับหน้าของ aom ได้เลยโดยไม่ต้องแก้:
- *       แดชบอร์ด/คาร์บอนฟุตพรินต์/จำลอง T-VER (/organization/tver-simulation)/เอกสาร = หน้าของ aom
- *       คำนวณภาษี (/organization/tax_calculator) และไอคอนบัญชี (/organization/account_user) = หน้าของ cyn2
- * ============================================================== */
 'use client';
 
 import React, { useEffect, useState } from 'react';

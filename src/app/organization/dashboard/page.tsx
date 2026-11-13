@@ -1,5 +1,5 @@
 // ส่วนที่ทำงานฝั่ง server ของหน้า Dashboard: ดึงเฉพาะข้อมูลขององค์กรที่ล็อกอินอยู่
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic'; 
 
 import { createSupabaseServer } from '@/lib/supabaseServer';
 import { requireOrgId } from '@/lib/auth';
@@ -21,10 +21,10 @@ export default async function DashboardPage() {
       .order('created_at', { ascending: false }),
     supabase
       .from('org_tree_project')
-      // ดึงจำนวนที่กรอก + ชื่อเงื่อนไข เพื่อหาจำนวนไร่และจำนวนต้นไม้ (เดิมดึงชื่อพันธุ์ไม้)
+      // ดึงจำนวนที่กรอก + ชื่อเงื่อนไข เพื่อหาจำนวนไร่และจำนวนต้นไม้ 
       .select('*, org_tree_project_detail(amount, tver_project_detail(detail_name))')
       .eq('org_id', orgId)
-      // เรียงตามวันที่เข้าร่วมที่ผู้ใช้กรอก (ล่าสุดอยู่บน) [แก้ไข] ลบ join_year แล้ว เรียงด้วย join_date อย่างเดียว
+      // เรียงตามวันที่เข้าร่วมที่ผู้ใช้กรอก (ล่าสุดอยู่บน)
       .order('join_date', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false }),
   ]);

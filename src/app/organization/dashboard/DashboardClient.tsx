@@ -1,26 +1,21 @@
 // หน้า Dashboard ขององค์กร: แสดงยอดรวม รายการบันทึกการปล่อยก๊าซ และโครงการจำลอง T-VER
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
-import { dbErrorMessage } from '@/lib/supabaseCrud';
-import { showConfirm, showError } from '@/lib/dialog';
-import type { OrgActivityLog, OrgTreeProject } from '@/types/dashboard';
-import { TVER_AREA_NAME, TVER_TREE_COUNT_NAME } from '@/types/tver-project';
-import { TrashIcon } from '@/components/icons';
-import { formatNumber, formatThaiDate } from '@/lib/format';
+import { useState } from 'react'; // React state สำหรับรายการบันทึกและโครงการที่ดึงมาจาก server
+import Link from 'next/link'; // ลิงก์ไปหน้ารายละเอียดและแก้ไขโครงการ
+import { useRouter } from 'next/navigation'; // router.refresh() โหลดข้อมูลใหม่จาก server
+import { supabase } from '@/lib/supabaseClient'; // client ของ Supabase ฝั่ง client
+import { dbErrorMessage } from '@/lib/supabaseCrud'; // แปลง error ของ Supabase เป็นข้อความภาษาไทย
+import { showConfirm, showError } from '@/lib/dialog'; // กล่องยืนยันและแจ้ง error
+import type { OrgActivityLog, OrgTreeProject } from '@/types/dashboard'; // TypeScript type ของข้อมูลที่ดึงมาจาก server
+import { TVER_AREA_NAME, TVER_TREE_COUNT_NAME } from '@/types/tver-project'; // ชื่อเงื่อนไขของโครงการ T-VER
+import { TrashIcon } from '@/components/icons'; // ไอคอนถังขยะ
+import { formatNumber, formatThaiDate } from '@/lib/format'; // ฟังก์ชันจัดรูปแบบตัวเลขและวันที่
 
-/* ลบรายการบันทึกการปล่อยก๊าซ และโครงการ T-VER จากหน้า Dashboard
- * ลบข้อมูลลูกก่อนแล้วค่อยลบแถวหลัก (ไม่พึ่ง ON DELETE CASCADE ของ DB เพราะบางตารางอาจไม่ได้ตั้งไว้)
- * ถ้าลบไม่สำเร็จ จะแจ้ง error แล้วโหลดหน้าใหม่ให้เห็นสถานะจริง */
 
 // ลบ 1 รายการบันทึกการปล่อยก๊าซ พร้อมรายละเอียดและข้อมูลสำนักงาน
-// เลิกลบบิลจาก org_bill_file และ Storage 'bills' เพราะระบบไม่เก็บรูปบิลแล้ว
 async function deleteActivity(id: string): Promise<string | null> {
-  // [MERGE aom + cyn2] เพิ่ม org_credit_allocation_detail (ของ cyn2): รายการนี้อาจถูกเลือกไปหักลบเครดิตไว้
-  //   ถ้าไม่ลบก่อน การลบรายการจะติด foreign key (orgactlist_id)
+  //   ไล่ลบดตารางย่อยก่อน (org_activity_detail, org_office_info, org_credit_allocation_detail) แล้วค่อยลบตัวรายการหลัก (org_activity_list)
   for (const table of ['org_credit_allocation_detail', 'org_office_info', 'org_activity_detail']) {
     const { error } = await supabase.from(table).delete().eq('orgactlist_id', id);
     if (error) return dbErrorMessage(error);
@@ -33,8 +28,7 @@ async function deleteActivity(id: string): Promise<string | null> {
 
 // ลบ 1 โครงการ T-VER พร้อมรายละเอียดของโครงการ
 async function deleteTreeProject(id: string): Promise<string | null> {
-  // [MERGE aom + cyn2] ลบผลการจัดสรรเครดิตของ cyn2 (org_credit_allocation + _detail) ก่อน
-  //   ตาราง allocation อ้างถึง orgtreeproject_id ถ้าไม่ลบก่อน การลบโครงการจะติด foreign key
+  // ลบ allocation ก่อน เพราะตาราง allocation อ้างถึง orgtreeproject_id ถ้าไม่ลบก่อน การลบโครงการจะติด foreign key
   const { data: allocs, error: allocErr } = await supabase
     .from('org_credit_allocation')
     .select('orgallocate_id')
@@ -47,7 +41,7 @@ async function deleteTreeProject(id: string): Promise<string | null> {
     const alloc = await supabase.from('org_credit_allocation').delete().in('orgallocate_id', allocIds);
     if (alloc.error) return dbErrorMessage(alloc.error);
   }
-  // [aom] ลบรายละเอียดโครงการ แล้วค่อยลบตัวโครงการ
+  // ลบรายละเอียดโครงการ แล้วค่อยลบตัวโครงการ
   const detail = await supabase.from('org_tree_project_detail').delete().eq('orgtreeproject_id', id);
   if (detail.error) return dbErrorMessage(detail.error);
   const { data, error } = await supabase.from('org_tree_project').delete().eq('orgtreeproject_id', id).select('orgtreeproject_id');
@@ -64,8 +58,7 @@ function periodText(log: OrgActivityLog): string {
 }
 
 // เครดิตรวมของโครงการเดียว
-// [MERGE-FIX] เครดิตคำนวณด้วยสูตรของ cyn2 (T × t × MAI) ซึ่งเป็นยอด "สะสม" -> ยอดรวม = ปีที่ 3 (แบบเดียวกับหน้าจัดสรรของ cyn2)
-//   เดิม: ปี1 + ปี2 + ปี3 (ตอนที่ aom คำนวณเป็นรายปี)
+// เอาเครดิตปีที่ 3 มาใช้ 
 function sumCredits(p: OrgTreeProject): number {
   return p.credit_year_3 ?? 0;
 }
@@ -93,9 +86,8 @@ function projectSummary(p: OrgTreeProject): string {
   return [
     area !== null ? `${formatNumber(area)} ไร่` : null,
     trees !== null ? `${formatNumber(trees)} ต้น` : null,
-    // [แก้ไข] ลบคอลัมน์ join_year แล้ว (schema_cleanup.sql ขั้น 4.3) ตัดปีจาก join_date แทน
     p.join_date ? `เข้าร่วมปี พ.ศ. ${Number(p.join_date.slice(0, 4)) + 543}` : 'ไม่ระบุปี',
-  ]
+  ] 
     .filter(Boolean)
     .join(' • ');
 }
@@ -104,7 +96,7 @@ function projectSummary(p: OrgTreeProject): string {
 // คำนวณใหม่ทุกครั้งที่เปิดหน้า ถ้าผู้ใช้แก้วันที่เป็นอนาคต สถานะก็กลับเป็นวางแผนได้
 function isPlanned(p: OrgTreeProject): boolean {
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
-  return p.join_date != null && p.join_date > today; // [แก้ไข] เดิมมีกรณีรายการเก่าที่มีแค่ join_year
+  return p.join_date != null && p.join_date > today; 
 }
 
 // หน้าจอหลัก รับข้อมูลจาก page.tsx แล้วเก็บใน state เพื่อให้รายการที่ลบหายจากหน้าทันที
@@ -124,7 +116,7 @@ export default function DashboardClient({
   // ถามยืนยันแล้วลบรายการบันทึกการปล่อยก๊าซ สำเร็จแล้วเอาออกจากหน้า
   async function handleDeleteActivity(log: OrgActivityLog) {
     const msg = `ลบรายการ "${log.orgact_name ?? 'ไม่มีชื่อ'}"?\nรายละเอียดกิจกรรมและข้อมูลสำนักงานของรายการนี้จะถูกลบด้วย และกู้คืนไม่ได้`;
-    // ใช้กล่องยืนยันกลาง (src/lib/dialog.ts) แทน confirm() ของเบราว์เซอร์
+    // ใช้กล่องยืนยันกลาง (src/lib/dialog.ts) 
     if (!(await showConfirm(msg, { title: 'ลบบันทึกการปล่อยก๊าซ', danger: true }))) return;
     setDeleting(log.orgactlist_id);
     const err = await deleteActivity(log.orgactlist_id);
@@ -136,6 +128,7 @@ export default function DashboardClient({
     }
     setActivities((prev) => prev.filter((a) => a.orgactlist_id !== log.orgactlist_id));
   }
+  
 
   // ถามยืนยันแล้วลบโครงการ T-VER สำเร็จแล้วเอาออกจากหน้า
   async function handleDeleteProject(p: OrgTreeProject) {
@@ -187,7 +180,7 @@ export default function DashboardClient({
         </div>
 
         {/* Metric: Active T-VER Credits */}
-        {/* จัดตามแบบที่ออกแบบไว้: ยอดรวมอยู่ซ้าย มีเส้นคั่นแนวตั้ง ยอดแยก 2 สถานะเรียงกัน 2 แถวอยู่ขวา */}
+        {/* รายงานเครดิตรวม */}
         <div className="bg-white border-2 border-[#DAE2EA] shadow-sm rounded-xl p-6">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-stretch sm:gap-0">
             <div className="space-y-3 sm:w-[260px] sm:shrink-0">
@@ -227,7 +220,7 @@ export default function DashboardClient({
         </div>
       </div>
 
-      {/* Emission Logs Section */}
+      {/* Carbon footprint Section */}
       <div className="bg-white border-2 border-[#DAE2EA] shadow-sm rounded-2xl p-6 space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-[#0F172A]">
@@ -237,12 +230,11 @@ export default function DashboardClient({
             href="/organization/footprint/office_info"
             className="btn btn-create flex items-center gap-1 rounded-full px-4 py-1.5 text-sm font-semibold"
           >
-            {/* เดิม "กรอกข้อมูลใหม่ ›" */}
             + บันทึกข้อมูลฟุตพรินต์
           </Link>
         </div>
 
-        {/* เดิมแสดงแค่ 3 รายการล่าสุด -> แสดงทุกรายการ ถ้ายาวเกินให้เลื่อนดูในกรอบ (scroll bar) */}
+        {/* แสดงทุกรายการ ถ้ายาวเกินใช้ scroll bar */}
         <div className="scroll-list max-h-[320px] pr-2">
           {activities.length === 0 && (
             <p className="text-sm text-[#64748B] py-6 text-center">ยังไม่มีบันทึกการปล่อยก๊าซ</p>
@@ -295,7 +287,7 @@ export default function DashboardClient({
           </Link>
         </div>
 
-        {/* รายการโครงการเยอะ ให้เลื่อนดูในกรอบ (scroll bar) */}
+        {/* รายการโครงการเยอะ ให้เลื่อนดูในกรอบ scroll bar */}
         <div className="scroll-list max-h-[360px] space-y-2 pl-3 pr-2">
           {treeProjects.length === 0 && (
             <p className="text-sm text-[#64748B] py-6 text-center">ยังไม่มีโครงการ T-VER</p>
@@ -325,7 +317,6 @@ export default function DashboardClient({
                   </span>
                 )}
               </div>
-              {/* ย้าย "เครดิตสะสม" จากซ้ายสุดมาอยู่หน้าตัวเลขทางขวา */}
               <div className="flex items-center justify-end">
                 <div className="flex items-center gap-4">
                   <p className="text-xs text-[#16A34A]">เครดิตสะสม</p>

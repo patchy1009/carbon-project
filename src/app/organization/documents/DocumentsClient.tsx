@@ -1,11 +1,11 @@
 // หน้าเอกสารขององค์กร: แสดงรายการเอกสารที่แอดมินอัปโหลดไว้ และกดดาวน์โหลดได้
 'use client';
 
-import { useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
-import type { DocumentItem } from '@/types/documents';
+import { useState } from 'react';   // เก็บว่าแถวไหนกำลังดาวน์โหลดอยู่ (กันกดซ้ำ + โชว์สถานะ)
+import { supabase } from '@/lib/supabaseClient';  // client ของ Supabase ฝั่ง client (ไม่ผูกกับ cookie) ใช้ดาวน์โหลดไฟล์จริง
+import type { DocumentItem } from '@/types/documents';  // type ของรายการเอกสาร (id, ชื่อไฟล์, วันที่อัปโหลด, ผู้ใช้ที่อัปโหลด, ขนาดไฟล์, ประเภทไฟล์)
 import { showError } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert
-import { formatThaiDate } from '@/lib/format';
+import { formatThaiDate } from '@/lib/format';  // แปลงวันที่เป็นรูปแบบไทย (วัน เดือน ปี) และเลือกได้ว่าจะเอาแบบตัวเลขหรือชื่อเดือน
 import { CalendarIcon, DownloadIcon, EyeIcon, FileIcon } from '@/components/icons'; // ไอคอนเส้นแทนอิโมจิ 📄 📅 👁 ⬇
 
 // ดูนามสกุลไฟล์ แล้วคืนชื่อชนิดไฟล์กับสีป้าย
@@ -16,8 +16,8 @@ function getFileType(filePath: string | null): { label: string; color: string } 
       return { label: 'PDF', color: 'bg-[#D32F2F]' };
     case 'docx':
     case 'doc':
-      return { label: 'DOCX', color: 'bg-[#1976D2]' };
-    case 'xlsx':
+      return { label: 'DOCX', color: 'bg-[#1976D2]' };  
+  case 'xlsx':
     case 'xls':
       return { label: 'XLSX', color: 'bg-[#2E7D32]' };
     default:
@@ -40,43 +40,30 @@ export default function DocumentsClient({ documents }: { documents: DocumentItem
     if (!data?.publicUrl) {
       showError('ไม่สามารถเปิดไฟล์ได้ในขณะนี้');
       return;
-    }
+    } 
     window.open(data.publicUrl, '_blank', 'noopener,noreferrer');
-
-    // ถ้า bucket เป็น private ให้ใช้โค้ดนี้แทนด้านบน:
-    // const { data, error } = await supabase.storage
-    //   .from('documents')
-    //   .createSignedUrl(doc.file_path, 60);
-    // if (error || !data?.signedUrl) return alert('เปิดไฟล์ไม่สำเร็จ: ' + error?.message);
-    // window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
   }
-
   // ----- บังคับดาวน์โหลดไฟล์จริง -----
   async function handleDownload(doc: DocumentItem) {
     if (!doc.file_path) {
       showError('ไม่พบไฟล์สำหรับเอกสารนี้');
       return;
     }
-
     setDownloadingId(doc.document_id);
-
     const { data, error } = await supabase.storage
       .from('documents')
       .download(doc.file_path); // ดึงไฟล์มาเป็น Blob จริงๆ ไม่ใช่แค่ลิงก์
-
     setDownloadingId(null);
-
     if (error || !data) {
       showError('ดาวน์โหลดไม่สำเร็จ: ' + (error?.message ?? 'ไม่ทราบสาเหตุ'));
       return;
-    }
-
+    }   
     // สร้างลิงก์ชั่วคราวในหน่วยความจำเบราว์เซอร์ แล้วสั่งคลิกเพื่อเซฟไฟล์
     const blobUrl = URL.createObjectURL(data);
-    const a = document.createElement('a');
+    const a = document.createElement('a');  
     a.href = blobUrl;
     a.download = doc.document_name ?? doc.file_path.split('/').pop() ?? 'document';
-    document.body.appendChild(a);
+    document.body.appendChild(a); 
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(blobUrl); // คืนหน่วยความจำ
