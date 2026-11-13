@@ -1,523 +1,114 @@
-"use client";
+// [MERGE aom + cyn2 รอบ 3] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ ไม่ได้แก้โค้ด — แยกเป็น page.tsx (server: requireOrgId ของ aom) + TaxCalculatorClient.tsx
+// ส่วนที่ทำงานฝั่ง server ของหน้าประเมินการยกเว้นภาษี (TOR ข้อ 11)
+// ไฟล์นี้ "อ่าน" ข้อมูลอย่างเดียว แล้วส่งให้หน้าจอ (TaxCalculatorClient.tsx) ส่วนการบันทึกทำที่หน้าจอ
+// ใช้ client ฝั่ง server + org_id จาก session จริง (แบบเดียวกับหน้าจัดสรรเครดิต)
+//   เดิมหน้านี้ดึงข้อมูลเองในเบราว์เซอร์ และถามคอลัมน์ที่ไม่มีในฐานข้อมูล (total_credit, remaining_credit) จึงโหลดโครงการไม่ได้
+// ?project= (ส่งมาจากปุ่ม "ไปหน้าประเมินการยกเว้นภาษี" ของหน้าจัดสรร) ใช้เลือกโครงการตั้งต้น
+//   ไม่มี หรือไม่ใช่โครงการของตัวเอง = ไม่ error แค่เลือกโครงการแรกให้ (ผู้ใช้เลือกโครงการเองในหน้าได้ ตามข้อ 11.1)
+export const dynamic = "force-dynamic";
 
-/* ===================== [MERGE aom + cyn2] =====================
- * หน้านี้ = ฟีเจอร์ใหม่ของ cyn2 (aom ยังไม่มีหน้าคำนวณภาษี) — โค้ด cyn2 ทั้งไฟล์
- * [MERGE-FIX] จุดเดียวที่แก้: เปลี่ยน supabase client
- *   เดิม cyn2 สร้าง createClient() ของ @supabase/supabase-js เอง -> เก็บ session ใน localStorage
- *   แต่ระบบล็อกอินเก็บ session ใน cookie (createBrowserClient ใน @/lib/supabaseClient)
- *   ถ้าใช้ client แยก หน้านี้จะมองไม่เห็นผู้ใช้ที่ล็อกอิน (auth.getUser() = null) และติด RLS
- * ============================================================== */
-import React, { useState, useEffect } from "react";
-// [MERGE-FIX] ใช้ client กลาง (cookie) แทน createClient(supabaseUrl, supabaseAnonKey) ของเดิม
-import { supabase } from "@/lib/supabaseClient";
+import { requireOrgId } from "@/lib/auth";
+import { createSupabaseServer } from "@/lib/supabaseServer";
+import TaxCalculatorClient, { type CostOption, type SavedCost, type TaxProject } from "./TaxCalculatorClient";
 
-const taxBenefitOptions = [
-  { label: "ยกเว้นภาษีเงินได้นิติบุคคล 1 ปี", years: 1 },
-  { label: "ยกเว้นภาษีเงินได้นิติบุคคล 2 ปี", years: 2 },
-  { label: "ยกเว้นภาษีเงินได้นิติบุคคล 3 ปี", years: 3 },
-];
+type AllocationRow = { year1_credit: number | string | null; sell_credit: number | string | null };
+type ProjectRow = {
+  orgtreeproject_id: string;
+  project_name: string | null;
+  credit_year_1: number | string | null;
+  org_credit_allocation: AllocationRow | AllocationRow[] | null;
+};
+type DetailRow = { cost_id: string | null; cost_name: string; amount: number | string };
+type AssessmentRow = { org_tax_assessment_detail: DetailRow[] | null };
+type SellRow = {
+  orgtreeproject_id: string;
+  selling_price: number | string;
+  org_tax_assessment: AssessmentRow | AssessmentRow[] | null;
+};
+type CatalogRow = { cost_id: string; cost_name: string; net_price: number | string | null };
 
-export default function TaxCalculatorPage() {
-  const [projects, setProjects] = useState<any[]>([]);
-  const [loadingProjects, setLoadingProjects] = useState(true);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+// ตาราง 1 ต่อ 1 (unique) PostgREST ส่งกลับเป็น object แต่กันไว้ เผื่อส่งเป็น array
+const first = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? (v[0] ?? null) : (v ?? null));
+const round4 = (v: number) => Math.round((v + Number.EPSILON) * 10000) / 10000;
 
-  // ค่าตั้งค่าสำหรับการคำนวณ
-  const [ratioSell, setRatioSell] = useState<number>(50); // Dropdown 50 หรือ 80
-  const [carbonPrice, setCarbonPrice] = useState<number | "">(250); // ราคาขาย (บาท/tCO2e)
+export default async function TaxCalculatorPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ project?: string }>;
+}) {
+  const orgId = await requireOrgId(); // org_id = auth.uid() ของบัญชีที่ล็อกอิน
+  const supabase = await createSupabaseServer();
+  const { project: requestedProject } = await searchParams;
 
-  // ค่าใช้จ่ายตรงของโครงการ (Expenses_T-VER) ที่ผู้ใช้กรอกเองแยกตาม 3 ปี
-  const [expenseYear1, setExpenseYear1] = useState<number | "">(25000);
-  const [expenseYear2, setExpenseYear2] = useState<number | "">(28000);
-  const [expenseYear3, setExpenseYear3] = useState<number | "">(30000);
+  const [projectsRes, catalogRes] = await Promise.all([
+    // โครงการขององค์กรนี้ พร้อมผลจัดสรรเครดิต (มี = จัดสรรแล้ว)
+    supabase
+      .from("org_tree_project")
+      .select("orgtreeproject_id, project_name, credit_year_1, org_credit_allocation(year1_credit, sell_credit)")
+      .eq("org_id", orgId)
+      .order("project_name", { ascending: true }),
+    // รายการต้นทุนมาตรฐานที่แอดมินตั้งไว้ (ข้อ 5.5)
+    supabase.from("project_cost_type").select("cost_id, cost_name, net_price").order("cost_name", { ascending: true }),
+  ]);
 
-  const [selectedTaxBenefitYears, setSelectedTaxBenefitYears] = useState<number>(3);
+  const projectRows = (projectsRes.data ?? []) as unknown as ProjectRow[];
 
-  // ผลลัพธ์การคำนวณ
-  const [isCalculated, setIsCalculated] = useState(false);
-  const [calculationResult, setCalculationResult] = useState<{
-    projectName: string;
-    creditSold: number;
-    revenueTVer: number;
-    expensesTVer: number;
-    profitTVer: number;
-    taxExemptYearly: number;
-    selectedYears: number;
-    tableColumns: Array<{
-      yearLabel: string;
-      revenue: number;
-      expenses: number;
-      netProfit: number;
-      normalTax: number;
-      exemptTax: number;
-    }>;
-  } | null>(null);
+  // ผลประเมินที่เคยบันทึกไว้ของปีที่ 1 (ราคาขาย + รายการค่าใช้จ่าย)
+  let sellRows: SellRow[] = [];
+  let sellError: string | null = null;
+  if (projectRows.length > 0) {
+    const sellRes = await supabase
+      .from("org_sell_credit")
+      .select("orgtreeproject_id, selling_price, org_tax_assessment(org_tax_assessment_detail(cost_id, cost_name, amount))")
+      .eq("sell_year", 1)
+      .in(
+        "orgtreeproject_id",
+        projectRows.map((p) => p.orgtreeproject_id)
+      );
+    sellRows = (sellRes.data ?? []) as unknown as SellRow[];
+    sellError = sellRes.error?.message ?? null;
+  }
+  const sellByProject = new Map(sellRows.map((s) => [s.orgtreeproject_id, s]));
 
-  // โหลดข้อมูลโครงการป่าไม้ตามโครงสร้าง Proposal ที่เชื่อมโยงผ่าน organization -> org_tree_project -> org_credit_allocation
-  useEffect(() => {
-    const fetchProjects = async () => {
-      try {
-        let currentOrgId = null;
+  const projects: TaxProject[] = projectRows.map((p) => {
+    const alloc = first(p.org_credit_allocation);
+    const sell = sellByProject.get(p.orgtreeproject_id);
+    const assessment = first(sell?.org_tax_assessment);
 
-        // 1. ค้นหา organization ของผู้ใช้ปัจจุบัน
-        // [MERGE-FIX] ความปลอดภัยแบบ aom: org_id = auth.uid() ของบัญชีที่ล็อกอิน
-        //   (ตรงกับ org_tree_project.org_id ที่หน้า T-VER ของ aom บันทึก และ RLS ใน supabase/rls.sql)
-        //   เดิม: ค้น organization ด้วย acc_id แล้วถ้าไม่เจอ "ดึงองค์กรแรกในระบบ" มาแทน
-        //   -> อาจแสดงโครงการ/เครดิตของบริษัทอื่น จึงเอา fallback ออก (ไม่เจอ = ไม่แสดงอะไร)
-        const { data: authData } = await supabase.auth.getUser();
-        currentOrgId = authData?.user?.id ?? null;
+    const costs: SavedCost[] = (assessment?.org_tax_assessment_detail ?? [])
+      .map((d) => ({ costId: d.cost_id, name: d.cost_name, amount: Number(d.amount) || 0 }))
+      .sort((a, b) => a.name.localeCompare(b.name, "th"));
 
-        if (!currentOrgId) {
-          setLoadingProjects(false);
-          return;
-        }
-
-        // 2. ดึงข้อมูลโครงการปลูกป่า (org_tree_project) และเชื่อมตารางจัดสรร (org_credit_allocation) ตาม Proposal
-        const { data: projectData, error: projError } = await supabase
-          .from("org_tree_project")
-          .select(`
-            orgtreeproject_id,
-            project_name,
-            join_date,
-            credit_year_1,
-            credit_year_2,
-            credit_year_3,
-            org_credit_allocation (
-              orgallocate_id,
-              total_credit,
-              offset_credit,
-              remaining_credit
-            )
-          `)
-          .eq("org_id", currentOrgId);
-
-        if (projError) throw projError;
-
-        if (projectData && projectData.length > 0) {
-          setProjects(projectData);
-          const firstProjId = projectData[0].orgtreeproject_id;
-          setSelectedProjectId(firstProjId);
-        }
-      } catch (err) {
-        console.error("Error loading projects from database:", err);
-      } finally {
-        setLoadingProjects(false);
-      }
+    return {
+      id: p.orgtreeproject_id,
+      name: p.project_name || "(ไม่มีชื่อ)",
+      allocated: alloc !== null,
+      creditSold: alloc ? Number(alloc.sell_credit) || 0 : 0,
+      // เครดิตปีที่ 1 ตอนนี้ ไม่ตรงกับตอนที่จัดสรรไว้ (เช่น แก้โครงการในหน้าจำลองหลังจัดสรร)
+      stale: alloc !== null && Math.abs(round4(Number(alloc.year1_credit) || 0) - round4(Number(p.credit_year_1) || 0)) > 0.0001,
+      saved: sell && assessment ? { price: Number(sell.selling_price) || 0, costs } : null,
     };
+  });
 
-    fetchProjects();
-  }, []);
+  const catalog: CostOption[] = ((catalogRes.data ?? []) as unknown as CatalogRow[]).map((c) => ({
+    cost_id: c.cost_id,
+    cost_name: c.cost_name,
+    net_price: Number(c.net_price) || 0,
+  }));
 
-  // ค้นหาโครงการที่ถูกเลือกปัจจุบัน (รองรับทั้ง orgtreeproject_id และ id)
-  const selectedProject = projects.find(
-    (p) => (p.orgtreeproject_id || p.id) === selectedProjectId
-  );
+  // โครงการตั้งต้น: ตาม ?project= (ถ้าเป็นของเรา) ไม่งั้นโครงการแรกที่จัดสรรแล้ว ไม่งั้นโครงการแรก
+  const initialProjectId =
+    projects.find((p) => p.id === requestedProject)?.id ?? projects.find((p) => p.allocated)?.id ?? projects[0]?.id ?? "";
 
-  // ฟังก์ชันคำนวณภาษีตามสูตรใน Proposal (สูตรที่ 7, 8, 9)
-  const handleCalculateTax = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!selectedProject) {
-      alert("กรุณาเลือกโครงการป่าไม้ก่อนคำนวณ");
-      return;
-    }
-
-    const priceCredit = Number(carbonPrice) || 0;
-    const sellRatioDecimal = Number(ratioSell) / 100; // แปลง 50 หรือ 80 เป็นทศนิยม
-    const citRate = 0.20; // อัตราภาษีเงินได้นิติบุคคล 20%
-
-    // ดึงค่า C_SEQ รายปีจากข้อมูลโครงการที่บันทึกไว้
-    const yearlyCSeqList = [
-      Number(selectedProject.credit_year_1) || 0,
-      Number(selectedProject.credit_year_2) || 0,
-      Number(selectedProject.credit_year_3) || 0,
-    ];
-
-    const yearlyExpenseList = [
-      Number(expenseYear1) || 0,
-      Number(expenseYear2) || 0,
-      Number(expenseYear3) || 0,
-    ];
-
-    const yearLabels = ["ปีที่ 1", "ปีที่ 2 (คาดการณ์)", "ปีที่ 3 (คาดการณ์)"];
-
-    const allYearsCalculatedData = yearLabels.map((label, index) => {
-      const cSeq = yearlyCSeqList[index];
-      const expenses = yearlyExpenseList[index];
-
-      // === สูตรที่ 8: Revenue_T-VER ===
-      const creditSold = cSeq * sellRatioDecimal;
-      const rev = creditSold * priceCredit;
-
-      // === สูตรที่ 7: Profit_T-VER = Revenue_T-VER - Expenses_T-VER ===
-      const profit = rev - expenses;
-
-      // === สูตรที่ 9: Tax_Exempt = Profit_T-VER * CIT_Rate (20%) ===
-      const normalTax = profit > 0 ? profit * citRate : 0;
-      const exemptTax = profit > 0 ? profit * citRate : 0;
-
-      return {
-        yearLabel: label,
-        revenue: rev,
-        expenses: expenses,
-        netProfit: profit,
-        normalTax: normalTax,
-        exemptTax: exemptTax,
-      };
-    });
-
-    const year1Data = allYearsCalculatedData[0];
-    const year1CSeq = yearlyCSeqList[0];
-    const year1CreditSold = year1CSeq * sellRatioDecimal;
-
-    const selectedColumns = allYearsCalculatedData.slice(0, selectedTaxBenefitYears);
-
-    setCalculationResult({
-      projectName: selectedProject.project_name || "โครงการปลูกป่า T-VER",
-      creditSold: year1CreditSold,
-      revenueTVer: year1Data.revenue,
-      expensesTVer: year1Data.expenses,
-      profitTVer: year1Data.netProfit,
-      taxExemptYearly: year1Data.exemptTax,
-      selectedYears: selectedTaxBenefitYears,
-      tableColumns: selectedColumns,
-    });
-
-    setIsCalculated(true);
-  };
+  // แสดงข้อความ error แรกที่เจอ (เดิมกลืน error ทิ้ง ทำให้หน้าว่างเฉยๆ ไม่รู้สาเหตุ)
+  const loadError = projectsRes.error?.message ?? catalogRes.error?.message ?? sellError;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6 md:py-10 space-y-8 text-slate-800">
-      {/* HEADINGS SECTION */}
-      <div className="space-y-1">
-        <h1 className="text-2xl md:text-3xl font-extrabold text-[#11221C]">
-          ประเมินการยกเว้นภาษี
-        </h1>
-        <p className="text-xs md:text-sm text-slate-500 font-medium">
-          วิเคราะห์ความคุ้มค่าทางการเงินจากการลดการปล่อยก๊าซเรือนกระจกและสิทธิประโยชน์ทางภาษี
-        </p>
-      </div>
-
-      {/* MAIN CONTAINER */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* ฝั่งซ้าย: ฟอร์มตั้งค่าการประเมิน */}
-        <div className="lg:col-span-5 bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-5">
-          <h2 className="text-base font-bold text-[#11221C]">ตั้งค่าข้อมูลโครงการและภาษี</h2>
-
-          {loadingProjects ? (
-            <div className="text-xs text-slate-400 py-4 text-center">กำลังโหลดข้อมูลโครงการ...</div>
-          ) : projects.length === 0 ? (
-            <div className="p-4 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-2xl text-center">
-              ยังไม่พบข้อมูลโครงการป่าไม้ T-VER <br />กรุณาไปที่เมนูจำลองโครงการ T-VER เพื่อสร้างโครงการก่อน
-            </div>
-          ) : (
-            <form onSubmit={handleCalculateTax} className="space-y-4">
-              {/* เลือกโครงการป่าไม้จากฐานข้อมูล */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500">
-                  เลือกโครงการป่าไม้ T-VER
-                </label>
-                <select
-                  value={selectedProjectId}
-                  onChange={(e) => setSelectedProjectId(e.target.value)}
-                  className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-xs text-slate-800 font-semibold bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-emerald-600 appearance-none cursor-pointer"
-                  required
-                >
-                  {projects.map((proj) => {
-                    const projId = proj.orgtreeproject_id || proj.id;
-                    return (
-                      <option key={projId} value={projId}>
-                        {proj.project_name}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-
-              {/* แสดงค่า C_SEQ ที่ดึงมาจากโครงการที่เลือก (อ่านอย่างเดียว) */}
-              {selectedProject && (
-                <div className="space-y-2 border-t border-slate-100 pt-3 bg-slate-50/60 p-3 rounded-2xl">
-                  <label className="text-xs font-bold text-slate-700 block">
-                    ปริมาณการกักเก็บคาร์บอนจากโครงการ (tCO2e/ปี)
-                  </label>
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className="bg-white p-2 rounded-xl border border-slate-200">
-                      <span className="text-[10px] text-slate-400 font-bold block">ปีที่ 1</span>
-                      <span className="text-xs font-extrabold text-slate-800">{selectedProject.credit_year_1 ?? 0}</span>
-                    </div>
-                    <div className="bg-white p-2 rounded-xl border border-slate-200">
-                      <span className="text-[10px] text-slate-400 font-bold block">ปีที่ 2</span>
-                      <span className="text-xs font-extrabold text-slate-800">{selectedProject.credit_year_2 ?? 0}</span>
-                    </div>
-                    <div className="bg-white p-2 rounded-xl border border-slate-200">
-                      <span className="text-[10px] text-slate-400 font-bold block">ปีที่ 3</span>
-                      <span className="text-xs font-extrabold text-slate-800">{selectedProject.credit_year_3 ?? 0}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* สัดส่วนการขายคาร์บอนเครดิต (Ratio_Sell %) แบบ Dropdown 50 หรือ 80 */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500">
-                  สัดส่วนการนำคาร์บอนเครดิตไปจำหน่าย (%)
-                </label>
-                <select
-                  value={ratioSell}
-                  onChange={(e) => setRatioSell(Number(e.target.value))}
-                  className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-xs text-slate-800 font-semibold bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-emerald-600 appearance-none cursor-pointer"
-                >
-                  <option value={50}>50%</option>
-                  <option value={80}>80%</option>
-                </select>
-              </div>
-
-              {/* ค่าใช้จ่ายตรงของโครงการ (Expenses_T-VER) ที่ผู้ใช้กรอกเองแยก 3 ปี */}
-              <div className="space-y-2 border-t border-slate-100 pt-3">
-                <label className="text-xs font-bold text-slate-700 block">
-                  ค่าใช้จ่ายตรงของโครงการ (บาท/ปี)
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="space-y-1">
-                    <span className="text-[10px] text-slate-400 font-bold block">ปีที่ 1</span>
-                    <input
-                      type="number"
-                      value={expenseYear1}
-                      onChange={(e) => setExpenseYear1(e.target.value === "" ? "" : Number(e.target.value))}
-                      className="w-full px-2 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 font-bold bg-slate-50/50 text-center focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-[10px] text-slate-400 font-bold block">ปีที่ 2</span>
-                    <input
-                      type="number"
-                      value={expenseYear2}
-                      onChange={(e) => setExpenseYear2(e.target.value === "" ? "" : Number(e.target.value))}
-                      className="w-full px-2 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 font-bold bg-slate-50/50 text-center focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-[10px] text-slate-400 font-bold block">ปีที่ 3</span>
-                    <input
-                      type="number"
-                      value={expenseYear3}
-                      onChange={(e) => setExpenseYear3(e.target.value === "" ? "" : Number(e.target.value))}
-                      className="w-full px-2 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 font-bold bg-slate-50/50 text-center focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* ราคาคาร์บอนเครดิตต่อหน่วย */}
-              <div className="space-y-1.5 border-t border-slate-100 pt-3">
-                <label className="text-xs font-bold text-slate-500">
-                  ราคาคาร์บอนเครดิต (บาท/tCO2e)
-                </label>
-                <input
-                  type="number"
-                  value={carbonPrice}
-                  onChange={(e) => setCarbonPrice(e.target.value === "" ? "" : Number(e.target.value))}
-                  className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-xs text-slate-800 font-bold bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                  required
-                />
-              </div>
-
-              {/* เลือกระยะเวลาสิทธิประโยชน์ภาษี (1-3 ปี) */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500">สิทธิประโยชน์ทางภาษี</label>
-                <select
-                  value={selectedTaxBenefitYears}
-                  onChange={(e) => setSelectedTaxBenefitYears(Number(e.target.value))}
-                  className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-xs text-slate-800 font-semibold bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-emerald-600 appearance-none cursor-pointer"
-                >
-                  {taxBenefitOptions.map((opt) => (
-                    <option key={opt.years} value={opt.years}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  className="w-full py-3 bg-[#2C7A59] hover:bg-[#1f5a41] text-white font-bold rounded-2xl text-xs transition shadow-md cursor-pointer"
-                >
-                  คำนวณภาษีและประเมินสิทธิประโยชน์
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
-
-        {/* ฝั่งขวา: แสดงผลลัพธ์การคำนวณ */}
-        <div className="lg:col-span-7 space-y-6">
-          {isCalculated && calculationResult ? (
-            <>
-              {/* ตารางแสดงผลเปรียบเทียบรายปีตามสูตร 7, 8, 9 */}
-              <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm overflow-x-auto">
-                <h3 className="text-sm font-bold text-[#11221C] mb-3">
-                  ตารางคำนวณรายได้ กำไร และการยกเว้นภาษี ({calculationResult.selectedYears} รอบบัญชี)
-                </h3>
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="text-slate-400 font-bold border-b border-slate-100 pb-3">
-                      <th className="py-3 px-2">รายการ</th>
-                      {calculationResult.tableColumns.map((col, idx) => (
-                        <th key={idx} className="py-3 px-2 text-right">
-                          {col.yearLabel}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50 text-slate-700 font-medium">
-                    {/* Revenue_T-VER */}
-                    <tr>
-                      <td className="py-3.5 px-2 font-bold text-slate-800">
-                        รายได้โครงการ
-                      </td>
-                      {calculationResult.tableColumns.map((col, idx) => (
-                        <td key={idx} className="py-3.5 px-2 text-right">
-                          {col.revenue.toLocaleString("th-TH", {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
-                        </td>
-                      ))}
-                    </tr>
-
-                    {/* Expenses_T-VER */}
-                    <tr>
-                      <td className="py-3.5 px-2 font-bold text-slate-800">
-                        ค่าใช้จ่ายโครงการ
-                      </td>
-                      {calculationResult.tableColumns.map((col, idx) => (
-                        <td key={idx} className="py-3.5 px-2 text-right text-red-600">
-                          -{col.expenses.toLocaleString("th-TH", {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
-                        </td>
-                      ))}
-                    </tr>
-
-                    {/* Profit_T-VER */}
-                    <tr>
-                      <td className="py-3.5 px-2 font-bold text-slate-800">
-                        กำไรสุทธิโครงการ
-                      </td>
-                      {calculationResult.tableColumns.map((col, idx) => (
-                        <td key={idx} className="py-3.5 px-2 text-right font-bold text-emerald-700">
-                          {col.netProfit.toLocaleString("th-TH", {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
-                        </td>
-                      ))}
-                    </tr>
-
-                    {/* ภาษีปกติ (20%) */}
-                    <tr>
-                      <td className="py-3.5 px-2 font-bold text-slate-800">
-                        ภาษีที่ต้องชำระปกติ (20%)
-                      </td>
-                      {calculationResult.tableColumns.map((col, idx) => (
-                        <td key={idx} className="py-3.5 px-2 text-right">
-                          {col.normalTax.toLocaleString("th-TH", {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
-                        </td>
-                      ))}
-                    </tr>
-
-                    {/* Tax_Exempt */}
-                    <tr className="bg-emerald-50/60 rounded-2xl text-emerald-800 font-bold">
-                      <td className="py-3.5 px-3 rounded-l-2xl">
-                        ภาษีที่ได้รับการยกเว้น
-                      </td>
-                      {calculationResult.tableColumns.map((col, idx) => (
-                        <td
-                          key={idx}
-                          className={`py-3.5 px-2 text-right ${
-                            idx === calculationResult.tableColumns.length - 1
-                              ? "rounded-r-2xl pr-3"
-                              : ""
-                          }`}
-                        >
-                          {col.exemptTax.toLocaleString("th-TH", {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
-                        </td>
-                      ))}
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {/* การ์ดสรุปรายละเอียดปีที่ 1 ตาม Proposal */}
-              <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-4">
-                <h3 className="text-base font-bold text-[#11221C]">
-                  สรุปผลการวิเคราะห์โครงการ ({calculationResult.projectName})
-                </h3>
-
-                <div className="space-y-3 pt-2">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-slate-600">ปริมาณคาร์บอนเครดิตที่จัดสรรจำหน่าย</span>
-                    <span className="font-extrabold text-slate-800">
-                      {calculationResult.creditSold.toLocaleString("th-TH", {
-                        maximumFractionDigits: 2,
-                      })}{" "}
-                      tCO2e
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-slate-600">รายได้จากการขายเครดิต ปีที่ 1</span>
-                    <span className="font-extrabold text-slate-800">
-                      ฿{" "}
-                      {calculationResult.revenueTVer.toLocaleString("th-TH", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-slate-600">กำไรสุทธิเฉพาะโครงการ ปีที่ 1</span>
-                    <span className="font-extrabold text-emerald-700">
-                      ฿{" "}
-                      {calculationResult.profitTVer.toLocaleString("th-TH", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between items-center text-xs border-t border-slate-100 pt-3">
-                    <span className="font-bold text-slate-700">ภาษีเงินได้นิติบุคคลที่ได้รับการยกเว้น ปีที่ 1</span>
-                    <span className="font-extrabold text-emerald-800 text-sm">
-                      ฿{" "}
-                      {calculationResult.taxExemptYearly.toLocaleString("th-TH", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="bg-slate-50/50 border border-dashed border-slate-200 rounded-3xl h-64 flex items-center justify-center text-slate-400 text-xs font-medium">
-              เลือกโครงการป่าไม้และกรอกค่าใช้จ่ายฝั่งซ้าย แล้วกดปุ่มคำนวณภาษีเพื่อดูรายงานผลลัพธ์
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+    <TaxCalculatorClient
+      loadError={loadError}
+      projects={projects}
+      initialProjectId={initialProjectId}
+      catalog={catalog}
+    />
   );
 }

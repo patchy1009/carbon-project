@@ -2,7 +2,8 @@
 //   CTT(t) = T × t × MAI × 10^-3   (tCO2e, ยอดสะสมถึงปีที่ t)
 //   T = จำนวนต้นไม้ในพื้นที่โครงการทั้งหมด (ต้น), t = ปีที่ติดตามผล, MAI = 9.5 kgCO2/ต้น/ปี
 // [MERGE aom + cyn2] ยกสูตรเดียวกับ yearlyCredits ใน tver_simulation/page.tsx ของ cyn2 มาไว้ที่เดียว
-//   ใช้ทั้งหน้าจำลองโครงการของ aom (tver-simulation) และหน้าจัดสรรของ cyn2 (tver_simulation)
+//   ใช้ในหน้าจำลองโครงการของ aom (tver-simulation) แล้วบันทึกลง credit_year_1..3
+//   [MERGE รอบ 3] หน้าจัดสรรใหม่ของ cyn2 (tver-allocation) อ่าน credit_year_1 ที่บันทึกไว้ (tver_simulation ถูกลบแล้ว)
 export const MAI_KG_CO2_PER_TREE_PER_YEAR = 9.5;
 
 // เครดิตปีที่ 1-3 ปัดทศนิยม 2 ตำแหน่ง (แบบเดียวกับ cyn2)

@@ -32,7 +32,8 @@ const MAX_START_YEAR = new Date().getFullYear() + 10;
 /* [MERGE aom + cyn2] แบ่งงานหน้า T-VER
  *   หน้านี้ (aom)          : กรอกข้อมูลโครงการ + ตรวจกับเงื่อนไขที่แอดมินตั้ง + บันทึก แล้วแสดงกราฟเครดิตในหน้าเดิม
  *                            เครดิตคำนวณด้วยสูตรของ cyn2 (lib/tverCredits.ts = T-VER สูตรที่ 4)
- *   tver_simulation (cyn2) : จัดสรรเครดิต -> ภาษี (กดปุ่ม "ไปจัดสรรคาร์บอนเครดิต" ใต้กราฟ)
+ *   tver-allocation (cyn2) : จัดสรรเครดิต -> ภาษี (กดปุ่ม "ไปจัดสรรคาร์บอนเครดิต" ใต้กราฟ)
+ *   [MERGE รอบ 3] cyn2 ย้ายหน้าจัดสรรจาก tver_simulation เป็น tver-allocation
  *   [ลบ] สูตรเดิมของ aom (T × 10 ÷ 1000, ×1.18, ×1.38 ค่าสมมติ) */
 
 type CreditResult = { year1: number; year2: number; year3: number };
@@ -503,7 +504,8 @@ export default function TverSimulationClient({
                   แสดงเฉพาะเมื่อบันทึกโครงการแล้ว (มี savedProjectId) */}
               {savedProjectId && (
                 <Link
-                  href={`/organization/tver_simulation?project=${savedProjectId}`}
+                  // [MERGE รอบ 3] เดิม /organization/tver_simulation (cyn2 ลบหน้านั้นแล้ว) -> หน้าจัดสรรใหม่ของ cyn2
+                  href={`/organization/tver-allocation?project=${savedProjectId}`}
                   className="btn btn-primary mt-6 flex h-[52px] w-full items-center justify-center rounded-xl text-base font-semibold"
                 >
                   ไปจัดสรรคาร์บอนเครดิต (ขั้นถัดไป) →

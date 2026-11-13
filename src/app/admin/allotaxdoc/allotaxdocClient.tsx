@@ -1,3 +1,6 @@
+// [MERGE aom + cyn2 รอบ 3] ไฟล์ของ aom + ฟีเจอร์ของ cyn2: เป้าหมายโครงการ (project_target_rule) และต้นทุนโครงการ (project_cost_type)
+//   บันทึก/แก้/ลบลง DB จริง (เดิม aom เก็บแค่ในหน้าจอ รีเฟรชแล้วหาย) — รับโค้ด cyn2 ทั้งชุด ไม่ได้แก้
+//   ต้องมี RLS: project_target_rule -> supabase/rls_tver_allocation.sql, project_cost_type -> supabase/rls_project_cost.sql
 // หน้าจัดการเอกสารภาษีของแอดมิน: อัปโหลด แก้ชื่อ ลบ และดาวน์โหลดเอกสาร
 'use client';
 
@@ -10,7 +13,7 @@ import { dbErrorMessage, deleteRecord, insertRecord, updateRecord } from '@/lib/
 import { validateForm, extendSchema, notDuplicate, validateFile, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber, safeStorageName, fileBaseName, fileExtension } from '@/lib/normalization';
 import FieldError from '@/components/FieldError';
-import { docSchema, costSchema, DOC_FILE_RULE, type DocField, type CostField } from './schema';
+import { docSchema, costSchema, targetSchema, checkCostPrice, DOC_FILE_RULE, type DocField, type CostField } from './schema';
 import { showError, showSaved } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert
 import { DownloadIcon, EyeIcon, PencilIcon, PlusIcon, TrashIcon, UploadCloudIcon } from '@/components/icons';
 import RowActions from '@/components/RowActions'; // ปุ่มแก้ไข/ลบกลาง (ตารางต้นทุน + เอกสาร)
@@ -25,9 +28,14 @@ import { T } from '@/components/adminTable'; // การ์ด/ตาราง�
  * 4) บันทึก/ลบแถวในตาราง documents ผ่านฟังก์ชันกลาง insertRecord / deleteRecord
  * 5) เพิ่มการแก้ไขชื่อเอกสาร
  * 6) ต้นทุนโครงการ: ตรวจชื่อและราคา (ไม่ติดลบ ทศนิยม 2 หลัก รับเลขไทย/comma) ก่อนเพิ่ม
- * 7) ต้นทุนโครงการ: แก้ไขรายการได้ (popup ใช้กฎตรวจเดียวกับตอนเพิ่ม) — ยังเก็บในหน้าจอเท่านั้น ไม่มีตารางใน DB
+ * 7) ต้นทุนโครงการ: แก้ไขรายการได้ (popup ใช้กฎตรวจเดียวกับตอนเพิ่ม)
  * 8) เอกสาร: แสดงเป็นตารางแบบหน้าอื่น ไอคอนขนาด/สีเดียวกับ RowActions เพิ่มปุ่มเปิดดู (PDF เปิดในเบราว์เซอร์,
- *    DOCX/XLSX เปิดผ่าน Office Online Viewer) และปุ่มดาวน์โหลดโหลดไฟล์จริงแทนการเปิดแท็บ */
+ *    DOCX/XLSX เปิดผ่าน Office Online Viewer) และปุ่มดาวน์โหลดโหลดไฟล์จริงแทนการเปิดแท็บ
+ * 9) เป้าหมายโครงการ (TOR ข้อ 5.4): เลิกใช้ข้อมูลจำลอง อ่าน/เพิ่ม/แก้/ลบ ตาราง project_target_rule จริง
+ *    page.tsx ดึงรายการมาให้ ส่วนบันทึก/ลบทำที่ไฟล์นี้ผ่านฟังก์ชันกลาง (กฎตรวจอยู่ใน schema.ts)
+ * 10) ต้นทุนโครงการ (TOR ข้อ 5.5): เลิกใช้ข้อมูลจำลอง อ่าน/เพิ่ม/แก้/ลบ ตาราง project_cost_type จริง
+    ราคาสุทธิคำนวณ (ราคา x (1 + VAT/100) ปัดสตางค์) แล้วบันทึกลงคอลัมน์ net_price
+    ลบได้เสมอ: ผลประเมินภาษีที่องค์กรบันทึกไว้เก็บสำเนาชื่อ/ยอดไว้เอง (FK cost_id แบบ set null) */
 
 /**
  * Storage bucket that uploaded project documents are stored in.
@@ -67,38 +75,72 @@ function fileBadge(filePath: string | null): { label: string; color: string } {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Static section data (Project Targets / Project Cost are not backed by a  */
-/*  Supabase table yet — wire them up the same way the documents section is  */
-/*  wired up once you have tables for them).                                 */
+/*  เป้าหมายโครงการ (ตาราง project_target_rule)                                */
 /* -------------------------------------------------------------------------- */
 
-type Target = {
-  id: string;
-  name: string;
-  selfOffsetPct: number; // ชดเชยตนเอง
-  commercialPct: number; // ขายเชิงพาณิชย์
+/* เป้าหมายการจัดสรร 1 แถว
+ * offset_ratio = % ของเครดิตปีที่ 1 ที่ใช้ชดเชยการดำเนินงานของตนเอง
+ * sell_ratio   = % ที่นำไปขาย (DB บังคับให้ offset + sell = 100) */
+export type TargetRule = {
+  target_id: string;
+  target_name: string;
+  offset_ratio: number;
+  sell_ratio: number;
+  updated_date?: string | null;
 };
 
-const initialTargets: Target[] = [
-  { id: 't1', name: 'Net Zero', selfOffsetPct: 60, commercialPct: 40 },
-  { id: 't2', name: 'Carbon Neutrality', selfOffsetPct: 80, commercialPct: 20 },
-  { id: 't3', name: 'Selling', selfOffsetPct: 30, commercialPct: 70 },
-];
+type TargetErrors = { target_name?: string; offset_ratio?: string };
 
-type CostItem = {
-  id: string;
-  name: string;
-  basePrice: number;
-  vatPct: number | null; // null = ไม่มี VAT
+// สัดส่วนชดเชย: จำนวนเต็ม 0-100 (รับเลขไทย/comma ผ่าน normalizeToArabicNumber) ตรงกับ check constraint ใน DB
+function parseOffset(raw: string): { value: number | null; error?: string } {
+  if (!raw.trim()) return { value: null, error: 'กรุณากรอกสัดส่วนชดเชย' };
+  const n = normalizeToArabicNumber(raw);
+  if (n === null || Number.isNaN(n)) return { value: null, error: 'สัดส่วนชดเชยต้องเป็นตัวเลข' };
+  if (!Number.isInteger(n)) return { value: null, error: 'สัดส่วนชดเชยต้องเป็นจำนวนเต็ม' };
+  if (n < 0 || n > 100) return { value: null, error: 'สัดส่วนชดเชยต้องอยู่ระหว่าง 0 ถึง 100' };
+  return { value: n };
+}
+
+// เรียงแบบเดียวกับหน้าจัดสรรเครดิต: ชดเชยมากไปน้อย แล้วเรียงตามชื่อ
+const sortTargets = (rows: TargetRule[]) =>
+  [...rows].sort((a, b) => b.offset_ratio - a.offset_ratio || a.target_name.localeCompare(b.target_name, 'th'));
+
+const emptyTargetForm = { target_name: '', offset_ratio: '' };
+
+/* -------------------------------------------------------------------------- */
+/*  ต้นทุนโครงการ (ตาราง project_cost_type)                                    */
+/* -------------------------------------------------------------------------- */
+
+/* รายการต้นทุนมาตรฐาน 1 แถว (เป็น "เมนู" ให้องค์กรเลือกในหน้าคำนวณภาษี)
+ * price = ราคาก่อน VAT, vat = อัตรา VAT เป็นร้อยละ (ไม่มี VAT = 0), net_price = price x (1 + vat/100) */
+export type CostRow = {
+  cost_id: string;
+  cost_name: string;
+  price: number;
+  vat: number;
+  net_price: number;
 };
-
-const initialCosts: CostItem[] = [
-  { id: 'c1', name: 'ค่าขึ้นทะเบียนโครงการ T-VER', basePrice: 5000, vatPct: 7 },
-  { id: 'c2', name: 'ขอรับรองคาร์บอนเครดิต', basePrice: 3000, vatPct: 7 },
-  { id: 'c3', name: 'ค่าจ้างผู้ประเมินภายนอกอิสระ (VVB Inspection)', basePrice: 20000, vatPct: null },
-];
 
 const vatOptions = [0, 7];
+
+// ราคาสุทธิ = ราคา x (1 + VAT/100) ปัดเป็นสตางค์ คิดเป็นจำนวนเต็มสตางค์เพื่อไม่ให้ทศนิยมลอยตัวทำให้เพี้ยน
+// (ตรงกับ round(numeric, 2) ของ Postgres)
+function netOf(price: number, vat: number): number {
+  const satang = Math.round(price * 100);
+  return Math.round((satang * (100 + vat)) / 100) / 100;
+}
+
+// เผื่อ numeric ถูกส่งมาเป็นสตริง: แปลงเป็นตัวเลขก่อนใช้คำนวณ/แสดง
+const toCostRow = (r: CostRow): CostRow => ({
+  ...r,
+  price: Number(r.price),
+  vat: Number(r.vat),
+  net_price: Number(r.net_price),
+});
+
+// เรียงตามชื่อ (ตัวเดียวกับที่หน้าคำนวณภาษีฝั่งองค์กรใช้เรียงเมนู)
+const sortCosts = (rows: CostRow[]) =>
+  [...rows].sort((a, b) => a.cost_name.localeCompare(b.cost_name, 'th'));
 
 /* -------------------------------------------------------------------------- */
 /*  Component                                                                  */
@@ -106,98 +148,205 @@ const vatOptions = [0, 7];
 
 export default function AlloTaxDocClient({
   initialDocuments,
+  initialTargets,
+  initialCosts,
 }: {
   initialDocuments: AlloTaxDoc[];
+  initialTargets: TargetRule[];
+  initialCosts: CostRow[];
 }) {
-  /* ---- Section 1: Project Targets (static/local) ---- */
-  const [targets] = useState<Target[]>(initialTargets);
+  /* ---- Section 1: Project Targets (live, backed by Supabase: project_target_rule) ---- */
+  const [targets, setTargets] = useState<TargetRule[]>(() => sortTargets(initialTargets));
+  const [showTargetModal, setShowTargetModal] = useState(false);
+  const [editTargetId, setEditTargetId] = useState<string | null>(null); // null = เพิ่มใหม่
+  const [targetForm, setTargetForm] = useState(emptyTargetForm);
+  const [targetErrors, setTargetErrors] = useState<TargetErrors>({});
+  const [savingTarget, setSavingTarget] = useState(false);
 
-  /* ---- Section 2: Project Cost (static/local) ---- */
-  const [costs, setCosts] = useState<CostItem[]>(initialCosts);
+  // ช่อง "ขายเชิงพาณิชย์" คำนวณจาก 100 - ชดเชย (ผู้ใช้ไม่ต้องกรอกเอง กันผลรวมไม่เท่ากับ 100)
+  const offsetPreview = parseOffset(targetForm.offset_ratio);
+  const sellPreview = offsetPreview.value === null ? null : 100 - offsetPreview.value;
+
+  // เปิดฟอร์มเป้าหมาย ถ้าส่ง row มาคือโหมดแก้ไข ถ้าไม่ส่งคือเพิ่มใหม่
+  function openTargetModal(row?: TargetRule) {
+    setEditTargetId(row?.target_id ?? null);
+    setTargetForm(row ? { target_name: row.target_name, offset_ratio: String(row.offset_ratio) } : emptyTargetForm);
+    setTargetErrors({});
+    setShowTargetModal(true);
+  }
+
+  // ปิดฟอร์มเป้าหมายและล้างข้อความ error
+  function closeTargetModal() {
+    setShowTargetModal(false);
+    setTargetErrors({});
+  }
+
+  // ตรวจชื่อ (schema + ห้ามซ้ำ) และสัดส่วน แล้วบันทึกลงตาราง project_target_rule
+  async function handleSaveTarget(e: React.FormEvent) {
+    e.preventDefault();
+    if (savingTarget) return;
+
+    const others = targets.filter((t) => t.target_id !== editTargetId).map((t) => t.target_name);
+    const result = validateForm(
+      { target_name: targetForm.target_name },
+      extendSchema(targetSchema, { target_name: [notDuplicate('ชื่อเป้าหมาย', others)] })
+    );
+    const offset = parseOffset(targetForm.offset_ratio);
+
+    const errs: TargetErrors = {};
+    if (!result.ok) errs.target_name = result.errors.target_name;
+    if (offset.error) errs.offset_ratio = offset.error;
+    setTargetErrors(errs);
+    const ratio = offset.value;
+    if (errs.target_name || errs.offset_ratio || ratio === null || !result.ok) return;
+
+    const values = {
+      target_name: result.clean.target_name,
+      offset_ratio: ratio,
+      sell_ratio: 100 - ratio,
+    };
+
+    setSavingTarget(true);
+    if (editTargetId) {
+      const updated = await updateRecord<TargetRule>(
+        'project_target_rule', 'target_id', editTargetId,
+        { ...values, updated_date: new Date().toISOString() }, '*', 'แก้ไขเป้าหมาย'
+      );
+      if (!updated) { setSavingTarget(false); return; }
+      setTargets((prev) => sortTargets(prev.map((t) => (t.target_id === editTargetId ? updated : t))));
+    } else {
+      const created = await insertRecord<TargetRule>('project_target_rule', values, '*', 'เพิ่มเป้าหมาย');
+      if (!created) { setSavingTarget(false); return; }
+      setTargets((prev) => sortTargets([...prev, created]));
+    }
+    setSavingTarget(false);
+    closeTargetModal();
+    showSaved();
+  }
+
+  // ลบเป้าหมาย: ถ้าองค์กรใช้จัดสรรไปแล้วลบไม่ได้ (FK แบบ restrict) บอกเหตุผลก่อนแทนข้อความ error ของ DB
+  async function handleDeleteTarget(t: TargetRule) {
+    const { count, error } = await supabase
+      .from('org_credit_allocation')
+      .select('orgallocate_id', { count: 'exact', head: true })
+      .eq('target_id', t.target_id);
+    if (!error && (count ?? 0) > 0) {
+      showError(`ลบไม่ได้: เป้าหมาย "${t.target_name}" ถูกใช้ในการจัดสรรเครดิตของ ${count} โครงการ`);
+      return;
+    }
+
+    const ok = await deleteRecord('project_target_rule', 'target_id', t.target_id, `ลบเป้าหมาย "${t.target_name}"?`);
+    if (!ok) return;
+    setTargets((prev) => prev.filter((x) => x.target_id !== t.target_id));
+  }
+
+  /* ---- Section 2: Project Cost (live, backed by Supabase: project_cost_type) ---- */
+  const [costs, setCosts] = useState<CostRow[]>(() => sortCosts(initialCosts.map(toCostRow)));
   const [costName, setCostName] = useState('');
   const [costPrice, setCostPrice] = useState('');
   const [costVat, setCostVat] = useState<number>(7);
   const [costErrors, setCostErrors] = useState<formError<CostField>>({});
+  const [savingCost, setSavingCost] = useState(false);
 
   // เดิมใช้ Number(costPrice) ซึ่งรับเลขไทย/comma ไม่ได้ -> ใช้ normalizeToArabicNumber
   const previewBase = normalizeToArabicNumber(costPrice);
-  const netPreview = previewBase !== null && previewBase >= 0 ? previewBase * (1 + costVat / 100) : 0;
+  const netPreview =
+    previewBase !== null && Number.isFinite(previewBase) && previewBase >= 0 ? netOf(previewBase, costVat) : 0;
 
-  // ตรวจข้อมูลรายการค่าใช้จ่าย ถ้าถูกต้องจึงเพิ่มเข้ารายการ
-  function handleAddCost(e: React.FormEvent) {
-    e.preventDefault();
-    // เดิมเช็กแค่ว่าง และไม่บอกผู้ใช้ว่าผิดตรงไหน -> ใช้ schema + ห้ามชื่อซ้ำ
+  // ตรวจชื่อ (schema + ห้ามซ้ำ) และราคา (ไม่ติดลบ ทศนิยม 2 หลัก ไม่เกินเพดาน) ใช้ร่วมกันทั้งตอนเพิ่มและตอนแก้
+  function checkCost(name: string, priceRaw: string, otherNames: string[]) {
     const result = validateForm(
-      { name: costName, price: costPrice },
-      extendSchema(costSchema, { name: [notDuplicate('ชื่อรายการต้นทุน', costs.map((c) => c.name))] })
+      { name, price: priceRaw },
+      extendSchema(costSchema, { name: [notDuplicate('ชื่อรายการต้นทุน', otherNames)] })
     );
-    if (!result.ok) { setCostErrors(result.errors); return; }
+    const errors: formError<CostField> = result.ok ? {} : { ...result.errors };
+    if (result.ok) {
+      const rangeError = checkCostPrice(result.clean.price);
+      if (rangeError) errors.price = rangeError;
+    }
+    if (!result.ok || Object.keys(errors).length > 0) return { ok: false as const, errors };
+    return { ok: true as const, name: result.clean.name, price: normalizeToArabicNumber(result.clean.price) ?? 0 };
+  }
+
+  // ตรวจข้อมูลรายการต้นทุน ถ้าถูกต้องจึงบันทึกลงตาราง project_cost_type
+  async function handleAddCost(e: React.FormEvent) {
+    e.preventDefault();
+    if (savingCost) return;
+    const checked = checkCost(costName, costPrice, costs.map((c) => c.cost_name));
+    if (!checked.ok) { setCostErrors(checked.errors); return; }
     setCostErrors({});
     if (!vatOptions.includes(costVat)) return; // VAT ต้องเป็นค่าที่มีในตัวเลือกเท่านั้น
 
-    setCosts((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        name: result.clean.name,
-        basePrice: normalizeToArabicNumber(result.clean.price) ?? 0,
-        vatPct: costVat,
-      },
-    ]);
+    setSavingCost(true);
+    const created = await insertRecord<CostRow>(
+      'project_cost_type',
+      { cost_name: checked.name, price: checked.price, vat: costVat, net_price: netOf(checked.price, costVat) },
+      '*', 'เพิ่มรายการต้นทุน'
+    );
+    setSavingCost(false);
+    if (!created) return;
+    setCosts((prev) => sortCosts([...prev, toCostRow(created)]));
     setCostName('');
     setCostPrice('');
     setCostVat(7);
+    showSaved();
   }
 
-  // เอารายการค่าใช้จ่ายออกจากรายการบนหน้า
-  function handleDeleteCost(id: string) {
-    setCosts((prev) => prev.filter((c) => c.id !== id));
+  // ลบรายการต้นทุน: ลบได้เสมอ เพราะผลประเมินที่องค์กรบันทึกไว้แล้วเก็บชื่อและยอดไว้เองแล้ว (cost_id แค่ถูกตั้งเป็นว่าง)
+  async function handleDeleteCost(c: CostRow) {
+    const ok = await deleteRecord(
+      'project_cost_type', 'cost_id', c.cost_id,
+      `ลบรายการ "${c.cost_name}"? (ผลประเมินที่องค์กรบันทึกไว้แล้วจะยังเก็บชื่อและยอดเดิมไว้)`
+    );
+    if (!ok) return;
+    setCosts((prev) => prev.filter((x) => x.cost_id !== c.cost_id));
   }
 
   // [เพิ่ม] แก้ไขรายการต้นทุน (ชื่อ ราคา VAT) ผ่าน popup ใช้กฎตรวจชุดเดียวกับตอนเพิ่ม
-  const [editCost, setEditCost] = useState<CostItem | null>(null);
+  const [editCost, setEditCost] = useState<CostRow | null>(null);
   const [editCostName, setEditCostName] = useState('');
   const [editCostPrice, setEditCostPrice] = useState('');
   const [editCostVat, setEditCostVat] = useState<number>(7);
   const [editCostErrors, setEditCostErrors] = useState<formError<CostField>>({});
 
   const editBase = normalizeToArabicNumber(editCostPrice);
-  const editNetPreview = editBase !== null && editBase >= 0 ? editBase * (1 + editCostVat / 100) : 0;
+  const editNetPreview =
+    editBase !== null && Number.isFinite(editBase) && editBase >= 0 ? netOf(editBase, editCostVat) : 0;
 
-  function openEditCost(c: CostItem) {
+  function openEditCost(c: CostRow) {
     setEditCost(c);
-    setEditCostName(c.name);
-    setEditCostPrice(String(c.basePrice));
-    setEditCostVat(c.vatPct ?? 0);
+    setEditCostName(c.cost_name);
+    setEditCostPrice(String(c.price));
+    setEditCostVat(c.vat);
     setEditCostErrors({});
   }
 
-  function handleSaveCost(e: React.FormEvent) {
+  async function handleSaveCost(e: React.FormEvent) {
     e.preventDefault();
-    if (!editCost) return;
+    if (!editCost || savingCost) return;
     // ชื่อห้ามซ้ำกับรายการอื่น (ไม่นับรายการที่กำลังแก้)
-    const result = validateForm(
-      { name: editCostName, price: editCostPrice },
-      extendSchema(costSchema, {
-        name: [notDuplicate('ชื่อรายการต้นทุน', costs.filter((c) => c.id !== editCost.id).map((c) => c.name))],
-      })
+    const checked = checkCost(
+      editCostName, editCostPrice,
+      costs.filter((c) => c.cost_id !== editCost.cost_id).map((c) => c.cost_name)
     );
-    if (!result.ok) { setEditCostErrors(result.errors); return; }
+    if (!checked.ok) { setEditCostErrors(checked.errors); return; }
+    setEditCostErrors({});
     if (!vatOptions.includes(editCostVat)) return;
 
-    setCosts((prev) =>
-      prev.map((c) =>
-        c.id === editCost.id
-          ? {
-              ...c,
-              name: result.clean.name,
-              basePrice: normalizeToArabicNumber(result.clean.price) ?? 0,
-              vatPct: editCostVat,
-            }
-          : c
-      )
+    setSavingCost(true);
+    const updated = await updateRecord<CostRow>(
+      'project_cost_type', 'cost_id', editCost.cost_id,
+      {
+        cost_name: checked.name, price: checked.price, vat: editCostVat,
+        net_price: netOf(checked.price, editCostVat), updated_date: new Date().toISOString(),
+      },
+      '*', 'แก้ไขรายการต้นทุน'
     );
+    setSavingCost(false);
+    if (!updated) return;
+    setCosts((prev) => sortCosts(prev.map((c) => (c.cost_id === editCost.cost_id ? toCostRow(updated) : c))));
     setEditCost(null);
+    showSaved();
   }
 
   /* ---- Section 3: Project Documents (live, backed by Supabase) ---- */
@@ -414,7 +563,7 @@ export default function AlloTaxDocClient({
       </h1>
 
       {/* ---------------------------------------------------------------- */}
-      {/* Section 1: เป้าหมายโครงการ                                       */}
+      {/* Section 1: เป้าหมายโครงการ (live / Supabase-backed: project_target_rule) */}
       {/* การ์ด/หัวข้อ/ตารางทุกส่วนใช้แบบหน้า T-VER Project (components/adminTable.ts) เอาจุดสีเขียวหน้าหัวข้อออก */}
       {/* ---------------------------------------------------------------- */}
       <section className={T.card}>
@@ -424,27 +573,40 @@ export default function AlloTaxDocClient({
           </h2>
           <button
             type="button"
+            onClick={() => openTargetModal()}
             className={T.addBtn}
           >
             + เพิ่มเป้าหมาย
           </button>
         </div>
 
-        <div className="flex gap-4">
+        <div className="grid grid-cols-3 gap-4">
           {targets.map((t) => (
             <div
-              key={t.id}
-              className="flex w-1/3 flex-col gap-4 rounded-xl border border-slate-200/70 bg-white p-5 shadow-sm"
+              key={t.target_id}
+              className="flex flex-col gap-4 rounded-xl border border-slate-200/70 bg-white p-5 shadow-sm"
             >
               <div className="flex items-start justify-between">
                 <span className="text-sm font-semibold text-[#1E293B]">
-                  {t.name}
+                  {t.target_name}
                 </span>
                 <div className="flex items-center gap-0.5 text-slate-400">
-                  <button type="button" className="rounded p-1 hover:bg-slate-50 hover:text-blue-600">
+                  <button
+                    type="button"
+                    title="แก้ไข"
+                    aria-label={`แก้ไข ${t.target_name}`}
+                    onClick={() => openTargetModal(t)}
+                    className="rounded p-1 hover:bg-slate-50 hover:text-blue-600"
+                  >
                     <PencilIcon className="h-3 w-3" />
                   </button>
-                  <button type="button" className="rounded p-1 hover:bg-slate-50 hover:text-red-500">
+                  <button
+                    type="button"
+                    title="ลบ"
+                    aria-label={`ลบ ${t.target_name}`}
+                    onClick={() => handleDeleteTarget(t)}
+                    className="rounded p-1 hover:bg-slate-50 hover:text-red-500"
+                  >
                     <TrashIcon className="h-3 w-3" />
                   </button>
                 </div>
@@ -457,7 +619,7 @@ export default function AlloTaxDocClient({
                     ชดเชยตนเอง
                   </span>
                   <span className="font-semibold text-[#334155]">
-                    {t.selfOffsetPct}%
+                    {t.offset_ratio}%
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
@@ -466,16 +628,19 @@ export default function AlloTaxDocClient({
                     ขายเชิงพาณิชย์
                   </span>
                   <span className="font-semibold text-[#334155]">
-                    {t.commercialPct}%
+                    {t.sell_ratio}%
                   </span>
                 </div>
                 <div className="flex h-2 w-full overflow-hidden rounded-full bg-[#F1F5F9]">
-                  <div className="h-full bg-[#FF9D42]" style={{ width: `${t.selfOffsetPct}%` }} />
-                  <div className="h-full bg-[#CBD5E1]" style={{ width: `${t.commercialPct}%` }} />
+                  <div className="h-full bg-[#FF9D42]" style={{ width: `${t.offset_ratio}%` }} />
+                  <div className="h-full bg-[#CBD5E1]" style={{ width: `${t.sell_ratio}%` }} />
                 </div>
               </div>
             </div>
           ))}
+          {targets.length === 0 && (
+            <p className={`${T.empty} col-span-3`}>ยังไม่มีเป้าหมายโครงการ</p>
+          )}
         </div>
       </section>
 
@@ -488,6 +653,10 @@ export default function AlloTaxDocClient({
             ต้นทุนโครงการ
           </h2>
         </div>
+        <p className="mb-4 text-xs text-[#64748B]">
+          ทุกรายการในตารางนี้จะถูกดึงไปเป็นค่าใช้จ่ายตั้งต้นในหน้าคำนวณภาษีขององค์กรโดยอัตโนมัติ (องค์กรแก้จำนวนเงินหรือลบออกได้)
+          จึงควรใส่เฉพาะค่าที่ทุกโครงการต้องมี รายการเดียวต่อ 1 ค่าใช้จ่าย
+        </p>
 
         <div className="flex flex-col gap-5">
           <form onSubmit={handleAddCost} className="flex items-start gap-4" noValidate>
@@ -497,7 +666,7 @@ export default function AlloTaxDocClient({
                 value={costName}
                 maxLength={150}
                 onChange={(e) => setCostName(e.target.value)}
-                placeholder="เช่น ค่าตรวจประเมิน VVB, ค่ากล้าไม้"
+                placeholder="เช่น ค่าธรรมเนียม อบก., ค่าผู้ประเมินภายนอก VVB"
                 className={`rounded-lg border px-3 py-2 text-xs text-[#334155] placeholder:text-[#94A3B8] focus:outline-none focus:ring-1 focus:ring-[#266955] ${costErrors.name ? 'border-red-500' : 'border-[#E2E8F0]'}`}
               />
               <FieldError message={costErrors.name} />
@@ -535,6 +704,7 @@ export default function AlloTaxDocClient({
             </div>
             <button
               type="submit"
+              disabled={savingCost}
               className="btn btn-create mt-5 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full"
               aria-label="เพิ่มรายการต้นทุน"
             >
@@ -554,27 +724,24 @@ export default function AlloTaxDocClient({
                 </tr>
               </thead>
               <tbody>
-                {costs.map((c) => {
-                  const net = c.basePrice * (1 + (c.vatPct ?? 0) / 100);
-                  return (
-                    <tr key={c.id} className={T.row}>
-                      <td className={T.tdMain}>{c.name}</td>
-                      <td className={`${T.td} text-right`}>
-                        {c.basePrice.toFixed(2)}
-                      </td>
-                      <td className={`${T.td} text-center`}>
-                        {c.vatPct !== null ? `${c.vatPct}%` : '—'}
-                      </td>
-                      <td className={`${T.td} text-right font-semibold text-[#346556]`}>
-                        {net.toFixed(2)}
-                      </td>
-                      <td className={T.tdActions}>
-                        {/* [เพิ่ม] ปุ่มแก้ไข + ลบ แบบเดียวกับตารางอื่นของแอดมิน */}
-                        <RowActions onEdit={() => openEditCost(c)} onDelete={() => handleDeleteCost(c.id)} />
-                      </td>
-                    </tr>
-                  );
-                })}
+                {costs.map((c) => (
+                  <tr key={c.cost_id} className={T.row}>
+                    <td className={T.tdMain}>{c.cost_name}</td>
+                    <td className={`${T.td} text-right`}>
+                      {c.price.toFixed(2)}
+                    </td>
+                    <td className={`${T.td} text-center`}>
+                      {c.vat > 0 ? `${c.vat}%` : '—'}
+                    </td>
+                    <td className={`${T.td} text-right font-semibold text-[#346556]`}>
+                      {c.net_price.toFixed(2)}
+                    </td>
+                    <td className={T.tdActions}>
+                      {/* [เพิ่ม] ปุ่มแก้ไข + ลบ แบบเดียวกับตารางอื่นของแอดมิน */}
+                      <RowActions onEdit={() => openEditCost(c)} onDelete={() => handleDeleteCost(c)} />
+                    </td>
+                  </tr>
+                ))}
                 {costs.length === 0 && (
                   <tr>
                     <td colSpan={5} className={T.empty}>
@@ -724,6 +891,52 @@ export default function AlloTaxDocClient({
           </div>
         </div>
       </section>
+
+      {/* Modal เพิ่ม/แก้ไขเป้าหมายโครงการ */}
+      {showTargetModal && (
+        <ModalShell onClose={closeTargetModal}>
+          <form onSubmit={handleSaveTarget} className="space-y-4" noValidate>
+            <h3 className="text-lg font-bold">{editTargetId ? 'แก้ไขเป้าหมาย' : 'เพิ่มเป้าหมายใหม่'}</h3>
+            <div>
+              <label className="mb-1 block text-xs text-[#475569]">ชื่อเป้าหมาย</label>
+              <input
+                className={inputClass(!!targetErrors.target_name)}
+                placeholder="เช่น Net Zero"
+                maxLength={100}
+                value={targetForm.target_name}
+                onChange={(e) => setTargetForm({ ...targetForm, target_name: e.target.value })}
+              />
+              <FieldError message={targetErrors.target_name} />
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="mb-1 block text-xs text-[#475569]">ชดเชยตนเอง (%)</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  className={inputClass(!!targetErrors.offset_ratio)}
+                  placeholder="0 - 100"
+                  value={targetForm.offset_ratio}
+                  onChange={(e) => setTargetForm({ ...targetForm, offset_ratio: e.target.value })}
+                />
+                <FieldError message={targetErrors.offset_ratio} />
+              </div>
+              <div className="flex-1">
+                <label className="mb-1 block text-xs text-[#475569]">ขายเชิงพาณิชย์ (%)</label>
+                {/* คำนวณอัตโนมัติ = 100 - ชดเชย กรอกเองไม่ได้ */}
+                <div className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm text-[#334155]">
+                  {sellPreview === null ? '—' : sellPreview}
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-[#6F7974]">
+              สัดส่วนชดเชยกับขายรวมกันต้องเท่ากับ 100% การแก้ไขมีผลกับการจัดสรรครั้งถัดไป
+              องค์กรที่จัดสรรด้วยเป้าหมายนี้ไว้แล้วจะต้องกดบันทึกการจัดสรรใหม่เพื่อใช้สัดส่วนที่แก้
+            </p>
+            <ModalActions onCancel={closeTargetModal} />
+          </form>
+        </ModalShell>
+      )}
 
       {/* [เพิ่ม] Modal แก้ไขรายการต้นทุน */}
       {editCost && (
