@@ -1,4 +1,6 @@
 "use client";
+/* [MERGE aom + cyn2] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (ฟีเจอร์ที่ aom ไม่มี) — ไม่ได้แก้โค้ด
+ * หน้าลืมรหัสผ่าน / ตั้งรหัสผ่านใหม่ (ลิงก์ในอีเมลรีเซ็ตชี้มาที่นี่) */
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";

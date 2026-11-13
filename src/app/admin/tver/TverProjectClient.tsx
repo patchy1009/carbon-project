@@ -1,15 +1,21 @@
+// หน้าจัดการโครงการ T-VER ของแอดมิน: เพิ่ม แก้ไข ลบ รายการต้นไม้และเงื่อนไขโครงการ
 'use client';
 
+import Select from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
 import { useState } from 'react';
 import type { TreeListItem, TverProjectDetail } from '@/types/tver-project';
 import { ModalActions, ModalShell } from '@/components/Modal';
 import { deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
+import { showSaved } from '@/lib/dialog'; // popup แจ้งบันทึกสำเร็จ
 import { validateForm, extendSchema, notDuplicate, requiredWith, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber, formatCondition, CONDITION_OPERATORS } from '@/lib/normalization';
-import { fieldError as FieldError } from '@/components/FieldError';
+import FieldError from '@/components/FieldError';
 import { treeSchema, tverDetailSchema, type TreeField, type TverDetailField } from './schema';
+import RowActions from '@/components/RowActions'; // ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
+import { T } from '@/components/adminTable'; // การ์ด/ตารางกลางของหน้าแอดมิน (ยกแบบมาจากหน้านี้)
+import { inputClass } from '@/components/formStyles'; // class ช่องกรอกกลาง
 
-/* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
+/* สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) เดิมบันทึกค่าจากฟอร์มลง DB ตรงๆ -> ตอนนี้ผ่าน normalize + validate (schema.ts) ทุกช่อง
  * 2) เงื่อนไข: เลือกตัวดำเนินการจาก dropdown + กรอกตัวเลขแยกช่อง
  *    บันทึกเป็น condition_operator / condition_number (เลิกใช้คอลัมน์ข้อความ condition_value)
@@ -19,11 +25,10 @@ import { treeSchema, tverDetailSchema, type TreeField, type TverDetailField } fr
  * 5) ใช้ ModalShell / ModalActions จาก components/Modal แทนตัวที่เขียนซ้ำไว้ท้ายไฟล์
  * 6) เพิ่มการแก้ไขทั้ง 2 ตาราง */
 
-const inputCls = (hasError?: boolean) =>
-  `w-full border rounded-lg px-3 py-2 text-sm ${hasError ? 'border-red-500' : ''}`;
 
 const emptyDetailForm = { detail_name: '', unit: '', condition_operator: '', condition_number: '', detail: '' };
 
+// หน้าจอหลัก รับข้อมูลเริ่มต้นจาก page.tsx แล้วเก็บใน state เพื่อให้แก้ไขบนหน้าได้ทันที
 export default function TverProjectClient({
   initialTrees,
   initialDetails,
@@ -37,7 +42,7 @@ export default function TverProjectClient({
   const [showTreeModal, setShowTreeModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
-  // [เพิ่ม] id ของแถวที่กำลังแก้ไข (null = เพิ่มใหม่)
+  // id ของแถวที่กำลังแก้ไข (null = เพิ่มใหม่)
   const [editTreeId, setEditTreeId] = useState<string | null>(null);
   const [editDetailId, setEditDetailId] = useState<string | null>(null);
 
@@ -47,12 +52,14 @@ export default function TverProjectClient({
   const [treeErrors, setTreeErrors] = useState<formError<TreeField>>({});
   const [detailErrors, setDetailErrors] = useState<formError<TverDetailField>>({});
 
+  // เปิดฟอร์มต้นไม้ ถ้าส่ง row มาคือโหมดแก้ไข ถ้าไม่ส่งคือเพิ่มใหม่
   function openTreeModal(row?: TreeListItem) {
     setEditTreeId(row?.tree_id ?? null);
     setTreeForm({ tree_name: row?.tree_name ?? '' });
     setTreeErrors({});
     setShowTreeModal(true);
   }
+  // เปิดฟอร์มเงื่อนไข ถ้าส่ง row มาคือโหมดแก้ไข ถ้าไม่ส่งคือเพิ่มใหม่
   function openDetailModal(row?: TverProjectDetail) {
     setEditDetailId(row?.tverdetail_id ?? null);
     setDetailForm(
@@ -69,7 +76,9 @@ export default function TverProjectClient({
     setDetailErrors({});
     setShowDetailModal(true);
   }
+  // ปิดฟอร์มต้นไม้และล้างข้อความ error
   const closeTreeModal = () => { setShowTreeModal(false); setTreeErrors({}); };
+  // ปิดฟอร์มเงื่อนไขและล้างข้อความ error
   const closeDetailModal = () => { setShowDetailModal(false); setDetailErrors({}); };
 
   // ---------- Tree List ----------
@@ -97,8 +106,10 @@ export default function TverProjectClient({
       setTrees((prev) => [...prev, created]);
     }
     closeTreeModal();
+    showSaved(); // popup แจ้งบันทึกสำเร็จ (เหมือนฝั่งองค์กร)
   }
 
+  // ลบต้นไม้ สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteTree(id: string) {
     const ok = await deleteRecord('tree_list', 'tree_id', id, 'ลบต้นไม้นี้?');
     if (!ok) return;
@@ -113,7 +124,7 @@ export default function TverProjectClient({
       detailForm,
       extendSchema(tverDetailSchema, {
         detail_name: [notDuplicate('รายละเอียดโครงการ', others)],
-        // [เพิ่ม] ตัวดำเนินการกับตัวเลขต้องกรอกคู่กัน (ตรงกับ check constraint ใน DB)
+        // ตัวดำเนินการกับตัวเลขต้องกรอกคู่กัน (ตรงกับ check constraint ใน DB)
         condition_operator: [requiredWith('เงื่อนไข', detailForm.condition_number)],
         condition_number: [requiredWith('ค่าเงื่อนไข', detailForm.condition_operator)],
       })
@@ -144,8 +155,10 @@ export default function TverProjectClient({
       setDetails((prev) => [...prev, created]);
     }
     closeDetailModal();
+    showSaved();
   }
 
+  // ลบเงื่อนไข สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteDetail(id: string) {
     const ok = await deleteRecord('tver_project_detail', 'tverdetail_id', id, 'ลบเงื่อนไขนี้?');
     if (!ok) return;
@@ -153,58 +166,45 @@ export default function TverProjectClient({
   }
 
   return (
-    <div className="max-w-[1280px] px-8 pt-6 pb-16 space-y-6">
-      <h1 className="text-[32px] font-bold leading-10 tracking-[-0.8px] text-[#191C1C] font-['Be_Vietnam_Pro']">
+    <div className={T.page}>
+      <h1 className={T.h1}>
         ข้อมูลการจัดทำโครงการปลูกป่า T-VER
       </h1>
 
       {/* Section 1: Tree Species Catalog */}
-      <section className="rounded-xl bg-white shadow-sm p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-xl font-bold text-[#191C1C] font-['Be_Vietnam_Pro']">
-            🌳 รายการต้นไม้ (Tree Species Catalog)
+      <section className={T.card}>
+        <div className={T.cardHead}>
+          <h2 className={T.h2}>
+            รายการต้นไม้ (Tree Species Catalog)
           </h2>
           <button
             onClick={() => openTreeModal()}
-            className="flex items-center gap-1.5 rounded-lg bg-[#266955] px-3 py-2 text-sm text-white shadow-sm"
+            className={T.addBtn}
           >
             + เพิ่มต้นไม้ใหม่
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[#EDEEEE]">
-              <tr className="text-xs font-bold uppercase tracking-wide text-[#3F4944]">
-                <th className="px-4 py-3 text-left">ชื่อต้นไม้</th>
-                <th className="px-4 py-3 text-right">จัดการ</th>
+        <div className={T.wrap}>
+          <table className={T.table}>
+            <thead className={T.thead}>
+              <tr className={T.headRow}>
+                <th className={`${T.th} text-left`}>ชื่อต้นไม้</th>
+                <th className={`${T.th} text-right`}>จัดการ</th>
               </tr>
             </thead>
             <tbody>
               {trees.map((t) => (
-                <tr key={t.tree_id} className="border-b border-[#F3F4F4]">
-                  <td className="px-4 py-4 font-bold text-[#191C1C]">{t.tree_name}</td>
-                  <td className="px-4 py-4 text-right space-x-2">
-                    <button
-                      onClick={() => openTreeModal(t)}
-                      className="text-[#3F4944] hover:text-[#266955]"
-                      title="แก้ไข"
-                    >
-                      ✏️
-                    </button>
-                    <button
-                      onClick={() => handleDeleteTree(t.tree_id)}
-                      className="text-[#3F4944] hover:text-red-500"
-                      title="ลบ"
-                    >
-                      🗑️
-                    </button>
+                <tr key={t.tree_id} className={T.row}>
+                  <td className={T.tdMain}>{t.tree_name}</td>
+                  <td className={T.tdActions}>
+                    <RowActions onEdit={() => openTreeModal(t)} onDelete={() => handleDeleteTree(t.tree_id)} />
                   </td>
                 </tr>
               ))}
               {trees.length === 0 && (
                 <tr>
-                  <td colSpan={2} className="px-4 py-6 text-center text-[#6F7974]">
+                  <td colSpan={2} className={T.empty}>
                     ยังไม่มีข้อมูลต้นไม้
                   </td>
                 </tr>
@@ -215,65 +215,52 @@ export default function TverProjectClient({
       </section>
 
       {/* Section 2: Forestry Project Parameters & Criteria */}
-      <section className="rounded-xl bg-white shadow-sm p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-xl font-bold text-[#191C1C] font-['Be_Vietnam_Pro']">
-            📋 รายละเอียดโครงการปลูกป่า (Forestry Project Parameters &amp; Criteria)
+      <section className={T.card}>
+        <div className={T.cardHead}>
+          <h2 className={T.h2}>
+            รายละเอียดโครงการปลูกป่า (Forestry Project Parameters &amp; Criteria)
           </h2>
           <button
             onClick={() => openDetailModal()}
-            className="flex items-center gap-1.5 rounded-lg bg-[#366856] px-3 py-2 text-sm text-white shadow-sm"
+            className={T.addBtn}
           >
             + เพิ่มเงื่อนไขโครงการ
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[#EDEEEE]">
-              <tr className="text-xs font-bold uppercase tracking-wide text-[#3F4944]">
-                <th className="px-4 py-3 text-left">รายละเอียดโครงการ</th>
-                <th className="px-4 py-3 text-left">หน่วย</th>
-                <th className="px-4 py-3 text-left">เงื่อนไข</th>
-                <th className="px-4 py-3 text-left">คำอธิบาย</th>
-                <th className="px-4 py-3 text-right">จัดการ</th>
+        <div className={T.wrap}>
+          <table className={T.table}>
+            <thead className={T.thead}>
+              <tr className={T.headRow}>
+                <th className={`${T.th} text-left`}>รายละเอียดโครงการ</th>
+                <th className={`${T.th} text-left`}>หน่วย</th>
+                <th className={`${T.th} text-left`}>เงื่อนไข</th>
+                <th className={`${T.th} text-left`}>คำอธิบาย</th>
+                <th className={`${T.th} text-right`}>จัดการ</th>
               </tr>
             </thead>
             <tbody>
               {details.map((d) => (
-                <tr key={d.tverdetail_id} className="border-b border-[#F3F4F4]">
-                  <td className="px-4 py-4 font-bold text-[#191C1C]">{d.detail_name}</td>
-                  <td className="px-4 py-4 text-[#3F4944]">{d.unit}</td>
-                  <td className="px-4 py-4">
-                    {/* [แก้ไข] สร้างข้อความจาก 2 คอลัมน์ เช่น "<= 1,000 ไร่" */}
+                <tr key={d.tverdetail_id} className={T.row}>
+                  <td className={T.tdMain}>{d.detail_name}</td>
+                  <td className={T.td}>{d.unit}</td>
+                  <td className={T.td}>
+                    {/* สร้างข้อความจาก 2 คอลัมน์ เช่น "<= 1,000 ไร่" */}
                     {d.condition_operator && (
                       <span className="inline-block px-2.5 py-1 rounded bg-[#E7E8E8] text-sm font-bold text-[#266955]">
                         {formatCondition(d.condition_operator, d.condition_number, d.unit)}
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-4 text-[#3F4944] max-w-[420px] whitespace-pre-line">{d.detail}</td>
-                  <td className="px-4 py-4 text-right space-x-2 whitespace-nowrap">
-                    <button
-                      onClick={() => openDetailModal(d)}
-                      className="text-[#3F4944] hover:text-[#266955]"
-                      title="แก้ไข"
-                    >
-                      ✏️
-                    </button>
-                    <button
-                      onClick={() => handleDeleteDetail(d.tverdetail_id)}
-                      className="text-[#3F4944] hover:text-red-500"
-                      title="ลบ"
-                    >
-                      🗑️
-                    </button>
+                  <td className={`${T.td} max-w-[420px] whitespace-pre-line`}>{d.detail}</td>
+                  <td className={T.tdActions}>
+                    <RowActions onEdit={() => openDetailModal(d)} onDelete={() => handleDeleteDetail(d.tverdetail_id)} />
                   </td>
                 </tr>
               ))}
               {details.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-[#6F7974]">
+                  <td colSpan={5} className={T.empty}>
                     ยังไม่มีเงื่อนไขโครงการ
                   </td>
                 </tr>
@@ -290,7 +277,7 @@ export default function TverProjectClient({
             <h3 className="text-lg font-bold">{editTreeId ? 'แก้ไขต้นไม้' : 'เพิ่มต้นไม้ใหม่'}</h3>
             <div>
               <input
-                className={inputCls(!!treeErrors.tree_name)}
+                className={inputClass(!!treeErrors.tree_name)}
                 placeholder="ชื่อต้นไม้ เช่น ยางนา"
                 maxLength={100}
                 value={treeForm.tree_name}
@@ -310,7 +297,7 @@ export default function TverProjectClient({
             <h3 className="text-lg font-bold">{editDetailId ? 'แก้ไขเงื่อนไขโครงการ' : 'เพิ่มเงื่อนไขโครงการ'}</h3>
             <div>
               <input
-                className={inputCls(!!detailErrors.detail_name)}
+                className={inputClass(!!detailErrors.detail_name)}
                 placeholder="รายละเอียดโครงการ เช่น พื้นที่โครงการทั้งหมด"
                 maxLength={150}
                 value={detailForm.detail_name}
@@ -320,7 +307,7 @@ export default function TverProjectClient({
             </div>
             <div>
               <input
-                className={inputCls(!!detailErrors.unit)}
+                className={inputClass(!!detailErrors.unit)}
                 placeholder="หน่วย เช่น ไร่, แปลง, ต้น, ปี"
                 maxLength={50}
                 value={detailForm.unit}
@@ -328,28 +315,26 @@ export default function TverProjectClient({
               />
               <FieldError message={detailErrors.unit} />
             </div>
-            {/* [แก้ไข] เงื่อนไข: dropdown ตัวดำเนินการ + ช่องตัวเลข (เดิมเป็นช่องข้อความช่องเดียว) */}
+            {/* เงื่อนไข: dropdown ตัวดำเนินการ + ช่องตัวเลข (เดิมเป็นช่องข้อความช่องเดียว) */}
             <div>
               <label className="mb-1 block text-xs text-[#3F4944]">เงื่อนไข (ไม่บังคับ)</label>
               <div className="flex items-center gap-2">
                 {/* แสดงเฉพาะสัญลักษณ์ ตัวอักษรใหญ่ อ่านง่าย (ความหมายแสดงใต้ช่อง) */}
-                <select
+                <Select
                   className={`w-24 shrink-0 rounded-lg border px-3 py-2 text-center text-lg font-bold ${
                     detailErrors.condition_operator ? 'border-red-500' : ''
                   }`}
                   value={detailForm.condition_operator}
-                  onChange={(e) => setDetailForm({ ...detailForm, condition_operator: e.target.value })}
-                  aria-label="เงื่อนไข"
-                >
-                  <option value="">–</option>
-                  {CONDITION_OPERATORS.map((o) => (
-                    <option key={o.value} value={o.value} title={o.label}>
-                      {o.value}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setDetailForm({ ...detailForm, condition_operator: v })}
+                  ariaLabel="เงื่อนไข"
+                  options={[
+                    { value: '', label: '–', placeholder: true },
+                    // ในรายการแสดงทั้งเครื่องหมายและคำอธิบาย (เดิมคำอธิบายอยู่ใน title)
+                    ...CONDITION_OPERATORS.map((o) => ({ value: o.value, label: `${o.value}  ${o.label}` })),
+                  ]}
+                />
                 <input
-                  className={`${inputCls(!!detailErrors.condition_number)} flex-1`}
+                  className={`${inputClass(!!detailErrors.condition_number)} flex-1`}
                   placeholder="เช่น 1000"
                   type="text"
                   inputMode="decimal"
@@ -370,7 +355,7 @@ export default function TverProjectClient({
             </div>
             <div>
               <textarea
-                className={inputCls(!!detailErrors.detail)}
+                className={inputClass(!!detailErrors.detail)}
                 placeholder="คำอธิบาย"
                 rows={3}
                 maxLength={1000}

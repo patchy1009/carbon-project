@@ -1,3 +1,4 @@
+// ชนิดข้อมูลของเอกสารฝั่งแอดมิน
 export type AlloTaxDoc = {
   admin_id?: string | null 
   document_id: string

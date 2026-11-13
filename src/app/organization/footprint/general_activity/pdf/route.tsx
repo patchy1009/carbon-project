@@ -1,3 +1,6 @@
+/* [MERGE aom + cyn2 รอบ 2] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (ใหม่) — ไม่ได้แก้โค้ด
+ * API สร้าง PDF ผลคำนวณกิจกรรมพิเศษ: รับข้อมูลที่คำนวณแล้วจาก CalculationResult.tsx (POST) แล้วคืนไฟล์ PDF
+ * ไม่อ่าน/เขียนฐานข้อมูล ใช้ไลบรารี @react-pdf/renderer (ต้อง npm install) และโหลดฟอนต์ Sarabun จาก CDN */
 import { NextResponse } from 'next/server';
 import React from 'react';
 import {
@@ -313,7 +316,7 @@ export async function POST(request: Request) {
       <Document>
         <Page size="A4" style={styles.page}>
           <Text style={styles.header}>
-            สรุปผลการประเมินคาร์บอนฟุตพริ้นท์องค์กร
+            สรุปผลการประเมินคาร์บอนฟุตพรินต์องค์กร
           </Text>
 
           {/* สรุปผลการคำนวณหลัก */}

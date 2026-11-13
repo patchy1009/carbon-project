@@ -1,3 +1,6 @@
+/* [MERGE aom + cyn2 รอบ 2] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (เดิมอยู่ที่ activity_based/calculation.ts cyn2 ย้ายมา general_activity)
+ * สูตรคำนวณกิจกรรมพิเศษ (ประชุม/เดินทาง) + คำแนะนำลดคาร์บอน */
+
 export type OptionType = {
   category_type: string;
   fuelType: string;

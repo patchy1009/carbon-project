@@ -2,9 +2,8 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { usePathname } from 'next/navigation';
+import NavUser from '@/components/NavUser';
 
 const navItems = [
   { label: 'EF & GWP Value', href: '/admin/ef-gwp' },
@@ -14,84 +13,42 @@ const navItems = [
   { label: 'Allocation & TAX & Doc', href: '/admin/allotaxdoc' },
 ];
 
-interface AdminProfile {
-  full_name: string;
-  role: string;
-}
-
+// โครงหน้าฝั่งแอดมิน: แถบด้านบนและเมนูด้านข้างที่ใช้ร่วมกันทุกหน้า
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const [profile, setProfile] = useState<AdminProfile | null>(null);
 
-  useEffect(() => {
-    async function loadProfile() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data } = await supabase
-        .from('user_roles')
-        .select('full_name, role')
-        .eq('user_id', user.id)
-        .single();
-
-      if (data) setProfile(data as AdminProfile);
-    }
-    loadProfile();
-  }, []);
-
-  async function handleLogout() {
-    await supabase.auth.signOut(); // ลบ session ใน cookie
-    router.replace('/organization/login');
-    router.refresh();
-  }
-
+  // ใช้ฟอนต์เดียวกับฝั่ง organization (font-sans)
   return (
-    <div className="min-h-screen bg-[#F8FAFC]">
+    <div className="min-h-screen bg-[#F8FAFC] text-gray-800 font-sans">
       {/* Top Navbar */}
+      {/* navbar ให้หน้าตาเดียวกับฝั่ง organization (ดูคอมเมนต์ใน organization/layout.tsx):
+          [MERGE aom + cyn2] ขนาดตัวอักษรใช้ตามฝั่ง organization (navbar ของ cyn2):
+          สูง 84px, โลโก้ 28px ตัวหนา ฟอนต์ Prompt (font-display), ขวาเหลือแค่วงกลมผู้ใช้ */}
       <header
         className="fixed top-0 left-0 right-0 z-50 h-[84px] flex items-center justify-between px-8 rounded-bl-[50px]"
         style={{
           background: 'linear-gradient(90deg, #2D4A63 0%, #32885F 100%)',
-          boxShadow: '-1px 6px 12.1px rgba(0, 63, 66, 0.81)',
+          boxShadow: '0 6px 16px rgba(0, 50, 50, 0.35)',
         }}
       >
-        <div>
-          <h1 className="text-white font-bold text-2xl leading-[22px] font-['Prompt']">
+        <div className="flex items-baseline gap-3">
+          <Link
+            href="/admin/ef-gwp"
+            className="font-display text-white font-bold text-[28px] tracking-tight hover:opacity-90 transition"
+          >
             Carbon Calculator
-          </h1>
-          <p className="text-white text-sm font-['Prompt']">Admin</p>
+          </Link>
+          <span className="text-white/80 text-sm">Admin</span>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#FF951B] flex items-center justify-center text-white text-sm font-bold font-['Prompt']">
-              {profile?.full_name?.slice(0, 2) ?? '..'}
-            </div>
-            <div className="text-right">
-              <p className="text-white text-base font-semibold leading-5">
-                {profile?.full_name ?? 'กำลังโหลด...'}
-              </p>
-              <p className="text-white text-sm font-light leading-4">
-                {profile?.role ?? ''}
-              </p>
-            </div>
-          </div>
-          <button onClick={handleLogout} aria-label="ออกจากระบบ">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-          </button>
-        </div>
+        {/* วงกลมผู้ใช้: กดแล้วเห็นอีเมล + ปุ่มออกจากระบบ (NavUser ตัวเดียวกับฝั่ง organization) */}
+        <NavUser />
       </header>
 
       <div className="pt-[84px] flex">
         {/* Sidebar */}
-        <aside className="fixed left-0 top-[84px] bottom-0 w-[179px] bg-white shadow-[0px_4px_4px_rgba(0,0,0,0.3)] overflow-y-auto">
+        {/* เดิมเงาเข้มรอบเมนูซ้าย -> เส้นขอบบางด้านขวา ดูเบาและทันสมัยขึ้น (ตำแหน่ง/ความกว้างเดิม) */}
+        <aside className="fixed left-0 top-[84px] bottom-0 w-[179px] bg-white border-r border-[#E2E8F0] overflow-y-auto">
           <nav className="flex flex-col gap-1 px-3 pt-6 pb-4">
             {navItems.map((item) => {
               const isActive = pathname.startsWith(item.href);
@@ -99,8 +56,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`rounded-md px-3 py-2.5 text-sm font-medium font-['Sarabun'] ${
-                    isActive ? 'bg-[#F2D84E] text-black' : 'text-black hover:bg-[#F1F5F9]'
+                  // เมนูที่เปิดอยู่: คงพื้นเหลืองตามแบบเดิม เพิ่มตัวหนา / เมนูอื่นตัวสีเทาเข้ม ให้แยกกันชัดขึ้น
+                  aria-current={isActive ? 'page' : undefined}
+                  // [MERGE aom + cyn2] เดิม text-sm (14px) -> text-base (16px) ให้ใกล้เมนูฝั่ง organization
+                  // (ฝั่ง organization 20px แต่เมนูด้านข้างกว้างแค่ 179px ถ้าใช้ 20px ชื่อเมนูจะตัดบรรทัด)
+                  className={`rounded-lg px-3 py-2.5 text-base transition ${
+                    isActive ? 'bg-[#F2D84E] font-semibold text-black' : 'font-medium text-[#334155] hover:bg-[#F1F5F9]'
                   }`}
                 >
                   {item.label}

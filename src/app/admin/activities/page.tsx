@@ -1,3 +1,4 @@
+// ส่วนที่ทำงานฝั่ง server ของหน้าจัดการกิจกรรม: ตรวจสิทธิ์แอดมินแล้วดึงข้อมูลส่งให้หน้าจอ
 export const dynamic = 'force-dynamic';
 
 import { createSupabaseServer } from '@/lib/supabaseServer';
@@ -6,6 +7,7 @@ import ActivityManagementClient from './ActivityManagementClient';
 import type { CarbonScope, Activity, ActivityDetail } from '@/types/activity-management';
 import type { EmissionFactor, GwpValue } from '@/types/ef-gwp'; 
 
+// ดึงขอบเขต กิจกรรม รายการย่อย ค่า EF และ GWP พร้อมกัน แล้วส่งให้ ActivityManagementClient
 export default async function ActivityManagementPage() {
   await requireAdminId(); // ไม่ใช่แอดมิน -> เด้งไปหน้า login
   const supabase = await createSupabaseServer();

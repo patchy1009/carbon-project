@@ -3,7 +3,7 @@ import {
 } from '@/lib/validation';
 import { normalizeNumberString, normalizeTextArea } from '@/lib/normalization';
 
-/* [เพิ่มใหม่] schema ของหน้า "สำนักงาน & คำแนะนำ"
+/* schema ของหน้า "สำนักงาน & คำแนะนำ"
  * เดิมหน้านี้มีฟังก์ชันตรวจของตัวเอง (cleanText / cleanNumber / isNumeric / isNumberOnlyText)
  * ซึ่งซ้ำกับไฟล์กลาง จึงย้ายมาใช้ validation.ts / normalization.ts ให้เหมือนหน้าอื่น
  * กฎที่ต้องใช้ข้อมูลบนหน้าจอ (ห้ามซ้ำ / ต้องมีอยู่จริง) ใส่เพิ่มตอน submit ด้วย extendSchema */

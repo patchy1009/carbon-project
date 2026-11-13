@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 
+// รับอีเมลและรหัสผ่านจากหน้าเว็บ ล็อกอินกับ Supabase ตรวจ role และสถานะ แล้วบอกหน้าเว็บว่าต้องไปหน้าไหน
 export async function POST(request: Request) {
   try {
     // client ตัวนี้ผูกกับ cookie: signInWithPassword สำเร็จแล้ว session จะถูกเขียนลง cookie

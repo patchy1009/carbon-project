@@ -1,4 +1,6 @@
 "use client";
+/* [MERGE aom + cyn2 รอบ 2] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (เดิมอยู่ที่ activity_based/components/CalculationResult.tsx cyn2 ย้ายมา general_activity)
+ * แสดงผลคำนวณ + คำแนะนำลดคาร์บอน + ปุ่มดาวน์โหลด PDF (ส่งข้อมูลไป ./pdf/route.tsx) */
 
 import React, { useState } from "react";
 
@@ -130,7 +132,8 @@ export default function CalculationResult({
   const hasAnyValidRec = hasMeetingRecs || hasTravelRecs;
 
   return (
-    <div className="space-y-6 font-['Be_Vietnam_Pro',sans-serif] text-gray-800">
+    // [MERGE-FIX] เอา font-['Be_Vietnam_Pro'] ออก (เว็บไม่ได้โหลดฟอนต์นี้) ใช้ฟอนต์หลักของเว็บ
+    <div className="space-y-6 text-gray-800">
       {/* ส่วนสรุปผลการประเมิน */}
       <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50/70 px-6 py-4">
@@ -138,7 +141,7 @@ export default function CalculationResult({
             <div className="h-3 w-3 rounded-full bg-[#32885F]"></div>
             <div>
               <h2 className="text-base font-semibold text-gray-800">
-                สรุปผลการประเมินคาร์บอนฟุตพริ้นท์องค์กร
+                สรุปผลการประเมินคาร์บอนฟุตพรินต์องค์กร
               </h2>
               <p className="text-xs text-gray-500">
                 แสดงปริมาณการปล่อยก๊าซเรือนกระจกจำแนกตามหมวดหมู่กิจกรรม (หน่วย: ตันคาร์บอนไดออกไซด์เทียบเท่า)

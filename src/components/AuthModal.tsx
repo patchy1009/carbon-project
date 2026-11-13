@@ -1,3 +1,12 @@
+/* ===================== [MERGE aom + cyn2] =====================
+ * ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (ตามที่ตกลง: ระบบล็อกอิน / ลงทะเบียน ใช้ของ cyn2)
+ *   - โค้ด aom เดิม (ตรวจช่องกรอกแบบกรอบแดง, กล่องแจ้งเตือน showAlert, ล็อกอินผ่าน /api/auth/login) ถูกแทนที่
+ *     เพราะ cyn2 ทำ login/register/OTP/ลืมรหัสผ่าน ครบกว่า
+ * แก้เฉพาะจุดที่ทำให้เชื่อมกับโค้ด aom ได้ (ค้นคำว่า [MERGE-FIX]):
+ *   1) ล็อกอินผ่าน /api/auth/login ของ aom (ความปลอดภัยแบบ aom: ตรวจ status/role ฝั่ง server)
+ *      admin ไป /admin/ef-gwp (เดิม /admin/recommendation ไม่มีหน้านี้ -> 404)
+ *   2) ลิงก์รีเซ็ตรหัสผ่านในอีเมลชี้ไป /organization/forgot_password (เดิม /organization/reset-password ไม่มีหน้านี้)
+ * ============================================================== */
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -132,27 +141,31 @@ export default function AuthModal({
     }
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: loginEmail.trim().toLowerCase(),
-        password: loginPassword,
+      /* [MERGE-FIX] ความปลอดภัยใช้แบบ aom: ล็อกอินผ่าน API ฝั่ง server (/api/auth/login ของ aom)
+       *   เดิม (cyn2) ล็อกอินใน browser ด้วย supabase.auth.signInWithPassword แล้วอ่าน role เอง
+       *   ปัญหาของแบบเดิม: ไม่ตรวจ status (บัญชีที่ถูกระงับยังล็อกอินได้), role ที่ไม่รู้จักถูกส่งไปหน้าองค์กร
+       *   API ของ aom: ตรวจรหัสผ่าน -> ตรวจว่ามีแถวในตาราง user -> status = active -> role ถูกต้อง
+       *                ไม่ผ่านข้อใด = signOut ทันที แล้วบอกหน้าที่ต้องไป (redirectTo) ตาม role
+       *   หน้าตาฟอร์ม/ข้อความ error ยังเป็นของ cyn2 ทั้งหมด */
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: loginEmail.trim().toLowerCase(),
+          password: loginPassword,
+        }),
       });
-      if (error) throw error;
-      if (!data.user) throw new Error("ไม่พบข้อมูลผู้ใช้งาน");
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "ไม่สามารถเข้าสู่ระบบได้");
 
-      const { data: userData, error: userError } = await supabase
-        .from("user")
-        .select("role")
-        .eq("acc_id", data.user.id)
-        .single();
-
-      if (userError || !userData) throw new Error("ไม่พบข้อมูลสิทธิ์การใช้งานในระบบ");
+      // รับเฉพาะหน้าที่รู้จัก (กัน redirect ไปที่อื่น)
+      const allowed = ["/admin/ef-gwp", "/organization/dashboard"];
+      if (!allowed.includes(result.redirectTo)) throw new Error("ไม่สามารถตรวจสอบสิทธิ์ผู้ใช้ได้");
 
       onClose();
-      if (userData.role === "admin") {
-        router.push("/admin/ef-gwp");
-      } else {
-        router.push("/organization/dashboard");
-      }
+      // session ถูกเขียนลง cookie โดย server -> โหลดหน้าใหม่ทั้งหน้า ให้ navbar (onAuthStateChange) เห็นผู้ใช้ทันที
+      // (admin ไป /admin/ef-gwp แทน /admin/recommendation ของเดิมซึ่งไม่มีหน้านี้)
+      window.location.href = result.redirectTo;
     } catch (err: unknown) {
       setLoginErrorMessage(getErrorMessage(err));
     } finally {
@@ -175,7 +188,8 @@ export default function AuthModal({
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-        redirectTo: `${window.location.origin}/organization/reset-password`,
+        // [MERGE-FIX] เดิม "/organization/reset-password" (ไม่มีหน้านี้) -> หน้าตั้งรหัสผ่านใหม่ของ cyn2 คือ forgot_password
+        redirectTo: `${window.location.origin}/organization/forgot_password`,
       });
       if (error) throw error;
       setForgotMessage("ส่งลิงก์สำหรับรีเซ็ตรหัสผ่านไปยังอีเมลของคุณแล้ว กรุณาตรวจสอบกล่องข้อความ");

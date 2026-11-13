@@ -9,14 +9,14 @@ export type EfField = 'eftype_id'| 'ef_name' | 'ef_value' | 'real_unit';
 
 export const efSchema : formSchema<EfField> = {
     eftype_id: {
-        rules: [requiredSelect('ประเภท EF')], // [แก้ไข] ข้อความ "กรุณาเลือก" แทน "กรุณากรอก" เพราะเป็น dropdown
+        rules: [requiredSelect('ประเภท EF')], // ข้อความ "กรุณาเลือก" แทน "กรุณากรอก" เพราะเป็น dropdown
     },
     ef_name: {
         rules: [required('ชื่อ EF'), notNumericOnly('ชื่อ EF'), maxLength('ชื่อ EF', 150)],
     },
     ef_value: {
         normalize: normalizeNumberString, //แปลงเลขไทย + ลบ,ก่อนตรวจ
-        // [แก้ไข] เพิ่ม allowZero:false เพราะค่า EF = 0 ทำให้ผลคำนวณการปล่อยก๊าซเป็น 0 เสมอ
+        // เพิ่ม allowZero:false เพราะค่า EF = 0 ทำให้ผลคำนวณการปล่อยก๊าซเป็น 0 เสมอ
         rules: [required('ค่า EF'), isDecimal('ค่า EF', { allowNegative: false, allowZero: false, maxDecimals: 6 })],
     },
     real_unit: {
@@ -42,7 +42,7 @@ export const gwpSchema : formSchema<GwpField> = {
     },
     gwp_value: {
         normalize: normalizeNumberString, //แปลงเลขไทย + ลบ,ก่อนตรวจ
-        // [แก้ไข] GWP = 0 ไม่มีความหมาย (CO2 = 1 คือค่าต่ำสุดตามนิยาม)
+        // GWP = 0 ไม่มีความหมาย (CO2 = 1 คือค่าต่ำสุดตามนิยาม)
         rules: [required('ค่า GWP'), isDecimal('ค่า GWP', { allowNegative: false, allowZero: false, maxDecimals: 6 })],
     },
 };

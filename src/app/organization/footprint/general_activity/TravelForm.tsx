@@ -1,4 +1,6 @@
 "use client";
+/* [MERGE aom + cyn2 รอบ 2] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (เดิมอยู่ที่ activity_based/components/TravelForm.tsx cyn2 ย้ายมา general_activity)
+ * ฟอร์มการเดินทาง/ขนส่ง เลือกการเดินทางเก่ามาแก้หรือลบได้ */
 
 import React, { useState, useEffect, useRef } from "react";
 import { Trash2 } from "lucide-react";

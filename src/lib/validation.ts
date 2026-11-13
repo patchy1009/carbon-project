@@ -1,3 +1,5 @@
+// กฎตรวจข้อมูลในฟอร์มที่ใช้ร่วมกันทุกหน้า แต่ละกฎคืนว่าผ่าน หรือไม่ผ่านพร้อมข้อความ
+// K ใน validateForm คือชื่อช่องของฟอร์ม ช่วยให้ TypeScript เตือนเมื่อพิมพ์ชื่อช่องผิด
 import {
   normalizeText,
   normalizeNumberString,
@@ -12,6 +14,7 @@ export type validationResult =
 | { ok : false, message : string };
 
 const ok : validationResult = { ok : true };  //เก็บผลที่ผ่านการตรวจสอบ
+// สร้างผลลัพธ์แบบไม่ผ่าน พร้อมข้อความ error
 const fail = (message : string) : validationResult => ({ ok : false, message });  //เก็บผลที่ไม่ผ่านการตรวจสอบ
 
 export type fieldRule = (value : string) => validationResult;
@@ -33,14 +36,14 @@ export const required = (label : string) : fieldRule => {
     };
 };
 
-/* บังคับเลือก (ใช้กับ dropdown ให้ข้อความเหมาะกว่า "กรุณากรอก") [เพิ่มใหม่] */
+/* บังคับเลือก (ใช้กับ dropdown ให้ข้อความเหมาะกว่า "กรุณากรอก") */
 export const requiredSelect = (label : string) : fieldRule => {
     return (value : string) : validationResult =>
         value.trim() === '' ? fail('กรุณาเลือก' + label) : ok;
 };
 
 /* ห้ามเป็นตัวเลขล้วน
- * [แก้ไข] เดิม regex /[^\d\s.,\-]{5,}$/ หมายถึง "ลงท้ายด้วยตัวอักษรที่ไม่ใช่ตัวเลข 5 ตัวขึ้นไป"
+ * เดิม regex /[^\d\s.,\-]{5,}$/ หมายถึง "ลงท้ายด้วยตัวอักษรที่ไม่ใช่ตัวเลข 5 ตัวขึ้นไป"
  *   ทำให้ชื่อปกติอย่าง "Diesel" หรือ "น้ำมันดีเซล" ไม่ผ่าน แต่ "12345" กลับผ่าน (กลับด้าน)
  *   ตอนนี้: ไม่ผ่านเมื่อประกอบด้วยตัวเลข/ช่องว่าง/จุด/comma/ขีด อย่างเดียว เช่น "123", "1,000.5", "12-34" */
 export const notNumericOnly = (label : string) : fieldRule => {
@@ -53,9 +56,10 @@ export const notNumericOnly = (label : string) : fieldRule => {
 };
 
 /* ภาษาอังกฤษเท่านั้น (ใช้กับหน่วย/ชื่อประเภท เช่น kWh, kgCO2e/L, Stationary Combustion)
- * [แก้ไข] เดิมรับแค่ A-Z 0-9 และ / ทำให้ "Stationary Combustion" (มี space), "m³", "kgCO2e/kWh.",
+ * เดิมรับแค่ A-Z 0-9 และ / ทำให้ "Stationary Combustion" (มี space), "m³", "kgCO2e/kWh.",
  *   "Litre (L)" ไม่ผ่าน ตอนนี้รับ space และเครื่องหมายที่ใช้ในหน่วยได้ด้วย */
 const ENGLISH_CHARS = /^[A-Za-z0-9\s/.\-_()%²³·,+*^']+$/;
+// กฎ: ต้องเป็นภาษาอังกฤษ และมีตัวอักษรอย่างน้อย 1 ตัว
 export const englishOnly = (label : string) : fieldRule => {
     return (value : string) : validationResult => {
         if (value.trim() === '') return ok;
@@ -66,8 +70,9 @@ export const englishOnly = (label : string) : fieldRule => {
 };
 
 /* ได้ทั้งภาษาอังกฤษและภาษาไทย (ใช้กับหน่วยที่เป็นภาษาไทยได้ เช่น คน, ไร่, ตร.ม., kWh/ปี)
- * [แก้ไข] เพิ่มเครื่องหมายแบบเดียวกับ englishOnly เพราะ "ตร.ม." หรือ "ครั้ง/ปี" เดิมไม่ผ่าน */
+ * เพิ่มเครื่องหมายแบบเดียวกับ englishOnly เพราะ "ตร.ม." หรือ "ครั้ง/ปี" เดิมไม่ผ่าน */
 const THAI_ENGLISH_CHARS = /^[฀-๿A-Za-z0-9\s/.\-_()%²³·,+*^']+$/;
+// กฎ: ใช้ได้เฉพาะภาษาไทยและภาษาอังกฤษ
 export const thaiOrEnglishOnly = (label : string) : fieldRule => {
     return (value : string) : validationResult => {
         if (value.trim() === '') return ok;
@@ -76,8 +81,7 @@ export const thaiOrEnglishOnly = (label : string) : fieldRule => {
     };
 };
 
-/* จำกัดความยาวข้อความ [เพิ่มใหม่]
- * ใช้คู่กับ maxLength ของ <input> แต่ต้องตรวจซ้ำที่นี่ด้วย เพราะการวาง (paste) / แก้ HTML ข้ามได้ */
+/* จำกัดความยาวข้อความ  * ใช้คู่กับ maxLength ของ <input> แต่ต้องตรวจซ้ำที่นี่ด้วย เพราะการวาง (paste) / แก้ HTML ข้ามได้ */
 export const maxLength = (label : string, max : number) : fieldRule => {
     return (value : string) : validationResult =>
         [...value].length > max  // นับตามตัวอักษรจริง (สระ/วรรณยุกต์ไทยนับแยก ตามที่ DB นับ)
@@ -86,7 +90,7 @@ export const maxLength = (label : string, max : number) : fieldRule => {
 };
 
 /* ตัวเลขทศนิยม: จำกัดหลักทศนิยม + ห้ามติดลบ + ช่วงค่า
- * [แก้ไข] เพิ่ม min / max (เช่น เปอร์เซ็นต์ 0-100) และ allowZero
+ * เพิ่ม min / max (เช่น เปอร์เซ็นต์ 0-100) และ allowZero
  *   เดิมเช็กติดลบไม่ได้จริง เพราะ normalizeToArabicNumber คืน null กับเลขติดลบ (แก้ที่ normalization แล้ว) */
 export const isDecimal = (
     label : string,
@@ -128,8 +132,7 @@ export const isPositiveInteger = (label : string) : fieldRule => {
     };
 };
 
-/* ห้ามซ้ำกับข้อมูลที่มีอยู่ [เพิ่มใหม่]
- * existing = ค่าเดิมในตาราง "ไม่รวม" แถวที่กำลังแก้ไข (ไม่งั้นแก้แถวเดิมแล้วจะซ้ำกับตัวเอง)
+/* ห้ามซ้ำกับข้อมูลที่มีอยู่  * existing = ค่าเดิมในตาราง "ไม่รวม" แถวที่กำลังแก้ไข (ไม่งั้นแก้แถวเดิมแล้วจะซ้ำกับตัวเอง)
  * เทียบแบบไม่สนตัวพิมพ์เล็ก/ใหญ่และช่องว่าง: "Diesel" = "diesel" = " DIESEL " */
 export const notDuplicate = (
     label : string,
@@ -142,8 +145,7 @@ export const notDuplicate = (
     };
 };
 
-/* ค่าที่เลือกต้องมีอยู่จริงในตารางที่อ้างถึง (ตรวจความสัมพันธ์ระหว่างตาราง) [เพิ่มใหม่]
- * เช่น scope_id ที่เลือกต้องอยู่ใน carbon_scope จริง กันกรณีข้อมูลถูกลบไปแล้วแต่ dropdown ยังค้าง */
+/* ค่าที่เลือกต้องมีอยู่จริงในตารางที่อ้างถึง (ตรวจความสัมพันธ์ระหว่างตาราง)  * เช่น scope_id ที่เลือกต้องอยู่ใน carbon_scope จริง กันกรณีข้อมูลถูกลบไปแล้วแต่ dropdown ยังค้าง */
 export const existsIn = (label : string, ids : ReadonlyArray<string>) : fieldRule => {
     const set = new Set(ids);
     return (value : string) : validationResult => {
@@ -152,7 +154,7 @@ export const existsIn = (label : string, ids : ReadonlyArray<string>) : fieldRul
     };
 };
 
-/* ช่องที่ต้องกรอก "คู่กัน" [เพิ่มใหม่] เช่น เลือกตัวดำเนินการแล้วต้องกรอกตัวเลขด้วย
+/* ช่องที่ต้องกรอก "คู่กัน" เช่น เลือกตัวดำเนินการแล้วต้องกรอกตัวเลขด้วย
  * otherValue = ค่าของอีกช่อง (ส่งเข้ามาตอน submit เพราะ fieldRule เห็นแค่ค่าของช่องตัวเอง)
  * ช่องนี้ว่าง แต่อีกช่องมีค่า -> ไม่ผ่าน / ว่างทั้งคู่ = ไม่มีเงื่อนไข ผ่าน */
 export const requiredWith = (label : string, otherValue : string) : fieldRule => {
@@ -160,7 +162,7 @@ export const requiredWith = (label : string, otherValue : string) : fieldRule =>
         value.trim() === '' && otherValue.trim() !== '' ? fail('กรุณาระบุ' + label + 'ด้วย') : ok;
 };
 
-/* วันที่รูปแบบ YYYY-MM-DD (ค่าจาก <input type="date">) และอยู่ในช่วงปี ค.ศ. ที่กำหนด [เพิ่มใหม่] */
+/* วันที่รูปแบบ YYYY-MM-DD (ค่าจาก <input type="date">) และอยู่ในช่วงปี ค.ศ. ที่กำหนด */
 export const isDate = (label : string, opts : { minYear?: number, maxYear?: number } = {}) : fieldRule => {
     return (value : string) : validationResult => {
         if (value.trim() === '') return ok;
@@ -179,7 +181,7 @@ export const isDate = (label : string, opts : { minYear?: number, maxYear?: numb
 };
 
 /* =====================================================================
- * ตรวจไฟล์ที่แนบ [เพิ่มใหม่] (ขนาด + นามสกุล) ใช้ก่อนอัปโหลดขึ้น Storage
+ * ตรวจไฟล์ที่แนบ (ขนาด + นามสกุล) ใช้ก่อนอัปโหลดขึ้น Storage
  * ===================================================================== */
 export function validateFile(
     file : File,
@@ -197,7 +199,7 @@ export function validateFile(
     return ok;
 }
 
-/* เทียบตัวเลขกับเงื่อนไข เช่น meetsCondition(1200, '<=', 1000) -> false [เพิ่มใหม่] */
+/* เทียบตัวเลขกับเงื่อนไข เช่น meetsCondition(1200, '<=', 1000) -> false */
 export function meetsCondition(value : number, operator : ConditionOperator, target : number) : boolean {
     switch (operator) {
         case '>': return value > target;
@@ -225,6 +227,7 @@ export type formResult<K extends string> =
     | { ok : true, clean : Record<K, string> }
     | { ok : false, errors : formError<K>, clean : Record<K, string> };  //เก็บค่าที่ normalize แล้วของแต่ละ field
 
+// ตรวจทุกช่องตาม schema: ปรับรูปแบบค่า ตรวจกฎตามลำดับ แล้วเก็บ error ข้อแรกของแต่ละช่อง
 export function validateForm<K extends string>(
     formData : Record<K, string>,
     schema : formSchema<K>
@@ -251,8 +254,7 @@ export function validateForm<K extends string>(
         : { ok : false, clean, errors };
 }
 
-/* เพิ่มกฎตอน runtime ต่อท้าย schema เดิม [เพิ่มใหม่]
- * schema ในไฟล์ schema.ts เป็นค่าคงที่ จึงใส่กฎที่ต้องใช้ข้อมูลจากหน้าจอ (เช่น ห้ามซ้ำ / ต้องมีอยู่จริง) ไม่ได้
+/* เพิ่มกฎตอน runtime ต่อท้าย schema เดิม  * schema ในไฟล์ schema.ts เป็นค่าคงที่ จึงใส่กฎที่ต้องใช้ข้อมูลจากหน้าจอ (เช่น ห้ามซ้ำ / ต้องมีอยู่จริง) ไม่ได้
  * ใช้: validateForm(form, extendSchema(efSchema, { ef_name: [notDuplicate('ชื่อ EF', names)] })) */
 export function extendSchema<K extends string>(
     schema : formSchema<K>,

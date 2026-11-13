@@ -25,6 +25,9 @@ export default function Home() {
 */
 import { redirect } from "next/navigation";
 
+// หน้าแรกของเว็บ
+// [MERGE aom + cyn2] เดิม (aom) พาไปหน้าเข้าสู่ระบบ /organization/login ทันที
+//   ตอนนี้ (cyn2) พาไปหน้า landing /organization/homepage ก่อน แล้วค่อยกดเข้าสู่ระบบ/ลงทะเบียน
 export default function Home() {
   //redirect("/admin/ef-gwp");
   redirect("/organization/homepage");

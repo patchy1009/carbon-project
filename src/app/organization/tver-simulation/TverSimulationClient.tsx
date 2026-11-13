@@ -1,9 +1,13 @@
+// หน้าจำลองโครงการปลูกป่า T-VER: กรอกข้อมูล ตรวจเงื่อนไข คำนวณเครดิต และบันทึกโครงการ
 'use client';
 
+import Select, { ChevronDown } from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation'; // dropdown "โครงการที่บันทึกไว้" -> เปิดหน้าของโครงการนั้น
+import { calculateTverCredits } from '@/lib/tverCredits'; // [MERGE aom + cyn2] สูตรเครดิตของ cyn2
 import { supabase } from '@/lib/supabaseClient';
-import type { TreeListItem, TverProjectDetail } from '@/types/tver-project';
+import { TVER_TREE_COUNT_NAME, type TreeListItem, type TverProjectDetail } from '@/types/tver-project';
 import type { OrgTreeProject, OrgTreeProjectDetail } from '@/types/tver-simulation';
 import {
   validateForm, required, requiredSelect, notNumericOnly, maxLength, isDecimal, isDate, existsIn,
@@ -11,12 +15,13 @@ import {
 } from '@/lib/validation';
 import { normalizeNumberString, normalizeToArabicNumber, formatCondition } from '@/lib/normalization';
 import { dbErrorMessage } from '@/lib/supabaseCrud';
+import { showError } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert
 
-/* [ปรับปรุง] normalize / validate ฟอร์มจำลองโครงการ T-VER
+/* normalize / validate ฟอร์มจำลองโครงการ T-VER
  * 1) ชื่อโครงการ: ห้ามว่าง / ตัวเลขล้วน / ยาวเกิน 150 ตัวอักษร
  * 2) พันธุ์ไม้: ต้องเลือก และต้องมีอยู่จริงใน tree_list (ตรวจความสัมพันธ์)
  * 3) ค่าของแต่ละเงื่อนไข: แปลงเลขไทย/ลบ comma, ไม่ติดลบ (เดิม parseFloat รับ "12abc" และค่าติดลบได้)
- * 4) [เพิ่ม] เทียบค่าที่กรอกกับเงื่อนไขที่แอดมินตั้ง เช่น พื้นที่ "<= 1000" ไร่ กรอก 1200 -> แจ้งว่าไม่ผ่าน
+ * 4) เทียบค่าที่กรอกกับเงื่อนไขที่แอดมินตั้ง เช่น พื้นที่ "<= 1000" ไร่ กรอก 1200 -> แจ้งว่าไม่ผ่าน
  * 5) วันที่เริ่มโครงการ: ต้องเป็นวันที่ที่มีอยู่จริง และอยู่ในช่วงปีที่สมเหตุสมผล
  * 6) error แสดงใต้ช่อง แทนการพึ่ง required ของ browser */
 
@@ -25,39 +30,62 @@ const MIN_START_YEAR = 2000;
 const MAX_START_YEAR = new Date().getFullYear() + 10;
 
 
-// ⚠️ PLACEHOLDER: ยังไม่มีค่าอัตรากักเก็บคาร์บอนจริงต่อต้นในระบบ (tree_list ไม่มีคอลัมน์นี้)
-// ต้องแทนที่ด้วยค่าจริงจาก DB เมื่อเพิ่มคอลัมน์ carbon_rate_kg_per_tree_per_year แล้ว
-const PLACEHOLDER_KG_CO2E_PER_TREE_PER_YEAR = 10;
-const GROWTH_RATE_YEAR_2 = 1.18; // +18% (ค่าสมมติตามตัวอย่างใน Figma)
-const GROWTH_RATE_YEAR_3 = 1.38; // +38%
+/* [MERGE aom + cyn2] แบ่งงานหน้า T-VER
+ *   หน้านี้ (aom)          : กรอกข้อมูลโครงการ + ตรวจกับเงื่อนไขที่แอดมินตั้ง + บันทึก แล้วแสดงกราฟเครดิตในหน้าเดิม
+ *                            เครดิตคำนวณด้วยสูตรของ cyn2 (lib/tverCredits.ts = T-VER สูตรที่ 4)
+ *   tver_simulation (cyn2) : จัดสรรเครดิต -> ภาษี (กดปุ่ม "ไปจัดสรรคาร์บอนเครดิต" ใต้กราฟ)
+ *   [ลบ] สูตรเดิมของ aom (T × 10 ÷ 1000, ×1.18, ×1.38 ค่าสมมติ) */
 
 type CreditResult = { year1: number; year2: number; year3: number };
 
+// โครงการที่องค์กรบันทึกไว้ (ใช้แค่ id + ชื่อ แสดงใน dropdown)
+export type SavedProjectOption = { orgtreeproject_id: string; project_name: string | null };
+
+// หน้าจอหลัก รองรับทั้งโครงการใหม่ และการแก้ไขโครงการเดิม
 export default function TverSimulationClient({
   orgId,
   trees,
   criteria,
   existingProject = null,
   existingDetails = [],
+  savedProjects = [],
 }: {
   orgId: string; // auth.uid() ของบัญชีที่ล็อกอิน
   trees: TreeListItem[];
   criteria: TverProjectDetail[];
   existingProject?: OrgTreeProject | null; // ถ้ามีค่า = โหมดแก้ไขโครงการเดิม
   existingDetails?: OrgTreeProjectDetail[];
+  savedProjects?: SavedProjectOption[]; // โครงการที่บันทึกไว้ขององค์กรนี้ (page.tsx ดึงมา)
 }) {
   const isEditMode = existingProject !== null;
+  const router = useRouter();
+
+  // เลือกจาก dropdown: ค่าว่าง = เริ่มโครงการใหม่ / id = เปิดโครงการนั้น (/tver-simulation?edit=<id>)
+  function openSavedProject(id: string) {
+    router.push(id ? `/organization/tver-simulation?edit=${encodeURIComponent(id)}` : '/organization/tver-simulation');
+  }
+
+  // รายการใต้ช่องชื่อโครงการ: null = ปิด / 'filter' = กรองตามที่พิมพ์ / 'all' = ทั้งหมด (กดปุ่มลูกศร)
+  const [listMode, setListMode] = useState<'filter' | 'all' | null>(null);
 
   // ค่าเริ่มต้นของฟอร์ม: โหมดแก้ไขจะดึงจากโครงการเดิม โหมดสร้างใหม่จะว่างเปล่า
   const [projectName, setProjectName] = useState(existingProject?.project_name ?? '');
 
+  // โครงการที่แสดงในรายการใต้ช่องชื่อ (ไม่รวมโครงการที่เปิดอยู่)
+  const otherProjects = savedProjects.filter((p) => p.orgtreeproject_id !== existingProject?.orgtreeproject_id);
+  const query = projectName.trim().toLowerCase();
+  // ถ้าชื่อในช่องยังเป็นชื่อเดิมของโครงการที่เปิดอยู่ ถือว่ายังไม่ได้พิมพ์ค้น -> แสดงทั้งหมด
+  const isSearching = query !== '' && query !== (existingProject?.project_name ?? '').trim().toLowerCase();
+  const shownProjects =
+    listMode === 'filter' && isSearching
+      ? otherProjects.filter((p) => (p.project_name ?? '').toLowerCase().includes(query))
+      : otherProjects;
+
   // พันธุ์ไม้เก็บอยู่ในแถวรายละเอียดของโครงการ (org_tree_project_detail.tree_id) ทุกแถวมีค่าเดียวกัน
   const [treeId, setTreeId] = useState(existingDetails.find((d) => d.tree_id)?.tree_id ?? '');
 
-  // ตารางเก็บแค่ปี (join_year) จึงเติมเป็นวันที่ 1 ม.ค. ของปีนั้นให้ในช่องวันที่
-  const [startDate, setStartDate] = useState(
-    existingProject?.join_year ? `${existingProject.join_year}-01-01` : ''
-  );
+  // [แก้ไข] ลบ join_year แล้ว ทุกโครงการมี join_date (schema_cleanup.sql เติมให้รายการเก่า)
+  const [startDate, setStartDate] = useState(existingProject?.join_date ?? '');
 
   const [amounts, setAmounts] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
@@ -67,6 +95,7 @@ export default function TverSimulationClient({
     return initial;
   });
 
+  // ผลเครดิต 3 ปี (โหมดแก้ไขเริ่มจากค่าที่บันทึกไว้)
   const [result, setResult] = useState<CreditResult | null>(
     existingProject && existingProject.credit_year_1 !== null
       ? {
@@ -81,20 +110,21 @@ export default function TverSimulationClient({
   const [savedProjectId, setSavedProjectId] = useState<string | null>(
     existingProject?.orgtreeproject_id ?? null
   );
-  const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  // [เพิ่ม] error ใต้ช่อง: key = projectName / treeId / startDate / tverdetail_id
+  // error ใต้ช่อง: key = projectName / treeId / startDate / tverdetail_id
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // ล้างข้อความ error ของช่องที่ระบุ
   const clearError = (key: string) => {
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: '' }));
   };
 
+  // เก็บค่าที่ผู้ใช้พิมพ์ แล้วล้าง error ของช่องนั้น
   function handleAmountChange(tverdetailId: string, value: string) {
     setAmounts((prev) => ({ ...prev, [tverdetailId]: value }));
     clearError(tverdetailId);
   }
 
-  // [เพิ่ม] schema ของทั้งฟอร์ม (ช่องค่าของ criteria สร้างตามที่แอดมินตั้งไว้)
+  // schema ของทั้งฟอร์ม (ช่องค่าของ criteria สร้างตามที่แอดมินตั้งไว้)
   function buildSchema(): formSchema<string> {
     const schema: formSchema<string> = {
       projectName: { rules: [required('ชื่อโครงการ'), notNumericOnly('ชื่อโครงการ'), maxLength('ชื่อโครงการ', 150)] },
@@ -113,39 +143,21 @@ export default function TverSimulationClient({
     return schema;
   }
 
-  // จับคู่ช่องกรอกกับชื่อ criteria ที่แอดมินตั้งไว้
-  // ⚠️ เปราะบาง: ขึ้นกับว่าแอดมินตั้งชื่อ detail_name ตรงกับคำเหล่านี้
-  const totalTreesDetail = criteria.find((c) => c.detail_name?.includes('จำนวนต้นไม้ที่ปลูก'));
-  const areaDetail = criteria.find(
-    (c) => c.detail_name?.includes('พื้นที่โครงการทั้งหมด') || c.detail_name?.includes('พื้นที่ปลูก')
-  );
-  const densityDetail = criteria.find((c) => c.detail_name?.includes('ต้นไม้ต่อไร่'));
+  // T ของสูตรเครดิต = ช่อง "จำนวนต้นไม้" (จับคู่ชื่อเงื่อนไขแบบตรงทุกตัวอักษร)
+  //   cyn2 ใช้ พื้นที่ × ต้นต่อไร่ แต่เงื่อนไขที่แอดมินตั้งไม่มี "ต้นไม้ต่อไร่" -> ใช้จำนวนต้นที่กรอกตรงๆ (ตรงกับนิยาม T ของสูตร)
+  const totalTreesDetail = criteria.find((c) => c.detail_name === TVER_TREE_COUNT_NAME);
 
-  // [แก้ไข] เดิม parseFloat (ไม่รู้จักเลขไทย/comma) -> normalizeToArabicNumber
-  function valueOf(d?: TverProjectDetail): number {
-    return d ? normalizeToArabicNumber(amounts[d.tverdetail_id]) ?? 0 : 0;
-  }
-
-  function calculateCredits(): CreditResult {
-    // ใช้ "จำนวนต้นไม้ที่ปลูก" โดยตรงถ้ากรอกไว้ ถ้าไม่มีให้คำนวณจาก พื้นที่ x จำนวนต้นต่อไร่
-    const plantedTrees = valueOf(totalTreesDetail);
-    const totalTrees =
-      plantedTrees > 0 ? plantedTrees : valueOf(areaDetail) * valueOf(densityDetail);
-
-    const year1 = (totalTrees * PLACEHOLDER_KG_CO2E_PER_TREE_PER_YEAR) / 1000; // kg -> tCO2e
-    return { year1, year2: year1 * GROWTH_RATE_YEAR_2, year3: year1 * GROWTH_RATE_YEAR_3 };
-  }
-
-  // กดปุ่ม "คำนวณและดูรายงาน": คำนวณ + บันทึกลงรายการโครงการในระบบ พร้อมกัน
+  // กดปุ่ม "บันทึกและคำนวณคาร์บอนเครดิต": ตรวจ + คำนวณ (สูตร cyn2) + บันทึก แล้วแสดงกราฟในหน้าเดิม
   async function handleCalculate(e: React.FormEvent) {
     e.preventDefault();
 
-    // [เพิ่ม] normalize + validate ทั้งฟอร์มก่อนคำนวณ/บันทึก
+    // normalize + validate ทั้งฟอร์มก่อนคำนวณ/บันทึก
     const result = validateForm({ ...amounts, projectName, treeId, startDate }, buildSchema());
-    const errs: Record<string, string> = result.ok ? {} : { ...(result.errors as Record<string, string>) };
+    const errs: Record<string, string> = {};
+    if (!result.ok) Object.assign(errs, result.errors);
 
-    // [เพิ่ม] เทียบค่าที่กรอกกับเงื่อนไขของแอดมิน (ตรวจข้อมูลอ้างอิงที่เกี่ยวข้อง)
-    // [แก้ไข] อ่านจาก condition_operator / condition_number ตรงๆ ไม่ต้องแกะข้อความแล้ว
+    // เทียบค่าที่กรอกกับเงื่อนไขของแอดมิน (ตรวจข้อมูลอ้างอิงที่เกี่ยวข้อง)
+    // อ่านจาก condition_operator / condition_number ตรงๆ ไม่ต้องแกะข้อความแล้ว
     for (const c of criteria) {
       if (errs[c.tverdetail_id] || !c.condition_operator || c.condition_number == null) continue;
       const v = normalizeToArabicNumber(result.clean[c.tverdetail_id]);
@@ -157,25 +169,28 @@ export default function TverSimulationClient({
 
     setErrors(errs);
     if (Object.keys(errs).length > 0) return;
+    if (!totalTreesDetail) {
+      return showError(`ยังไม่มีเงื่อนไข "${TVER_TREE_COUNT_NAME}" ในหน้าแอดมิน T-VER Project จึงคำนวณคาร์บอนเครดิตไม่ได้`);
+    }
 
     setSaving(true);
-    setNotice(null);
 
-    const credits = calculateCredits();
     const cleanName = result.clean.projectName; // ชื่อที่ normalize แล้ว
+    // [MERGE aom + cyn2] สูตรเครดิตของ cyn2: T × t × 9.5 × 10^-3
+    const [year1, year2, year3] = calculateTverCredits(
+      normalizeToArabicNumber(result.clean[totalTreesDetail.tverdetail_id]) ?? 0
+    );
 
     const projectValues = {
       project_name: cleanName,
-      // ตัดปีจากข้อความวันที่โดยตรง (YYYY-MM-DD) ไม่ผ่าน Date เพื่อกันเขตเวลาทำให้ปีเพี้ยน
-      join_year: startDate ? parseInt(startDate.slice(0, 4), 10) : null,
-      credit_year_1: credits.year1,
-      credit_year_2: credits.year2,
-      credit_year_3: credits.year3,
+      join_date: startDate || null, // เก็บวันที่เต็ม ใช้ดูสถานะโครงการในหน้า Dashboard
+      credit_year_1: year1,
+      credit_year_2: year2,
+      credit_year_3: year3,
       updated_at: new Date().toISOString(),
     };
 
     let projectId = savedProjectId;
-    const isUpdate = projectId !== null;
 
     if (projectId) {
       // เคยบันทึกแล้ว -> อัปเดตโครงการเดิม ไม่สร้างซ้ำ
@@ -185,7 +200,7 @@ export default function TverSimulationClient({
         .eq('orgtreeproject_id', projectId);
       if (error) {
         setSaving(false);
-        return alert('อัปเดตโครงการไม่สำเร็จ: ' + dbErrorMessage(error));
+        return showError('อัปเดตโครงการไม่สำเร็จ: ' + dbErrorMessage(error));
       }
 
       // ลบรายละเอียดเดิมก่อน แล้วค่อยบันทึกชุดใหม่ด้านล่าง
@@ -195,7 +210,7 @@ export default function TverSimulationClient({
         .eq('orgtreeproject_id', projectId);
       if (deleteError) {
         setSaving(false);
-        return alert('อัปเดตรายละเอียดไม่สำเร็จ: ' + dbErrorMessage(deleteError));
+        return showError('อัปเดตรายละเอียดไม่สำเร็จ: ' + dbErrorMessage(deleteError));
       }
     } else {
       // ยังไม่เคยบันทึก -> สร้างโครงการใหม่
@@ -206,14 +221,14 @@ export default function TverSimulationClient({
         .single();
       if (error || !data) {
         setSaving(false);
-        return alert('บันทึกโครงการไม่สำเร็จ: ' + (error ? dbErrorMessage(error) : 'ไม่ทราบสาเหตุ'));
+        return showError('บันทึกโครงการไม่สำเร็จ: ' + (error ? dbErrorMessage(error) : 'ไม่ทราบสาเหตุ'));
       }
       projectId = data.orgtreeproject_id as string;
       setSavedProjectId(projectId); // จำไว้ เพื่อให้การกดครั้งต่อไปเป็นการอัปเดต
     }
 
     // บันทึกรายละเอียดแต่ละ criteria ที่กรอกไว้ (พร้อมพันธุ์ไม้ที่เลือก)
-    // [แก้ไข] ใช้ค่าที่ normalize แล้วจาก result.clean แทน parseFloat(ค่าดิบ)
+    // ใช้ค่าที่ normalize แล้วจาก result.clean แทน parseFloat(ค่าดิบ)
     const detailRows = criteria
       .filter((c) => result.clean[c.tverdetail_id] !== '')
       .map((c) => ({
@@ -230,17 +245,14 @@ export default function TverSimulationClient({
         .insert(detailRows);
       if (detailError) {
         setSaving(false);
-        return alert('บันทึกรายละเอียดโครงการไม่สำเร็จ: ' + dbErrorMessage(detailError));
+        return showError('บันทึกรายละเอียดโครงการไม่สำเร็จ: ' + dbErrorMessage(detailError));
       }
     }
 
-    setResult(credits);
+    // อยู่หน้าเดิม แสดงกราฟเครดิตในการ์ดขวา (ใต้กราฟมีปุ่มไปจัดสรรคาร์บอนเครดิตของ cyn2)
+    setResult({ year1, year2, year3 });
     setSaving(false);
-    setNotice(
-      isUpdate
-        ? `อัปเดตโครงการ "${cleanName}" ในรายการโครงการปลูกป่า T-VER เรียบร้อยแล้ว`
-        : `โครงการ "${cleanName}" ถูกบันทึกลงรายการโครงการปลูกป่า T-VER เรียบร้อยแล้ว`
-    );
+    // ไม่เด้ง popup แล้ว: กราฟที่ขึ้นในการ์ดขวาบอกผลอยู่แล้ว
   }
 
   const maxValue = result ? Math.max(result.year1, result.year2, result.year3) : 0;
@@ -248,35 +260,7 @@ export default function TverSimulationClient({
 
   return (
     <div className="max-w-[1280px] mx-auto px-8 py-8">
-      {/* แจ้งเตือนหลังบันทึกสำเร็จ (ลอยอยู่บนจอ ไม่หายไปจนกว่าผู้ใช้จะปิดเอง) */}
-      {notice && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 w-full max-w-[560px] px-4">
-          <div className="flex items-start gap-3 rounded-xl border border-[#BBF7D0] bg-[#F0FDF4] px-4 py-3 shadow-lg">
-            <span className="mt-0.5 text-lg text-[#16A34A]">✓</span>
-            <div className="flex-1 text-sm text-[#166534]">
-              <p className="font-semibold">{notice}</p>
-              <p className="mt-1">
-                ไม่ต้องสร้างโครงการนี้ซ้ำ หากแก้ไขข้อมูลแล้วกดปุ่มอีกครั้ง
-                ระบบจะอัปเดตโครงการเดิมให้
-              </p>
-              <Link
-                href="/organization/dashboard"
-                className="mt-2 inline-block font-semibold underline"
-              >
-                ดูในรายการโครงการ T-VER ›
-              </Link>
-            </div>
-            <button
-              type="button"
-              onClick={() => setNotice(null)}
-              aria-label="ปิดการแจ้งเตือน"
-              className="text-[#166534]"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
+      {/* [ลบ] แถบแจ้งเตือนลอย (มีลิงก์ไปแดชบอร์ด) -> บันทึกเสร็จแสดงกราฟในการ์ดขวาแทน ไม่มี popup */}
 
       <div className="mb-6">
         {isEditMode && (
@@ -294,7 +278,7 @@ export default function TverSimulationClient({
 
       <div className="grid grid-cols-[488px_1fr] gap-8 items-start">
         {/* ซ้าย: ฟอร์มตั้งค่าโครงการ */}
-        {/* [แก้ไข] ใส่ noValidate และเอา required ของ browser ออก ให้ใช้ validate ของเราแทน */}
+        {/* ใส่ noValidate และเอา required ของ browser ออก ให้ใช้ validate ของเราแทน */}
         <form
           onSubmit={handleCalculate}
           noValidate
@@ -302,38 +286,93 @@ export default function TverSimulationClient({
         >
           <h2 className="text-xl font-bold text-[#1F2937]">ตั้งค่าโครงการปลูกป่า</h2>
 
+          {/* ชื่อโครงการแบบ combobox: พิมพ์ชื่อใหม่เองได้ หรือเลือกโครงการที่บันทึกไว้จากรายการ (เลือกแล้วเปิดโครงการนั้น)
+              - คลิก/พิมพ์ในช่อง: รายการกรองตามข้อความที่พิมพ์ / ปุ่มลูกศร: แสดงทั้งหมด */}
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-[#374151]">ชื่อโครงการ</label>
-            <input
-              value={projectName}
-              maxLength={150}
-              onChange={(e) => {
-                setProjectName(e.target.value);
-                clearError('projectName');
-              }}
-              placeholder="เช่น โครงการปลูกป่าสัก ที่ราบสูงตอนเหนือ"
-              className={`w-full border rounded-xl px-3 py-3 text-base ${errors.projectName ? 'border-red-500' : 'border-[#E5E7EB]'}`}
-            />
+            <div className="relative">
+              <input
+                value={projectName}
+                maxLength={150}
+                onChange={(e) => {
+                  setProjectName(e.target.value);
+                  clearError('projectName');
+                  setListMode('filter');
+                }}
+                onFocus={() => setListMode('filter')}
+                onBlur={() => setListMode(null)}
+                onKeyDown={(e) => e.key === 'Escape' && setListMode(null)}
+                placeholder={savedProjects.length > 0 ? 'พิมพ์ชื่อโครงการใหม่ หรือเลือกโครงการที่บันทึกไว้' : 'เช่น โครงการปลูกป่าสัก ที่ราบสูงตอนเหนือ'}
+                autoComplete="off"
+                className={`w-full border rounded-xl px-3 py-3 text-base ${savedProjects.length > 0 ? 'pr-10' : ''} ${errors.projectName ? 'border-red-500' : 'border-[#E5E7EB]'}`}
+              />
+              {savedProjects.length > 0 && (
+                <button
+                  type="button"
+                  aria-label="แสดงโครงการที่บันทึกไว้"
+                  // onMouseDown + preventDefault: ไม่ให้ช่อง input เสีย focus (ไม่งั้นรายการปิดก่อน)
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setListMode(listMode === 'all' ? null : 'all');
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 px-2 text-[#6B7280] hover:text-[#1F2937]"
+                >
+                  <ChevronDown />
+                </button>
+              )}
+              {listMode && (shownProjects.length > 0 || isEditMode) && (
+                <ul className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-[#E5E7EB] bg-white py-1 shadow-lg">
+                  {shownProjects.map((p) => (
+                    <li key={p.orgtreeproject_id}>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setListMode(null);
+                          openSavedProject(p.orgtreeproject_id);
+                        }}
+                        className="w-full px-3 py-2 text-left text-base hover:bg-[#F3F4F6]"
+                      >
+                        {p.project_name || '(ไม่มีชื่อ)'}
+                      </button>
+                    </li>
+                  ))}
+                  {/* กำลังเปิดโครงการเดิมอยู่ -> มีทางกลับไปเริ่มโครงการใหม่ */}
+                  {isEditMode && (
+                    <li className="border-t border-[#F3F4F6]">
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setListMode(null);
+                          openSavedProject('');
+                        }}
+                        className="w-full px-3 py-2 text-left text-base text-[#2d4a63] hover:bg-[#F3F4F6]"
+                      >
+                        + สร้างโครงการใหม่
+                      </button>
+                    </li>
+                  )}
+                </ul>
+              )}
+            </div>
             {errors.projectName && <p className="text-xs text-red-600">{errors.projectName}</p>}
           </div>
 
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-[#374151]">พันธุ์ไม้</label>
-            <select
+            <Select
               value={treeId}
-              onChange={(e) => {
-                setTreeId(e.target.value);
+              onChange={(v) => {
+                setTreeId(v);
                 clearError('treeId');
               }}
               className={`w-full border rounded-xl px-3 py-3 text-base ${errors.treeId ? 'border-red-500' : 'border-[#E5E7EB]'}`}
-            >
-              <option value="">เลือกพันธุ์ไม้</option>
-              {trees.map((t) => (
-                <option key={t.tree_id} value={t.tree_id}>
-                  {t.tree_name}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: 'เลือกพันธุ์ไม้', placeholder: true },
+                ...trees.map((t) => ({ value: t.tree_id, label: t.tree_name })),
+              ]}
+            />
             {errors.treeId && <p className="text-xs text-red-600">{errors.treeId}</p>}
           </div>
 
@@ -382,13 +421,10 @@ export default function TverSimulationClient({
           <button
             type="submit"
             disabled={saving}
-            className="w-[239px] h-[60px] rounded-[20px] bg-[#32885F] text-white text-base font-semibold disabled:opacity-60"
+            className="btn btn-primary w-[239px] h-[60px] rounded-[20px] text-base font-semibold"
           >
-            {saving
-              ? 'กำลังบันทึก...'
-              : savedProjectId
-              ? 'คำนวณและอัปเดตโครงการ'
-              : 'คำนวณและดูรายงาน'}
+            {/* เดิม "จำลองโครงการปลูกป่า" */}
+            {saving ? 'กำลังบันทึก...' : 'บันทึกและคำนวณคาร์บอนเครดิต'}
           </button>
         </form>
 
@@ -399,7 +435,7 @@ export default function TverSimulationClient({
 
           {!result && (
             <p className="text-center text-[#9CA3AF] py-20">
-              กรอกข้อมูลด้านซ้ายแล้วกด &quot;คำนวณและดูรายงาน&quot; เพื่อดูผลลัพธ์
+              กรอกข้อมูลด้านซ้ายแล้วกด &quot;บันทึกและคำนวณคาร์บอนเครดิต&quot; เพื่อดูผลลัพธ์
             </p>
           )}
 
@@ -460,6 +496,20 @@ export default function TverSimulationClient({
                   </div>
                 ))}
               </div>
+
+              {/* [MERGE aom + cyn2] ต่อไปขั้นที่ 2 ของ cyn2: จัดสรรคาร์บอนเครดิต -> ประเมินภาษี
+                  ตกลงกันว่า: จำลองโครงการ (บันทึก / แสดงใน dashboard / แก้ไข) = ของ aom
+                               การจัดสรรเครดิตและคำนวณภาษีหลังจากนั้น = ของ cyn2
+                  ส่ง id โครงการที่บันทึกแล้วไปทาง ?project= ให้หน้า cyn2 ใช้โครงการนี้
+                  แสดงเฉพาะเมื่อบันทึกโครงการแล้ว (มี savedProjectId) */}
+              {savedProjectId && (
+                <Link
+                  href={`/organization/tver-allocation?project=${savedProjectId}`}
+                  className="btn btn-primary mt-6 flex h-[52px] w-full items-center justify-center rounded-xl text-base font-semibold"
+                >
+                  ไปจัดสรรคาร์บอนเครดิต (ขั้นถัดไป) →
+                </Link>
+              )}
             </>
           )}
         </div>

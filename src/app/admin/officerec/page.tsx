@@ -4,6 +4,7 @@ import { createSupabaseServer } from '@/lib/supabaseServer';
 import { requireAdminId } from '@/lib/auth';
 import OfficeRecommendationClient from './OfficeRecommendationClient';
 
+// ตรวจสิทธิ์แอดมิน ดึงหัวข้อข้อมูลสำนักงาน แนวทาง และกิจกรรม แล้วส่งให้หน้าจอ
 export default async function OfficeRecommendationPage() {
   await requireAdminId(); // ไม่ใช่แอดมิน -> เด้งไปหน้า login
   const supabase = await createSupabaseServer();

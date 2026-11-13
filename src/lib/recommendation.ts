@@ -18,7 +18,7 @@ export type Condition = Operand & {
 };
 
 export type Recommendation = {
-  rec_uid: string;
+  rec_id: string; // [แก้ไข] เดิม rec_uid
   name: string;
   percent: number;      // % ตัวแทน (ค่ากลาง) 0-100
   percentMin: number;   // ขอบล่างของช่วง
@@ -42,6 +42,7 @@ export type Applied = Recommendation & {
   high: number | null;
 };
 
+// เปรียบเทียบตัวเลข 2 ค่าตามเครื่องหมายที่ระบุ
 function compare(a: number, op: Operator, b: number): boolean {
   switch (op) {
     case '>': return a > b;
@@ -105,6 +106,7 @@ function calc(base: number, rec: Recommendation) {
   return calcPercent(base, rec);
 }
 
+// เลือกแนวทางที่ผ่านทุกเงื่อนไข เรียงจากเปอร์เซ็นต์มากไปน้อย แล้วคำนวณปริมาณที่ลดได้
 export function evaluate(recs: Recommendation[], data: OrgData): Applied[] {
   const applicable = recs
     .filter((r) => r.conditions.every((c) => conditionMet(c, data)))

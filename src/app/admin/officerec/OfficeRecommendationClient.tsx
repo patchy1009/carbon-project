@@ -1,13 +1,21 @@
+// หน้าจัดการแนวทางลดคาร์บอนของแอดมิน: เพิ่มหัวข้อข้อมูลสำนักงาน แนวทาง และเงื่อนไขของแนวทาง
 'use client';
 
+import Select from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
 import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { dbErrorMessage, deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
 import { validateForm, extendSchema, notDuplicate, existsIn, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber } from '@/lib/normalization';
+import { showConfirm, showError, showSaved } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert/confirm
 import { infoSchema, recSchema, condValueSchema, type InfoField, type RecField } from './schema';
+import RowActions from '@/components/RowActions'; // ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
+import { T } from '@/components/adminTable'; // การ์ด/ตารางแบบเดียวกับหน้า T-VER Project
+import { inputClass } from '@/components/formStyles'; // class ช่องกรอกกลาง
+import { ModalShell } from '@/components/Modal';
+import FieldError from '@/components/FieldError';
 
-/* [ปรับปรุง] สรุปสิ่งที่เปลี่ยนในไฟล์นี้
+/* สรุปสิ่งที่เปลี่ยนในไฟล์นี้
  * 1) ลบตัวช่วยตรวจที่เขียนซ้ำในไฟล์ (cleanText/cleanNumber/isNumeric/isNumberOnlyText)
  *    แล้วใช้ schema.ts + validation.ts / normalization.ts กลางแทน
  * 2) หัวข้อข้อมูลสำนักงาน: เดิมตรวจแค่ชื่อ ตอนนี้ตรวจหน่วย (ไทย/อังกฤษได้) และคำอธิบายด้วย + ห้ามชื่อซ้ำ
@@ -52,14 +60,14 @@ type CondRow = {
   den_metric: Metric | null;
 };
 type RecRow = {
-  rec_uid: string;
+  rec_id: string; // [แก้ไข] เดิม rec_uid (คอลัมน์ซ้ำ) -> ใช้ PK rec_id ตรงๆ (supabase/schema_cleanup.sql ขั้น 4.2)
   recommendation: string | null;
   carbon_reduction_amount: number | null; // % ตัวแทน (ค่ากลาง)
   percent_min: number | null;
   percent_max: number | null;
   scopedetail_id: string | null;
   calc_method: string | null;
-  status: string | null;
+  // [ลบ] status (ร่าง/เผยแพร่) คอลัมน์ถูกลบแล้ว (schema_cleanup.sql ขั้น 4.1)
   recommendation_condition?: CondRow[];
 };
 
@@ -97,6 +105,7 @@ const emptyOperand: OperandForm = {
   scope_number: '1',
   metric: 'amount',
 };
+// สร้างเงื่อนไขว่าง 1 แถวสำหรับฟอร์ม
 const newCond = (): CondForm => ({
   mode: 'single',
   num: { ...emptyOperand },
@@ -105,10 +114,10 @@ const newCond = (): CondForm => ({
   value: '',
 });
 
-// [แก้ไข] ตัวช่วยตรวจที่เคยอยู่ตรงนี้ย้ายไปใช้ไฟล์กลางแล้ว (ดู schema.ts)
+// ตัวช่วยตรวจที่เคยอยู่ตรงนี้ย้ายไปใช้ไฟล์กลางแล้ว (ดู schema.ts)
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-// [เพิ่ม] แปลงเงื่อนไขที่บันทึกแล้ว (CondRow) กลับเป็นค่าในฟอร์ม เพื่อใช้ตอนแก้ไขแนวทาง
+// แปลงเงื่อนไขที่บันทึกแล้ว (CondRow) กลับเป็นค่าในฟอร์ม เพื่อใช้ตอนแก้ไขแนวทาง
 const rowToOperand = (
   source_type: SourceType,
   scopedetail_id: string | null,
@@ -122,6 +131,7 @@ const rowToOperand = (
   scope_number: String(scope_number ?? 1),
   metric: metric ?? 'amount',
 });
+// แปลงเงื่อนไขจากฐานข้อมูลให้อยู่ในรูปแบบของฟอร์ม
 const rowToCond = (c: CondRow): CondForm => ({
   mode: c.den_source_type ? 'ratio' : 'single',
   num: rowToOperand(c.source_type, c.scopedetail_id, c.info_id, c.scope_number, c.metric),
@@ -133,41 +143,7 @@ const rowToCond = (c: CondRow): CondForm => ({
 });
 
 // ---------- component ย่อย ----------
-function Dialog({
-  title,
-  onClose,
-  wide,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  wide?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className={`max-h-[90vh] max-w-full overflow-y-auto rounded-xl bg-white p-6 ${
-          wide ? 'w-[860px]' : 'w-[440px]'
-        }`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-4 text-lg font-bold">{title}</h3>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function Err({ m }: { m?: string }) {
-  return m ? <p className="mt-1 text-xs text-red-600">{m}</p> : null;
-}
-
-const inputCls = (bad?: boolean) =>
-  `w-full border rounded-lg px-3 py-2 text-sm ${bad ? 'border-red-500' : ''}`;
+/* Dialog / Err ที่เคยเขียนไว้ในไฟล์นี้ ย้ายไปใช้ ModalShell (components/Modal) และ FieldError กลางแทน */
 
 // ตัวเลือก 1 ค่า (ตัวตั้ง หรือ ตัวหาร)
 function OperandPicker({
@@ -181,76 +157,75 @@ function OperandPicker({
   activityOptions: ActivityOption[];
   infoTypes: InfoType[];
 }) {
+  // แก้ค่าบางช่อง แล้วส่งค่าทั้งหมดกลับไปให้ฟอร์มหลัก
   const set = (p: Partial<OperandForm>) => onChange({ ...v, ...p });
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <select
+      <Select
         className="rounded border px-2 py-1"
         value={v.source_type}
-        onChange={(e) => set({ source_type: e.target.value as SourceType })}
-      >
-        <option value="activity">ค่าของกิจกรรม</option>
-        <option value="office_info">ข้อมูลสำนักงาน</option>
-        <option value="scope">ก๊าซรวมของ Scope</option>
-        <option value="total">ก๊าซรวมทั้งหมด</option>
-      </select>
+        onChange={(val) => set({ source_type: val as SourceType })}
+        options={[
+          { value: 'activity', label: 'ค่าของกิจกรรม' },
+          { value: 'office_info', label: 'ข้อมูลสำนักงาน' },
+          { value: 'scope', label: 'ก๊าซรวมของ Scope' },
+          { value: 'total', label: 'ก๊าซรวมทั้งหมด' },
+        ]}
+      />
 
       {v.source_type === 'activity' && (
         <>
-          <select
+          <Select
             className="max-w-[200px] rounded border px-2 py-1"
             value={v.scopedetail_id}
-            onChange={(e) => set({ scopedetail_id: e.target.value })}
-          >
-            <option value="">เลือกกิจกรรม</option>
-            {activityOptions.map((a) => (
-              <option key={a.scopedetail_id} value={a.scopedetail_id}>
-                {a.detail_name} {a.unit ? `(${a.unit})` : ''}
-              </option>
-            ))}
-          </select>
-          <select
+            onChange={(val) => set({ scopedetail_id: val })}
+            options={[
+              { value: '', label: 'เลือกกิจกรรม', placeholder: true },
+              ...activityOptions.map((a) => ({ value: a.scopedetail_id, label: `${a.detail_name} ${a.unit ? `(${a.unit})` : ''}` })),
+            ]}
+          />
+          <Select
             className="rounded border px-2 py-1"
             value={v.metric}
-            onChange={(e) => set({ metric: e.target.value as Metric })}
-          >
-            <option value="amount">ปริมาณที่ใช้</option>
-            <option value="ghg_emission">ก๊าซที่ปล่อย (tCO2e)</option>
-          </select>
+            onChange={(val) => set({ metric: val as Metric })}
+            options={[
+              { value: 'amount', label: 'ปริมาณที่ใช้' },
+              { value: 'ghg_emission', label: 'ก๊าซที่ปล่อย (tCO2e)' },
+            ]}
+          />
         </>
       )}
 
       {v.source_type === 'office_info' && (
-        <select
+        <Select
           className="max-w-[240px] rounded border px-2 py-1"
           value={v.info_id}
-          onChange={(e) => set({ info_id: e.target.value })}
-        >
-          <option value="">เลือกข้อมูลสำนักงาน</option>
-          {infoTypes.map((o) => (
-            <option key={o.info_id} value={o.info_id}>
-              {o.info_name} {o.unit ? `(${o.unit})` : ''}
-            </option>
-          ))}
-        </select>
+          onChange={(val) => set({ info_id: val })}
+          options={[
+            { value: '', label: 'เลือกข้อมูลสำนักงาน', placeholder: true },
+            ...infoTypes.map((o) => ({ value: o.info_id, label: `${o.info_name} ${o.unit ? `(${o.unit})` : ''}` })),
+          ]}
+        />
       )}
 
       {v.source_type === 'scope' && (
-        <select
+        <Select
           className="rounded border px-2 py-1"
           value={v.scope_number}
-          onChange={(e) => set({ scope_number: e.target.value })}
-        >
-          <option value="1">Scope 1</option>
-          <option value="2">Scope 2</option>
-          <option value="3">Scope 3</option>
-        </select>
+          onChange={(val) => set({ scope_number: val })}
+          options={[
+            { value: '1', label: 'Scope 1' },
+            { value: '2', label: 'Scope 2' },
+            { value: '3', label: 'Scope 3' },
+          ]}
+        />
       )}
     </div>
   );
 }
 
+// หน้าจอหลัก รับข้อมูลเริ่มต้นจาก page.tsx แล้วเก็บใน state เพื่อให้แก้ไขบนหน้าได้ทันที
 export default function OfficeRecommendationClient({
   initialInfoTypes,
   initialRecs,
@@ -268,18 +243,19 @@ export default function OfficeRecommendationClient({
 
   const [infoForm, setInfoForm] = useState({ info_name: '', unit: '', info_detail: '' });
   const [infoErrors, setInfoErrors] = useState<formError<InfoField>>({});
-  const [editInfoId, setEditInfoId] = useState<string | null>(null); // [เพิ่ม] null = เพิ่มใหม่
+  const [editInfoId, setEditInfoId] = useState<string | null>(null); // null = เพิ่มใหม่
 
   const [recForm, setRecForm] = useState<RecForm>(emptyRec);
   const [conds, setConds] = useState<CondForm[]>([]);
   // conds = ข้อความ error รวมของเงื่อนไข (ไม่ใช่ช่องในตาราง จึงเพิ่มเป็น key พิเศษ)
   const [recErrors, setRecErrors] = useState<formError<RecField | 'conds'>>({});
-  const [editRecId, setEditRecId] = useState<string | null>(null); // [เพิ่ม] null = เพิ่มใหม่
+  const [editRecId, setEditRecId] = useState<string | null>(null); // null = เพิ่มใหม่
   const [saving, setSaving] = useState(false);
 
   // ---------- ตัวช่วยแสดงผล ----------
   const actName = (id: string | null) =>
     activityOptions.find((a) => a.scopedetail_id === id)?.detail_name ?? 'กิจกรรมที่ถูกลบ';
+  // หาชื่อหัวข้อข้อมูลสำนักงานจาก id ถ้าหาไม่เจอแปลว่าหัวข้อถูกลบแล้ว
   const infoName = (id: string | null) =>
     infoTypes.find((i) => i.info_id === id)?.info_name ?? 'หัวข้อที่ถูกลบ';
 
@@ -313,6 +289,7 @@ export default function OfficeRecommendationClient({
     }
   }
 
+  // สร้างข้อความอธิบายเงื่อนไขสำหรับแสดงในตาราง
   function describeCond(c: CondRow): string {
     const num: OperandLike = {
       source_type: c.source_type,
@@ -329,11 +306,13 @@ export default function OfficeRecommendationClient({
         scope_number: c.den_scope_number,
         metric: c.den_metric,
       };
-      return `(${operandText(num)}) ÷ (${operandText(den)}) ${c.operator} ${c.value}`;
+      // เดิมแสดง "(A) ÷ (B) > 5" -> "A ต่อ B > 5" อ่านเป็นภาษาพูดได้ เช่น "ปริมาณน้ำ ต่อ จำนวนพนักงาน > 25"
+      return `${operandText(num)} ต่อ ${operandText(den)} ${c.operator} ${c.value}`;
     }
     return `${operandText(num)} ${c.operator} ${c.value}`;
   }
 
+  // สร้างข้อความเปอร์เซ็นต์ที่ลดได้ เช่น 5% หรือ 5–10%
   const percentText = (r: RecRow) => {
     const mid = r.carbon_reduction_amount;
     if (r.percent_min && r.percent_max && r.percent_min !== r.percent_max) {
@@ -343,7 +322,7 @@ export default function OfficeRecommendationClient({
   };
 
   // ================= หัวข้อข้อมูลสำนักงาน =================
-  // [เพิ่ม] เปิด popup หัวข้อ: ไม่ส่ง row = เพิ่ม / ส่ง row = แก้ไข
+  // เปิด popup หัวข้อ: ไม่ส่ง row = เพิ่ม / ส่ง row = แก้ไข
   function openInfoModal(row?: InfoType) {
     setEditInfoId(row?.info_id ?? null);
     setInfoForm({
@@ -355,10 +334,11 @@ export default function OfficeRecommendationClient({
     setShowInfoModal(true);
   }
 
+  // ตรวจและบันทึกหัวข้อข้อมูลสำนักงาน ทั้งเพิ่มใหม่และแก้ไข
   async function handleSaveInfo(e: React.FormEvent) {
     e.preventDefault();
 
-    // [แก้ไข] ใช้ schema กลาง + ห้ามชื่อหัวข้อซ้ำ (ไม่นับหัวข้อที่กำลังแก้ไข)
+    // ใช้ schema กลาง + ห้ามชื่อหัวข้อซ้ำ (ไม่นับหัวข้อที่กำลังแก้ไข)
     const others = infoTypes.filter((i) => i.info_id !== editInfoId).map((i) => i.info_name);
     const result = validateForm(
       infoForm,
@@ -374,7 +354,7 @@ export default function OfficeRecommendationClient({
       // ⚠️ เปลี่ยนหน่วยของหัวข้อที่บริษัทกรอกไว้แล้ว ค่าเดิมของบริษัทจะถูกตีความด้วยหน่วยใหม่
       const old = infoTypes.find((i) => i.info_id === editInfoId);
       if (old && (old.unit ?? '') !== (values.unit ?? '') &&
-          !confirm('เปลี่ยนหน่วยของหัวข้อนี้? ค่าที่บริษัทเคยกรอกไว้จะถูกตีความด้วยหน่วยใหม่')) {
+          !(await showConfirm('เปลี่ยนหน่วยของหัวข้อนี้? ค่าที่บริษัทเคยกรอกไว้จะถูกตีความด้วยหน่วยใหม่', { confirmText: 'เปลี่ยนหน่วย' }))) {
         return;
       }
       const updated = await updateRecord<InfoType>(
@@ -393,8 +373,10 @@ export default function OfficeRecommendationClient({
 
     setShowInfoModal(false);
     setInfoForm({ info_name: '', unit: '', info_detail: '' });
+    showSaved(); // popup แจ้งบันทึกสำเร็จ (เหมือนฝั่งองค์กร)
   }
 
+  // ลบหัวข้อข้อมูลสำนักงาน ถ้ามีแนวทางใช้อยู่จะถามยืนยันก่อน
   async function handleDeleteInfo(id: string) {
     // ถ้ามีบริษัทกรอกข้อมูลหัวข้อนี้ไว้แล้ว ฐานข้อมูลจะไม่ให้ลบ
     // ถ้ามีเงื่อนไขของแนวทางอ้างถึงหัวข้อนี้ เงื่อนไขนั้นจะถูกลบตาม (แนวทางอาจเหลือเงื่อนไขน้อยลง)
@@ -423,9 +405,9 @@ export default function OfficeRecommendationClient({
   }
 
   // ================= แนวทางลดคาร์บอน =================
-  // [แก้ไข] รับ row ได้ เพื่อเปิดในโหมดแก้ไข (เติมค่าเดิม + เงื่อนไขเดิม)
+  // รับ row ได้ เพื่อเปิดในโหมดแก้ไข (เติมค่าเดิม + เงื่อนไขเดิม)
   function openRecModal(row?: RecRow) {
-    setEditRecId(row?.rec_uid ?? null);
+    setEditRecId(row?.rec_id ?? null);
     setRecForm(
       row
         ? {
@@ -444,7 +426,7 @@ export default function OfficeRecommendationClient({
   }
 
   // ตรวจ 1 ค่าในเงื่อนไข คืนข้อความ error หรือ null
-  // [แก้ไข] เพิ่มการตรวจว่ากิจกรรม/หัวข้อที่เลือก "ยังมีอยู่จริง" (อาจถูกลบไปแล้วตอนแก้ไขแนวทางเก่า)
+  // เพิ่มการตรวจว่ากิจกรรม/หัวข้อที่เลือก "ยังมีอยู่จริง" (อาจถูกลบไปแล้วตอนแก้ไขแนวทางเก่า)
   function operandError(o: OperandForm): string | null {
     if (o.source_type === 'activity') {
       if (!o.scopedetail_id) return 'กรุณาเลือกกิจกรรม';
@@ -458,9 +440,10 @@ export default function OfficeRecommendationClient({
     return null;
   }
 
+  // ตรวจข้อมูลแนวทางและเงื่อนไขทั้งหมด แล้วคืน error กับค่าที่พร้อมบันทึก
   function validateRec() {
     // ---- ช่องหลักของแนวทาง: ใช้ schema กลาง + ห้ามชื่อซ้ำ + กิจกรรมที่ผูกต้องมีอยู่จริง ----
-    const others = recs.filter((r) => r.rec_uid !== editRecId).map((r) => r.recommendation);
+    const others = recs.filter((r) => r.rec_id !== editRecId).map((r) => r.recommendation);
     const result = validateForm(
       recForm,
       extendSchema(recSchema, {
@@ -485,24 +468,25 @@ export default function OfficeRecommendationClient({
 
       const e1 = operandError(c.num);
       if (e1) {
-        errs.conds = `${label}: ${e1}${c.mode === 'ratio' ? ' (ตัวตั้ง)' : ''}`;
+        // เลิกใช้คำว่า ตัวตั้ง/ตัวหาร -> ค่า A / ค่า B ให้ตรงกับหน้าจอ
+        errs.conds = `${label}: ${e1}${c.mode === 'ratio' ? ' (ค่า A)' : ''}`;
         break;
       }
 
       if (c.mode === 'ratio') {
         const e2 = operandError(c.den);
         if (e2) {
-          errs.conds = `${label}: ${e2} (ตัวหาร)`;
+          errs.conds = `${label}: ${e2} (ค่า B)`;
           break;
         }
         // A ÷ A = 1 เสมอ ไม่มีความหมาย
         if (JSON.stringify(c.num) === JSON.stringify(c.den)) {
-          errs.conds = `${label}: ตัวตั้งและตัวหารต้องไม่ใช่ค่าเดียวกัน`;
+          errs.conds = `${label}: ค่า A และค่า B ต้องไม่ใช่ค่าเดียวกัน`;
           break;
         }
       }
 
-      // [แก้ไข] ค่าที่เทียบใช้ schema กลาง: ไม่ติดลบ ทศนิยมไม่เกิน 4 หลัก รับเลขไทย/comma ได้
+      // ค่าที่เทียบใช้ schema กลาง: ไม่ติดลบ ทศนิยมไม่เกิน 4 หลัก รับเลขไทย/comma ได้
       const v = validateForm({ value: c.value }, condValueSchema);
       if (!v.ok) {
         errs.conds = `${label}: ${v.errors.value}`;
@@ -511,7 +495,7 @@ export default function OfficeRecommendationClient({
       condValues.push(normalizeToArabicNumber(v.clean.value) ?? 0);
     }
 
-    // [เพิ่ม] เงื่อนไขซ้ำกันทุกส่วน (ค่า/ตัวดำเนินการ/ตัวเลขเหมือนกัน) ไม่มีประโยชน์
+    // เงื่อนไขซ้ำกันทุกส่วน (ค่า/ตัวดำเนินการ/ตัวเลขเหมือนกัน) ไม่มีประโยชน์
     if (!errs.conds) {
       const keys = conds.map((c, i) =>
         JSON.stringify([c.mode, c.num, c.mode === 'ratio' ? c.den : null, c.operator, condValues[i]])
@@ -531,6 +515,7 @@ export default function OfficeRecommendationClient({
     scope_number: o.source_type === 'scope' ? Number(o.scope_number) : null,
     metric: o.source_type === 'activity' ? o.metric : null,
   });
+  // แปลงค่า B ของเงื่อนไขแบบเทียบ 2 ค่าให้ตรงกับคอลัมน์ในตาราง
   const denCols = (o: OperandForm | null) => ({
     den_source_type: o ? o.source_type : null,
     den_scopedetail_id: o && o.source_type === 'activity' ? o.scopedetail_id : null,
@@ -539,12 +524,19 @@ export default function OfficeRecommendationClient({
     den_metric: o && o.source_type === 'activity' ? o.metric : null,
   });
 
+  // บันทึกแนวทางและเงื่อนไข ทั้งเพิ่มใหม่และแก้ไข
   async function handleSaveRec(e: React.FormEvent) {
     e.preventDefault();
 
     const { errs, name, scopedetailId, min, max, condValues } = validateRec();
     setRecErrors(errs);
     if (Object.keys(errs).length > 0) return;
+
+    // [ย้ายมา] เดิมถามตอนกด "เผยแพร่" ตอนนี้บันทึกแล้วแนะนำทันที จึงถามตอนบันทึกแทน
+    if (conds.length === 0 &&
+        !(await showConfirm('แนวทางนี้ไม่มีเงื่อนไข จะถูกแนะนำให้ทุกองค์กร ต้องการบันทึกหรือไม่?', { confirmText: 'บันทึก' }))) {
+      return;
+    }
 
     setSaving(true);
 
@@ -561,21 +553,21 @@ export default function OfficeRecommendationClient({
       calc_method: 'percent',
     };
     // แถวเงื่อนไขที่จะบันทึก (ค่าที่เทียบใช้ค่าที่ normalize แล้วจาก validateRec)
-    const condRows = (recUid: string) =>
+    const condRows = (recId: string) =>
       conds.map((c, i) => ({
-        rec_uid: recUid,
+        rec_id: recId,
         ...numCols(c.num),
         ...denCols(c.mode === 'ratio' ? c.den : null),
         operator: c.operator,
-        value: condValues[i], // [แก้ไข] เดิม Number(cleanNumber(c.value)) ซ้ำงานกับตอนตรวจ
+        value: condValues[i], // เดิม Number(cleanNumber(c.value)) ซ้ำงานกับตอนตรวจ
       }));
 
-    // ===== [เพิ่ม] โหมดแก้ไข =====
+    // ===== โหมดแก้ไข =====
     if (editRecId) {
-      const old = recs.find((r) => r.rec_uid === editRecId);
-      // 1) แก้แนวทาง (สถานะเดิมคงไว้)
+      const old = recs.find((r) => r.rec_id === editRecId);
+      // 1) แก้แนวทาง (ไม่มี status แล้ว: บันทึก = ใช้งานทันที)
       const updated = await updateRecord<RecRow>(
-        'carbon_reduction_recommendation', 'rec_uid', editRecId, recValues, '*', 'แก้ไขแนวทาง'
+        'carbon_reduction_recommendation', 'rec_id', editRecId, recValues, '*', 'แก้ไขแนวทาง'
       );
       if (!updated) {
         setSaving(false);
@@ -590,7 +582,7 @@ export default function OfficeRecommendationClient({
           .select('*');
         if (error) {
           setSaving(false);
-          return alert('บันทึกเงื่อนไขไม่สำเร็จ: ' + dbErrorMessage(error));
+          return showError('บันทึกเงื่อนไขไม่สำเร็จ: ' + dbErrorMessage(error));
         }
         savedConds = (data ?? []) as CondRow[];
       }
@@ -599,22 +591,23 @@ export default function OfficeRecommendationClient({
         const { error } = await supabase.from('recommendation_condition').delete().in('condition_id', oldIds);
         if (error) {
           setSaving(false);
-          return alert('ลบเงื่อนไขเดิมไม่สำเร็จ: ' + dbErrorMessage(error));
+          return showError('ลบเงื่อนไขเดิมไม่สำเร็จ: ' + dbErrorMessage(error));
         }
       }
       setRecs((prev) =>
-        prev.map((r) => (r.rec_uid === editRecId ? { ...updated, recommendation_condition: savedConds } : r))
+        prev.map((r) => (r.rec_id === editRecId ? { ...updated, recommendation_condition: savedConds } : r))
       );
       setSaving(false);
       setShowRecModal(false);
+      showSaved();
       return;
     }
 
     // ===== โหมดเพิ่มใหม่ =====
-    // 1) บันทึกแนวทาง (เริ่มเป็นร่าง ต้องกด "เผยแพร่" ก่อนองค์กรจะเห็น)
+    // 1) บันทึกแนวทาง บันทึกแล้วพร้อมแนะนำทันที (คอลัมน์ status ถูกลบแล้ว)
     const created = await insertRecord<RecRow>(
       'carbon_reduction_recommendation',
-      { ...recValues, status: 'draft' },
+      recValues,
       '*',
       'เพิ่มแนวทาง'
     );
@@ -628,16 +621,16 @@ export default function OfficeRecommendationClient({
     if (conds.length > 0) {
       const { data, error } = await supabase
         .from('recommendation_condition')
-        .insert(condRows(created.rec_uid))
+        .insert(condRows(created.rec_id))
         .select('*');
 
       if (error) {
         await supabase
           .from('carbon_reduction_recommendation')
           .delete()
-          .eq('rec_uid', created.rec_uid);
+          .eq('rec_id', created.rec_id);
         setSaving(false);
-        return alert('บันทึกเงื่อนไขไม่สำเร็จ: ' + dbErrorMessage(error));
+        return showError('บันทึกเงื่อนไขไม่สำเร็จ: ' + dbErrorMessage(error));
       }
       savedConds = (data ?? []) as CondRow[];
     }
@@ -645,177 +638,140 @@ export default function OfficeRecommendationClient({
     setRecs((prev) => [...prev, { ...created, recommendation_condition: savedConds }]);
     setSaving(false);
     setShowRecModal(false);
+    showSaved();
   }
 
+  // ลบแนวทาง เงื่อนไขของแนวทางจะถูกลบตามอัตโนมัติ
   async function handleDeleteRec(id: string) {
     // เงื่อนไขของแนวทางนี้ถูกลบตามอัตโนมัติ
     const ok = await deleteRecord(
       'carbon_reduction_recommendation',
-      'rec_uid',
+      'rec_id',
       id,
       'ลบแนวทางนี้พร้อมเงื่อนไขทั้งหมด?'
     );
     if (!ok) return;
-    setRecs((prev) => prev.filter((r) => r.rec_uid !== id));
+    setRecs((prev) => prev.filter((r) => r.rec_id !== id));
   }
 
-  async function toggleStatus(r: RecRow) {
-    const next = r.status === 'published' ? 'draft' : 'published';
-
-    if (next === 'published') {
-      if (!r.carbon_reduction_amount || r.carbon_reduction_amount > 100) {
-        return alert('เผยแพร่ไม่ได้: ค่า % ที่ลดได้ต้องอยู่ระหว่าง 0-100');
-      }
-      const noCond = (r.recommendation_condition ?? []).length === 0;
-      const msg = noCond
-        ? 'แนวทางนี้ไม่มีเงื่อนไข จะถูกแนะนำให้ทุกองค์กร ต้องการเผยแพร่?'
-        : 'เผยแพร่แนวทางนี้? องค์กรที่เข้าเงื่อนไขจะเห็นในรายงานทันที';
-      if (!confirm(msg)) return;
-    }
-
-    const { data, error } = await supabase
-      .from('carbon_reduction_recommendation')
-      .update({ status: next })
-      .eq('rec_uid', r.rec_uid)
-      .select('rec_uid');
-
-    if (error) return alert('เปลี่ยนสถานะไม่สำเร็จ: ' + error.message);
-    if (!data || data.length === 0) {
-      return alert('เปลี่ยนสถานะไม่สำเร็จ: ไม่พบข้อมูลหรือไม่มีสิทธิ์');
-    }
-
-    setRecs((prev) => prev.map((x) => (x.rec_uid === r.rec_uid ? { ...x, status: next } : x)));
-  }
+  /* [ปิดใช้งาน] toggleStatus (สลับ ร่าง/เผยแพร่) ไม่ใช้แล้ว
+   * กด "บันทึก" = เก็บลง DB และพร้อมแนะนำในรายงานทันที จึงไม่มีสถานะให้สลับ */
 
   // แก้ค่าในแถวเงื่อนไขใน popup
   const setCond = (i: number, patch: Partial<CondForm>) =>
     setConds((prev) => prev.map((x, j) => (j === i ? { ...x, ...patch } : x)));
 
   // ข้อความ "หน่วยของค่าที่เทียบ" ของเงื่อนไข 1 ข้อใน popup
+  // เดิม "kWh ÷ คน" -> "kWh ต่อ คน"
   const unitHint = (c: CondForm) =>
-    c.mode === 'ratio' ? `${operandUnit(c.num)} ÷ ${operandUnit(c.den)}` : operandUnit(c.num);
+    c.mode === 'ratio' ? `${operandUnit(c.num)} ต่อ ${operandUnit(c.den)}` : operandUnit(c.num);
 
   const sortedRecs = recs
     .slice()
     .sort((a, b) => (a.recommendation ?? '').localeCompare(b.recommendation ?? '', 'th'));
 
   return (
-    <div className="max-w-[1280px] space-y-8 px-8 pb-8 pt-16">
-      <h1 className="text-[32px] font-bold leading-[32px] tracking-[-0.6px] text-[#0F172A]">
+    <div className={T.page}>
+      <h1 className={T.h1}>
         ข้อมูลสำนักงานและแนวทางลดคาร์บอน
       </h1>
 
       {/* ============ ส่วนที่ 1: หัวข้อข้อมูลสำนักงาน ============ */}
-      <div className="w-full rounded-xl border border-[#E2E8F0] shadow-sm">
-        <div className="flex items-center justify-between border-b border-[#F1F5F9] px-6 py-6">
-          <h2 className="text-xl font-bold text-[#0F172A]">
+      <section className={T.card}>
+        <div className={T.cardHead}>
+          <h2 className={T.h2}>
             หัวข้อข้อมูลสำนักงาน (ช่องที่บริษัทต้องกรอก)
           </h2>
           <button
             onClick={() => openInfoModal()}
-            className="rounded-lg bg-[#266955] px-3 py-1.5 text-xs text-white shadow-sm"
+            className={T.addBtn}
           >
             + เพิ่มหัวข้อ
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
-              <tr className="text-xs font-bold uppercase tracking-wide text-[#64748B]">
-                <th className="px-5 py-3 text-left">ชื่อหัวข้อ</th>
-                <th className="px-5 py-3 text-left">หน่วย</th>
-                <th className="px-5 py-3 text-left">คำอธิบาย</th>
-                <th className="px-5 py-3 text-center">จัดการ</th>
+        <div className={T.wrap}>
+          <table className={T.table}>
+            <thead className={T.thead}>
+              <tr className={T.headRow}>
+                <th className={`${T.th} text-left`}>ชื่อหัวข้อ</th>
+                <th className={`${T.th} text-left`}>หน่วย</th>
+                <th className={`${T.th} text-left`}>คำอธิบาย</th>
+                <th className={`${T.th} text-right`}>จัดการ</th>
               </tr>
             </thead>
             <tbody>
               {infoTypes.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-5 py-8 text-center text-[#94A3B8]">
+                  <td colSpan={4} className={T.empty}>
                     ยังไม่มีหัวข้อ
                   </td>
                 </tr>
               )}
               {infoTypes.map((i) => (
-                <tr key={i.info_id} className="border-t border-[#F1F5F9]">
-                  <td className="px-5 py-4 text-[#0F172A]">{i.info_name}</td>
-                  <td className="px-5 py-4 text-[#64748B]">{i.unit ?? '-'}</td>
-                  <td className="px-5 py-4 text-[#64748B] whitespace-pre-line">{i.info_detail ?? '-'}</td>
-                  <td className="px-5 py-4 text-center space-x-2 whitespace-nowrap">
-                    <button
-                      onClick={() => openInfoModal(i)}
-                      className="text-[#94A3B8] hover:text-[#266955]"
-                      title="แก้ไข"
-                    >
-                      ✏️
-                    </button>
-                    <button
-                      onClick={() => handleDeleteInfo(i.info_id)}
-                      className="text-[#94A3B8] hover:text-red-500"
-                      title="ลบ"
-                    >
-                      🗑️
-                    </button>
+                <tr key={i.info_id} className={T.row}>
+                  <td className={T.tdMain}>{i.info_name}</td>
+                  <td className={T.td}>{i.unit ?? '-'}</td>
+                  <td className={`${T.td} whitespace-pre-line`}>{i.info_detail ?? '-'}</td>
+                  <td className={T.tdActions}>
+                    <RowActions onEdit={() => openInfoModal(i)} onDelete={() => handleDeleteInfo(i.info_id)} />
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
       {/* ============ ส่วนที่ 2: แนวทางลดคาร์บอน ============ */}
-      <div className="w-full rounded-xl border border-[#E2E8F0] shadow-sm">
-        <div className="flex items-center justify-between border-b border-[#F1F5F9] px-6 py-6">
+      <section className={T.card}>
+        <div className={T.cardHead}>
           <div>
-            <h2 className="text-xl font-bold text-[#0F172A]">แนวทางลดคาร์บอน</h2>
-            <p className="mt-1 text-xs text-[#94A3B8]">
+            <h2 className={T.h2}>แนวทางลดคาร์บอน</h2>
+            <p className="mt-1 text-xs text-[#6F7974]">
               เปอร์เซ็นต์ที่ลดได้คิดจากก๊าซของ &quot;กิจกรรมที่ผูก&quot; ขององค์กรนั้น
-              แนวทางที่ยังเป็นร่างจะไม่แสดงในรายงาน
+              บันทึกแล้วจะแนะนำในรายงานขององค์กรที่เข้าเงื่อนไขทันที
             </p>
           </div>
           <button
             onClick={() => openRecModal()}
-            className="rounded-lg bg-[#266955] px-3 py-1.5 text-xs text-white shadow-sm"
+            className={T.addBtn}
           >
             + เพิ่มแนวทาง
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
-              <tr className="text-xs font-bold uppercase tracking-wide text-[#64748B]">
-                <th className="px-5 py-3 text-left">แนวทาง</th>
-                <th className="px-5 py-3 text-left">กิจกรรมที่ผูก</th>
-                <th className="px-5 py-3 text-right">ลดได้</th>
-                <th className="px-5 py-3 text-left">เงื่อนไข (ต้องผ่านทุกข้อ)</th>
-                <th className="px-5 py-3 text-center">สถานะ</th>
-                <th className="px-5 py-3 text-center">จัดการ</th>
+        <div className={T.wrap}>
+          <table className={T.table}>
+            <thead className={T.thead}>
+              <tr className={T.headRow}>
+                <th className={`${T.th} text-left`}>แนวทาง</th>
+                <th className={`${T.th} text-left`}>กิจกรรมที่ผูก</th>
+                <th className={`${T.th} text-right`}>ลดได้</th>
+                <th className={`${T.th} text-left`}>เงื่อนไข (ต้องผ่านทุกข้อ)</th>
+                <th className={`${T.th} text-right`}>จัดการ</th>
               </tr>
             </thead>
             <tbody>
               {sortedRecs.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-8 text-center text-[#94A3B8]">
+                  <td colSpan={5} className={T.empty}>
                     ยังไม่มีแนวทาง
                   </td>
                 </tr>
               )}
               {sortedRecs.map((r) => {
-                const published = r.status === 'published';
                 const rc = r.recommendation_condition ?? [];
                 return (
-                  <tr key={r.rec_uid} className="border-t border-[#F1F5F9] align-top">
-                    <td className="px-5 py-4 font-medium text-[#0F172A]">{r.recommendation}</td>
-                    <td className="px-5 py-4 text-[#64748B]">
+                  <tr key={r.rec_id} className={`${T.row} align-top`}>
+                    <td className={T.tdMain}>{r.recommendation}</td>
+                    <td className={T.td}>
                       {r.scopedetail_id ? actName(r.scopedetail_id) : 'ไม่ผูก (แนะนำทั่วไป)'}
                     </td>
-                    <td className="px-5 py-4 text-right font-semibold text-[#047857]">
+                    <td className={`${T.td} text-right font-semibold text-[#047857]`}>
                       {percentText(r)}
                     </td>
-                    <td className="px-5 py-4 text-xs text-[#64748B]">
+                    <td className={`${T.td} text-xs`}>
                       {rc.length === 0 ? (
                         <span className="text-[#F97316]">ไม่มีเงื่อนไข (แนะนำทุกองค์กร)</span>
                       ) : (
@@ -826,34 +782,9 @@ export default function OfficeRecommendationClient({
                         </ul>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-center">
-                      <button
-                        onClick={() => toggleStatus(r)}
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          published
-                            ? 'bg-[#F0FDF4] text-[#16A34A]'
-                            : 'bg-[#F1F5F9] text-[#64748B]'
-                        }`}
-                        title={published ? 'กดเพื่อถอนกลับเป็นร่าง' : 'กดเพื่อเผยแพร่'}
-                      >
-                        {published ? 'เผยแพร่แล้ว' : 'ร่าง'}
-                      </button>
-                    </td>
-                    <td className="px-5 py-4 text-center space-x-2 whitespace-nowrap">
-                      <button
-                        onClick={() => openRecModal(r)}
-                        className="text-[#94A3B8] hover:text-[#266955]"
-                        title="แก้ไข"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        onClick={() => handleDeleteRec(r.rec_uid)}
-                        className="text-[#94A3B8] hover:text-red-500"
-                        title="ลบ"
-                      >
-                        🗑️
-                      </button>
+                    {/* [ลบ] คอลัมน์สถานะ (ร่าง/เผยแพร่แล้ว) บันทึกแล้วใช้งานทันที */}
+                    <td className={T.tdActions}>
+                      <RowActions onEdit={() => openRecModal(r)} onDelete={() => handleDeleteRec(r.rec_id)} />
                     </td>
                   </tr>
                 );
@@ -861,69 +792,69 @@ export default function OfficeRecommendationClient({
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
       {/* ============ Popup: เพิ่มหัวข้อข้อมูลสำนักงาน ============ */}
       {showInfoModal && (
-        <Dialog
+        <ModalShell
           title={editInfoId ? 'แก้ไขหัวข้อข้อมูลสำนักงาน' : 'เพิ่มหัวข้อข้อมูลสำนักงาน'}
           onClose={() => setShowInfoModal(false)}
         >
           <form onSubmit={handleSaveInfo} noValidate className="space-y-4">
             <div>
               <input
-                className={inputCls(!!infoErrors.info_name)}
+                className={inputClass(!!infoErrors.info_name)}
                 placeholder="ชื่อหัวข้อ เช่น จำนวนพนักงาน"
                 maxLength={150}
                 value={infoForm.info_name}
                 onChange={(e) => setInfoForm({ ...infoForm, info_name: e.target.value })}
               />
-              <Err m={infoErrors.info_name} />
+              <FieldError message={infoErrors.info_name} />
             </div>
-            {/* [แก้ไข] เดิมหน่วยและคำอธิบายไม่มีการตรวจ/ไม่แสดง error */}
+            {/* เดิมหน่วยและคำอธิบายไม่มีการตรวจ/ไม่แสดง error */}
             <div>
               <input
-                className={inputCls(!!infoErrors.unit)}
+                className={inputClass(!!infoErrors.unit)}
                 placeholder="หน่วย เช่น คน, ตร.ม., kWh/ปี, % (เว้นว่างได้ = ช่องข้อความ)"
                 maxLength={50}
                 value={infoForm.unit}
                 onChange={(e) => setInfoForm({ ...infoForm, unit: e.target.value })}
               />
-              <Err m={infoErrors.unit} />
+              <FieldError message={infoErrors.unit} />
             </div>
             <div>
               <textarea
-                className={inputCls(!!infoErrors.info_detail)}
+                className={inputClass(!!infoErrors.info_detail)}
                 rows={3}
                 maxLength={1000}
                 placeholder="คำอธิบายที่จะแสดงให้บริษัทเห็น (ไม่บังคับ) เช่น ให้กรอกค่าเฉลี่ยของทั้งอาคาร"
                 value={infoForm.info_detail}
                 onChange={(e) => setInfoForm({ ...infoForm, info_detail: e.target.value })}
               />
-              <Err m={infoErrors.info_detail} />
+              <FieldError message={infoErrors.info_detail} />
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setShowInfoModal(false)}
-                className="rounded-lg border px-4 py-2 text-sm"
+                className="btn btn-outline rounded-lg px-4 py-2 text-sm"
               >
                 ยกเลิก
               </button>
               <button
                 type="submit"
-                className="rounded-lg bg-[#059669] px-4 py-2 text-sm text-white"
+                className="btn btn-primary rounded-lg px-4 py-2 text-sm"
               >
                 บันทึก
               </button>
             </div>
           </form>
-        </Dialog>
+        </ModalShell>
       )}
 
       {/* ============ Popup: เพิ่มแนวทางลดคาร์บอน ============ */}
       {showRecModal && (
-        <Dialog
+        <ModalShell
           title={editRecId ? 'แก้ไขแนวทางลดคาร์บอน' : 'เพิ่มแนวทางลดคาร์บอน'}
           onClose={() => setShowRecModal(false)}
           wide
@@ -932,32 +863,29 @@ export default function OfficeRecommendationClient({
             <div>
               <label className="mb-1 block text-xs font-semibold text-[#374151]">ชื่อแนวทาง</label>
               <input
-                className={inputCls(!!recErrors.recommendation)}
+                className={inputClass(!!recErrors.recommendation)}
                 placeholder="เช่น เปลี่ยนมาใช้เครื่องปรับอากาศระบบ Inverter"
                 maxLength={255}
                 value={recForm.recommendation}
                 onChange={(e) => setRecForm({ ...recForm, recommendation: e.target.value })}
               />
-              <Err m={recErrors.recommendation} />
+              <FieldError message={recErrors.recommendation} />
             </div>
 
             <div>
               <label className="mb-1 block text-xs font-semibold text-[#374151]">
                 กิจกรรมที่เกี่ยวข้อง (ฐานที่ใช้คำนวณ %)
               </label>
-              <select
-                className={inputCls(!!recErrors.scopedetail_id)}
+              <Select
+                className={inputClass(!!recErrors.scopedetail_id)}
                 value={recForm.scopedetail_id}
-                onChange={(e) => setRecForm({ ...recForm, scopedetail_id: e.target.value })}
-              >
-                <option value="">ไม่ผูก (แนะนำทั่วไป ไม่คำนวณตัวเลข)</option>
-                {activityOptions.map((a) => (
-                  <option key={a.scopedetail_id} value={a.scopedetail_id}>
-                    {a.detail_name} {a.unit ? `(${a.unit})` : ''}
-                  </option>
-                ))}
-              </select>
-              <Err m={recErrors.scopedetail_id} />
+                onChange={(v) => setRecForm({ ...recForm, scopedetail_id: v })}
+                options={[
+                  { value: '', label: 'ไม่ผูก (แนะนำทั่วไป ไม่คำนวณตัวเลข)' },
+                  ...activityOptions.map((a) => ({ value: a.scopedetail_id, label: `${a.detail_name} ${a.unit ? `(${a.unit})` : ''}` })),
+                ]}
+              />
+              <FieldError message={recErrors.scopedetail_id} />
               <p className="mt-1 text-xs text-[#94A3B8]">
                 % ที่กรอกด้านล่างต้องนิยามเทียบกับกิจกรรมนี้เท่านั้น (เช่น % ของก๊าซจากไฟฟ้า)
               </p>
@@ -969,26 +897,26 @@ export default function OfficeRecommendationClient({
                   ลดได้ต่ำสุด (%)
                 </label>
                 <input
-                  className={inputCls(!!recErrors.percent_min)}
+                  className={inputClass(!!recErrors.percent_min)}
                   inputMode="decimal"
                   placeholder="เช่น 5"
                   value={recForm.percent_min}
                   onChange={(e) => setRecForm({ ...recForm, percent_min: e.target.value })}
                 />
-                <Err m={recErrors.percent_min} />
+                <FieldError message={recErrors.percent_min} />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-semibold text-[#374151]">
                   ลดได้สูงสุด (%) (เว้นว่าง = ค่าเดียว)
                 </label>
                 <input
-                  className={inputCls(!!recErrors.percent_max)}
+                  className={inputClass(!!recErrors.percent_max)}
                   inputMode="decimal"
                   placeholder="เช่น 10"
                   value={recForm.percent_max}
                   onChange={(e) => setRecForm({ ...recForm, percent_max: e.target.value })}
                 />
-                <Err m={recErrors.percent_max} />
+                <FieldError message={recErrors.percent_max} />
               </div>
             </div>
 
@@ -1001,14 +929,14 @@ export default function OfficeRecommendationClient({
                 <button
                   type="button"
                   onClick={() => setConds((prev) => [...prev, newCond()])}
-                  className="text-sm font-semibold text-[#266955]"
+                  className="rounded-md px-2 py-1 text-sm font-semibold text-[#266955] transition hover:bg-[#EAF5EF]"
                 >
                   + เพิ่มเงื่อนไข
                 </button>
               </div>
               <p className="mb-3 text-xs text-[#94A3B8]">
                 ค่าในเงื่อนไขเทียบกับข้อมูล 1 รายการบันทึกขององค์กร ซึ่งถือเป็นข้อมูล 1 ปี
-                ถ้าข้อมูลที่ใช้เทียบไม่มี หรือตัวหารเป็น 0 เงื่อนไขนั้นไม่ผ่าน
+                ถ้าข้อมูลที่ใช้เทียบไม่มี หรือค่า B เป็น 0 เงื่อนไขนั้นไม่ผ่าน
                 ถ้าไม่ใส่เงื่อนไขเลย แนวทางนี้จะถูกแนะนำให้ทุกองค์กร
               </p>
 
@@ -1035,7 +963,8 @@ export default function OfficeRecommendationClient({
                             checked={c.mode === 'ratio'}
                             onChange={() => setCond(i, { mode: 'ratio' })}
                           />
-                          อัตราส่วน (A ÷ B)
+                          {/* เดิม "อัตราส่วน (A ÷ B)" */}
+                          เทียบ 2 ค่า (A เทียบ B)
                         </label>
                       </div>
                       <button
@@ -1049,8 +978,9 @@ export default function OfficeRecommendationClient({
 
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
+                        {/* เดิม "A (ตัวตั้ง)" -> "ค่า A" */}
                         {c.mode === 'ratio' && (
-                          <span className="w-16 text-xs font-bold">A (ตัวตั้ง)</span>
+                          <span className="w-20 text-xs font-bold">ค่า A</span>
                         )}
                         <OperandPicker
                           v={c.num}
@@ -1062,7 +992,8 @@ export default function OfficeRecommendationClient({
 
                       {c.mode === 'ratio' && (
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="w-16 text-xs font-bold">B (ตัวหาร)</span>
+                          {/* เดิม "B (ตัวหาร)" -> "เทียบกับ B" */}
+                          <span className="w-20 text-xs font-bold">เทียบกับ B</span>
                           <OperandPicker
                             v={c.den}
                             onChange={(next) => setCond(i, { den: next })}
@@ -1073,17 +1004,18 @@ export default function OfficeRecommendationClient({
                       )}
 
                       <div className="flex flex-wrap items-center gap-2">
-                        <select
+                        <Select
                           className="rounded border px-2 py-1"
                           value={c.operator}
-                          onChange={(e) => setCond(i, { operator: e.target.value as Operator })}
-                        >
-                          <option value=">">มากกว่า</option>
-                          <option value=">=">มากกว่าหรือเท่ากับ</option>
-                          <option value="<">น้อยกว่า</option>
-                          <option value="<=">น้อยกว่าหรือเท่ากับ</option>
-                          <option value="=">เท่ากับ</option>
-                        </select>
+                          onChange={(v) => setCond(i, { operator: v as Operator })}
+                          options={[
+                            { value: '>', label: 'มากกว่า' },
+                            { value: '>=', label: 'มากกว่าหรือเท่ากับ' },
+                            { value: '<', label: 'น้อยกว่า' },
+                            { value: '<=', label: 'น้อยกว่าหรือเท่ากับ' },
+                            { value: '=', label: 'เท่ากับ' },
+                          ]}
+                        />
                         <input
                           className="w-32 rounded border px-2 py-1"
                           inputMode="decimal"
@@ -1092,34 +1024,54 @@ export default function OfficeRecommendationClient({
                           onChange={(e) => setCond(i, { value: e.target.value })}
                         />
                         <span className="text-xs text-[#64748B]">
-                          หน่วยของค่าที่เทียบ: <b>{unitHint(c)}</b>
+                          หน่วย: <b>{unitHint(c)}</b>
                         </span>
                       </div>
+
+                      {/* หมายเหตุอธิบายการเทียบ 2 ค่า พร้อมตัวอย่าง (แสดงเฉพาะเมื่อเลือก "เทียบ 2 ค่า") */}
+                      {c.mode === 'ratio' && (
+                        <div className="rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-xs leading-5 text-[#475569]">
+                          <p className="font-semibold text-[#334155]">หมายเหตุ: “A เทียบ B” คือ ค่า A ต่อ B 1 หน่วย</p>
+                          <p className="mt-1">
+                            ตัวอย่าง: A = ปริมาณการใช้น้ำ, B = จำนวนพนักงาน
+                            → ระบบดูว่า <b>พนักงาน 1 คน ใช้น้ำเท่าไร</b>
+                          </p>
+                          <p>
+                            องค์กรใช้น้ำ 1,200 ลบ.ม. มีพนักงาน 40 คน = 1,200 / 40 ={' '}
+                            <b>30 ลบ.ม. ต่อคน</b> ถ้าตั้งเงื่อนไข “มากกว่า 25” องค์กรนี้จะได้รับคำแนะนำ
+                          </p>
+                          <p className="mt-1 text-[#94A3B8]">
+                            ลำดับมีผล: ถ้าสลับเป็น A = จำนวนพนักงาน, B = ปริมาณการใช้น้ำ จะได้ “พนักงานต่อน้ำ 1 ลบ.ม.” (40 / 1,200 = 0.03)
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
-              <Err m={recErrors.conds} />
+              <FieldError message={recErrors.conds} />
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setShowRecModal(false)}
-                className="rounded-lg border px-4 py-2 text-sm"
+                className="btn btn-outline rounded-lg px-4 py-2 text-sm"
               >
                 ยกเลิก
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="rounded-lg bg-[#059669] px-4 py-2 text-sm text-white disabled:opacity-60"
+                className="btn btn-primary rounded-lg px-4 py-2 text-sm"
               >
-                {saving ? 'กำลังบันทึก...' : editRecId ? 'บันทึกการแก้ไข' : 'บันทึกเป็นร่าง'}
+                {saving && 'กำลังบันทึก...'}
+                {!saving && editRecId && 'บันทึกการแก้ไข'}
+                {!saving && !editRecId && 'บันทึก'}
               </button>
             </div>
           </form>
-        </Dialog>
+        </ModalShell>
       )}
     </div>
   );

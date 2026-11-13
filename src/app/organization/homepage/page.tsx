@@ -1,4 +1,6 @@
 "use client" ;
+/* [MERGE aom + cyn2] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (ฟีเจอร์ที่ aom ไม่มี) — ไม่ได้แก้โค้ด
+ * หน้าแรก (landing) ก่อนล็อกอิน — src/app/page.tsx redirect มาที่นี่ */
 
 import React from 'react';
 import Link from 'next/link';
@@ -25,7 +27,7 @@ export default function HomePage() {
 
             {/* คำอธิบาย */}
             <p className="text-gray-600 text-sm md:text-base leading-relaxed">
-              ครบจบในระบบเดียว ตั้งแต่คำนวณฟุตพริ้นท์ จำลองโครงการป่าไม้ T-VER <br className="hidden sm:inline" />
+              ครบจบในระบบเดียว ตั้งแต่คำนวณฟุตพรินต์ จำลองโครงการป่าไม้ T-VER <br className="hidden sm:inline" />
               ไปจนถึงประเมินสิทธิประโยชน์ทางภาษี
             </p>
 
@@ -62,7 +64,7 @@ export default function HomePage() {
             <div className="w-12 h-12 rounded-full border-2 border-[#1c5d41] flex items-center justify-center text-[#1c5d41]">
               🌐
             </div>
-            <h3 className="font-bold text-gray-800 text-base">คาร์บอนฟุตพริ้นท์องค์กร</h3>
+            <h3 className="font-bold text-gray-800 text-base">คาร์บอนฟุตพรินต์องค์กร</h3>
             <p className="text-gray-500 text-xs leading-relaxed">
               บันทึกและติดตามการปล่อยก๊าซเรือนกระจก Scope 1–3 พร้อมกราฟวิเคราะห์แบบเรียลไทม์
             </p>
@@ -99,7 +101,7 @@ export default function HomePage() {
           ทำไมต้องเลือกเรา?
         </h2>
         <p className="text-gray-600 text-base leading-relaxed max-w-2xl">
-          ข้อมูลเชื่อมถึงกันทุกส่วน — บันทึกฟุตพริ้นท์ครั้งเดียว <br />
+          ข้อมูลเชื่อมถึงกันทุกส่วน — บันทึกฟุตพรินต์ครั้งเดียว <br />
           ใช้ได้ทั้งจัดสรรเครดิตและคำนวณภาษี ไม่ต้องลงข้อมูลซ้ำ
         </p>
       </section>

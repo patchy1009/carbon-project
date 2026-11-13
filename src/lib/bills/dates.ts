@@ -8,6 +8,7 @@ const MONTH_NO: Record<string, number> = {
   'กรกฎาคม': 7, 'กค': 7, 'สิงหาคม': 8, 'สค': 8, 'กันยายน': 9, 'กย': 9,
   'ตุลาคม': 10, 'ตค': 10, 'พฤศจิกายน': 11, 'พย': 11, 'ธันวาคม': 12, 'ธค': 12,
 };
+// แปลงชื่อเดือนภาษาไทยเป็นเลขเดือน
 export const monthNo = (s: string) => MONTH_NO[s.replace(/\./g, '')] ?? null;
 
 // ปี พ.ศ. 4 หลัก (2569) หรือ 2 หลัก (69) -> ค.ศ.
@@ -17,10 +18,13 @@ export function toCE(y: number) {
   return y >= 50 ? y + 2500 - 543 : 2000 + y;
 }
 
+// เติม 0 ข้างหน้าให้ครบ 2 หลัก
 const pad = (n: number) => String(n).padStart(2, '0');
+// สร้างวันที่รูปแบบ YYYY-MM-DD
 export const iso = (y: number, m: number, d = 1) => `${y}-${pad(m)}-${pad(d)}`;
 
 const SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+// สร้างข้อความเดือนและปี พ.ศ. เช่น มี.ค. 2569
 export const monthLabel = (d: string) => `${SHORT[+d.slice(5, 7) - 1]} ${+d.slice(0, 4) + 543}`;
 
 export type FoundDate = { iso: string; idx: number };
@@ -28,6 +32,7 @@ export type FoundDate = { iso: string; idx: number };
 // หาวันที่ทุกรูปแบบ: 20 ม.ค. 69, 20 มกราคม 2569, 20/01/2569
 export function findDates(t: string): FoundDate[] {
   const out: FoundDate[] = [];
+  // ถ้าวันที่อยู่ในช่วงที่สมเหตุสมผล ให้เก็บลงผลลัพธ์
   const push = (y: number, m: number | null, d: number, idx: number) => {
     const ce = toCE(y);
     if (!m || m < 1 || m > 12 || d < 1 || d > 31 || ce < 2015 || ce > 2100) return;

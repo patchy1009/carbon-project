@@ -1,9 +1,14 @@
+// หน้าเอกสารขององค์กร: แสดงรายการเอกสารที่แอดมินอัปโหลดไว้ และกดดาวน์โหลดได้
 'use client';
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import type { DocumentItem } from '@/types/documents';
+import { showError } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert
+import { formatThaiDate } from '@/lib/format';
+import { CalendarIcon, DownloadIcon, EyeIcon, FileIcon } from '@/components/icons'; // ไอคอนเส้นแทนอิโมจิ 📄 📅 👁 ⬇
 
+// ดูนามสกุลไฟล์ แล้วคืนชื่อชนิดไฟล์กับสีป้าย
 function getFileType(filePath: string | null): { label: string; color: string } {
   const ext = filePath?.split('.').pop()?.toLowerCase() ?? '';
   switch (ext) {
@@ -20,14 +25,7 @@ function getFileType(filePath: string | null): { label: string; color: string } 
   }
 }
 
-function formatThaiDate(dateStr: string): string {
-  return new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(new Date(dateStr));
-}
-
+// แสดงตารางเอกสาร และเก็บว่าแถวไหนกำลังดาวน์โหลดอยู่
 export default function DocumentsClient({ documents }: { documents: DocumentItem[] }) {
   // เก็บว่าแถวไหนกำลังโหลดดาวน์โหลดอยู่ (กันกดซ้ำ + โชว์สถานะ)
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -35,12 +33,12 @@ export default function DocumentsClient({ documents }: { documents: DocumentItem
   // ----- เปิดดูไฟล์ (preview ในแท็บใหม่) -----
   function handleView(doc: DocumentItem) {
     if (!doc.file_path) {
-      alert('ไม่พบไฟล์สำหรับเอกสารนี้');
+      showError('ไม่พบไฟล์สำหรับเอกสารนี้');
       return;
     }
     const { data } = supabase.storage.from('documents').getPublicUrl(doc.file_path);
     if (!data?.publicUrl) {
-      alert('ไม่สามารถเปิดไฟล์ได้ในขณะนี้');
+      showError('ไม่สามารถเปิดไฟล์ได้ในขณะนี้');
       return;
     }
     window.open(data.publicUrl, '_blank', 'noopener,noreferrer');
@@ -56,7 +54,7 @@ export default function DocumentsClient({ documents }: { documents: DocumentItem
   // ----- บังคับดาวน์โหลดไฟล์จริง -----
   async function handleDownload(doc: DocumentItem) {
     if (!doc.file_path) {
-      alert('ไม่พบไฟล์สำหรับเอกสารนี้');
+      showError('ไม่พบไฟล์สำหรับเอกสารนี้');
       return;
     }
 
@@ -69,7 +67,7 @@ export default function DocumentsClient({ documents }: { documents: DocumentItem
     setDownloadingId(null);
 
     if (error || !data) {
-      alert('ดาวน์โหลดไม่สำเร็จ: ' + (error?.message ?? 'ไม่ทราบสาเหตุ'));
+      showError('ดาวน์โหลดไม่สำเร็จ: ' + (error?.message ?? 'ไม่ทราบสาเหตุ'));
       return;
     }
 
@@ -96,8 +94,8 @@ export default function DocumentsClient({ documents }: { documents: DocumentItem
 
       <div className="bg-white shadow-[0px_4px_20px_rgba(0,0,0,0.05)] rounded-[24px] overflow-hidden">
         <div className="flex items-center gap-3 bg-[rgba(249,250,251,0.5)] border-b border-[#F3F4F6] px-6 py-6">
-          <span className="w-8 h-8 rounded-full bg-[#E6F4EA] flex items-center justify-center">
-            📄
+          <span className="w-8 h-8 rounded-full bg-[#E6F4EA] text-[#32885F] flex items-center justify-center">
+            <FileIcon />
           </span>
           <div>
             <h2 className="text-base font-bold text-[#111827]">เอกสารทั้งหมด</h2>
@@ -132,7 +130,7 @@ export default function DocumentsClient({ documents }: { documents: DocumentItem
                       {doc.document_name}
                     </h4>
                     <div className="flex items-center gap-1 text-xs text-[#9CA3AF]">
-                      📅 {formatThaiDate(doc.upload_date)}
+                      <CalendarIcon className="h-3.5 w-3.5" /> {formatThaiDate(doc.upload_date, 'numeric')}
                     </div>
                   </div>
                 </div>
@@ -140,16 +138,17 @@ export default function DocumentsClient({ documents }: { documents: DocumentItem
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleView(doc)}
-                    className="flex items-center gap-1.5 border border-[#21258f] rounded-full px-4 py-2 text-[#374151] text-xs font-medium hover:bg-[#e6e6ff] transition"
+                    className="btn btn-outline flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium"
                   >
-                    👁 ดูไฟล์
+                    <EyeIcon className="h-3.5 w-3.5" /> ดูไฟล์
                   </button>
                   <button
                     onClick={() => handleDownload(doc)}
                     disabled={isDownloading}
-                    className="flex items-center gap-1.5 bg-[#21258f] shadow-sm rounded-full px-4 py-2 text-white text-xs font-medium disabled:opacity-60"
+                    className="btn btn-primary flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium"
                   >
-                    {isDownloading ? 'กำลังโหลด...' : '⬇ ดาวน์โหลด'}
+                    {!isDownloading && <DownloadIcon className="h-3.5 w-3.5" />}
+                    {isDownloading ? 'กำลังโหลด...' : 'ดาวน์โหลด'}
                   </button>
                 </div>
               </div>

@@ -1,5 +1,16 @@
 "use client";
 
+/* ===================== [MERGE aom + cyn2 รอบ 2] =====================
+ * หน้านี้ = ฟีเจอร์ของ cyn2 ทั้งไฟล์ (cyn2 ย้ายจาก footprint/activity_based มาเป็น footprint/general_activity)
+ *   ขั้นที่ 3 ของการบันทึก Carbon Footprint: "กิจกรรมพิเศษ" — การประชุม/อบรม/อีเวนต์ และการเดินทาง
+ *   ของใหม่จาก cyn2: บันทึกลงตาราง general_activity_meeting / general_activity_traveling (แทน activity_based)
+ *                   เลือกกิจกรรมเก่ามาแก้/ลบได้ และดาวน์โหลดผลเป็น PDF (./pdf/route.tsx)
+ * แก้แค่ฟอนต์ [MERGE-FIX] ให้เหมือนหน้าอื่น (แบบเดียวกับรอบแรก)
+ * ทางเข้า: ปุ่ม "บันทึกกิจกรรมพิเศษ (ขั้นที่ 3)" ในกล่องบันทึกเสร็จของขั้นที่ 2 (FootprintClient.tsx ของ aom)
+ * ข้อควรรู้: ข้อมูลที่บันทึกที่นี่ยังไม่ผูกกับรายการ org_activity_list ของ aom -> ยังไม่รวมใน report / dashboard
+ *           ตาราง general_activity_* ต้องมี RLS (supabase/rls_general_activity.sql) ไม่งั้นองค์กรเห็นข้อมูลกันเอง
+ * ============================================================== */
+
 import React, { useState, useEffect } from "react";
 import MeetingForm, { MeetingData } from "./MeetingForm";
 import TravelForm, { TravelData } from "./TravelForm";
@@ -15,9 +26,23 @@ import {
 import FootprintStepper from "@/components/FootprintStepper";
 import { supabase } from "@/lib/supabaseClient";
 import { Calculator } from "lucide-react";
+import { useRouter } from "next/navigation"; // [MERGE รอบ 2] ปุ่ม "‹ กลับ" ไปขั้นที่ 2
 
 export default function ActivityBasedFootprintPage() {
   const [orgId, setOrgId] = useState<string | null>(null);
+  const router = useRouter();
+
+  // [MERGE รอบ 2] ปุ่ม "‹ กลับ": กลับไปขั้นที่ 2 ถ้ามาจากรายการที่แก้อยู่ (?edit=) กลับไปรายการนั้น
+  const goBack = () => {
+    const params = new URLSearchParams(window.location.search);
+    const editId = params.get("edit");
+    // มาจากปุ่มในหน้ารายงาน (&from=report) -> กลับไปหน้ารายงานเดิม
+    if (editId && params.get("from") === "report") {
+      router.push(`/organization/footprint/report?id=${encodeURIComponent(editId)}`);
+      return;
+    }
+    router.push(editId ? `/organization/footprint/activity?edit=${encodeURIComponent(editId)}` : "/organization/footprint/activity");
+  };
   const [emissionFactorsList, setEmissionFactorsList] = useState<any[]>([]);
   const [loadingSystem, setLoadingSystem] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -43,7 +68,7 @@ export default function ActivityBasedFootprintPage() {
       try {
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         if (authError || !user) {
-          alert("กรุณาเข้าสู่ระบบก่อนใช้งานระบบประเมินคาร์บอนฟุตพริ้นท์");
+          alert("กรุณาเข้าสู่ระบบก่อนใช้งานระบบประเมินคาร์บอนฟุตพรินต์");
           return;
         }
         setOrgId(user.id);
@@ -264,15 +289,24 @@ export default function ActivityBasedFootprintPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 px-6 py-8 font-['Be_Vietnam_Pro'] text-gray-800">
-      <h1 className="text-2xl font-bold text-gray-900">การประเมินคาร์บอนฟุตพริ้นท์องค์กร</h1>
+    // [MERGE-FIX] เดิมมี font-['Be_Vietnam_Pro'] แต่เว็บไม่ได้โหลดฟอนต์นี้ -> เอาออก ใช้ฟอนต์หลักของเว็บเหมือนหน้าอื่น
+    <div className="mx-auto max-w-6xl space-y-8 px-6 py-8 text-gray-800">
+      <h1 className="text-2xl font-bold text-gray-900">การประเมินคาร์บอนฟุตพรินต์องค์กร</h1>
       <FootprintStepper current={3} />
 
       <div className="space-y-6">
         <MeetingForm orgId={orgId!} onDataChange={setMeetingData} fetchElectricityEF={fetchElectricityEFFromDB} getEFDetail={getEFDetail} />
         <TravelForm orgId={orgId!} onDataChange={setTravelingData} fetchElectricityEF={fetchElectricityEFFromDB} getEFDetail={getEFDetail} />
 
-        <div className="pt-2">
+        {/* [MERGE รอบ 2] เพิ่มปุ่ม "‹ กลับ" (ทรงเดียวกับขั้นที่ 1-2) ข้างปุ่มคำนวณของ cyn2 */}
+        <div className="flex flex-wrap items-center gap-4 pt-2">
+          <button
+            type="button"
+            onClick={goBack}
+            className="btn btn-outline flex h-[60px] items-center rounded-[20px] px-8 text-base font-semibold"
+          >
+            ‹ กลับ
+          </button>
           <button
             type="button"
             onClick={handleCalculateAndSave}
