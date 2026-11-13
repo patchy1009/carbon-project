@@ -24,7 +24,6 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     .select("role, status")
     .eq("acc_id", user.id)
     .maybeSingle();
-
   if (!profile || profile.status !== "active") return null;
   if (profile.role !== "admin" && profile.role !== "organization") return null;
 

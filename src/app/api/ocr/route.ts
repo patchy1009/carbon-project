@@ -1,20 +1,13 @@
-
 import { NextRequest, NextResponse } from "next/server";
 
-// URL ของ Python API
-// อ่านจาก .env.local ถ้ามี
-const OCR_API_URL =
-  process.env.OCR_API_URL ?? "http://127.0.0.1:8000";
+// url ของ Python API สามารถอ่านจาก .env.local ได้ ถ้าไม่มีจะใช้ค่า default เป็น localhost
+const OCR_API_URL = process.env.OCR_API_URL ?? "http://127.0.0.1:8000"; 
 
 // จำกัดขนาดรูปไม่เกิน 10 MB
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 // ประเภทไฟล์ที่รองรับ
-const ALLOWED_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-];
+const ALLOWED_TYPES = [ "image/jpeg", "image/png", "image/webp", "image/jpg" ];
 
 export async function POST(request: NextRequest) {
   try {
@@ -46,7 +39,6 @@ export async function POST(request: NextRequest) {
         { status: 413 }
       );
     }
-
     if (file.size === 0) {
       return NextResponse.json(
         { error: "ไฟล์รูปภาพว่างเปล่า" },
@@ -56,7 +48,6 @@ export async function POST(request: NextRequest) {
 
     // สร้าง FormData ใหม่สำหรับส่งให้ Python
     const pythonFormData = new FormData();
-
     pythonFormData.append("file", file, file.name);
 
     // ส่งรูปไปให้ Python API
@@ -64,8 +55,8 @@ export async function POST(request: NextRequest) {
       method: "POST",
       body: pythonFormData,
       cache: "no-store",
-      signal: AbortSignal.timeout(120000),
-    });
+      signal: AbortSignal.timeout(120000), // 120 วินาที
+    }); 
 
     // รับ JSON กลับจาก Python
     const result = await response.json();
@@ -75,7 +66,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error:
-            result.detail ??
+            result.detail ??  
             "ไม่สามารถอ่านข้อมูลจากบิลได้",
         },
         { status: response.status }
@@ -84,10 +75,8 @@ export async function POST(request: NextRequest) {
 
     // ส่งผล OCR กลับไปยังหน้าเว็บ
     return NextResponse.json(result);
-
   } catch (error) {
     console.error("OCR API error:", error);
-
     if (
       error instanceof Error &&
       error.name === "TimeoutError"
@@ -97,7 +86,6 @@ export async function POST(request: NextRequest) {
         { status: 504 }
       );
     }
-
     return NextResponse.json(
       {
         error:
@@ -107,3 +95,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+

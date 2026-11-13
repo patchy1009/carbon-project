@@ -1,15 +1,13 @@
-
 import { NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 
 // รับอีเมลและรหัสผ่านจากหน้าเว็บ ล็อกอินกับ Supabase ตรวจ role และสถานะ แล้วบอกหน้าเว็บว่าต้องไปหน้าไหน
 export async function POST(request: Request) {
   try {
-    // client ตัวนี้ผูกกับ cookie: signInWithPassword สำเร็จแล้ว session จะถูกเขียนลง cookie
-    // ทำให้หน้าอื่น ๆ (ทั้ง server และ browser) รู้ว่าใครล็อกอินอยู่
-    const supabase = await createSupabaseServer();
+    // client ตัวนี้ผูกกับ cookie: signInWithPassword สำเร็จแล้ว session จะถูกเขียนลง cookie หน้าอื่นๆเลยรู้ว่าใครล็อกอกอินอยู่
+    const supabase = await createSupabaseServer();  
 
-    // 1. รับข้อมูลจากหน้า Login
+    // รับข้อมูลจากหน้า Login
     const body = await request.json();
     const email =
       typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
@@ -18,12 +16,12 @@ export async function POST(request: Request) {
 
     if (!email || !password) {
       return NextResponse.json(
-        { error: "กรุณากรอกอีเมลและรหัสผ่าน" },
+        { error: "กรุณากรอกอีเมลและรหัสผ่าน" }, 
         { status: 400 }
       );
     }
 
-    // 2. ตรวจสอบการเข้าสู่ระบบกับ Supabase Auth
+    // ตรวจสอบการเข้าสู่ระบบกับ Supabase Auth
     const { data: authData, error: authError } =
       await supabase.auth.signInWithPassword({
         email,
@@ -37,14 +35,12 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3. ค้นหาข้อมูลผู้ใช้จาก public.user
-    // acc_id ต้องตรงกับ auth.users.id
+    // ค้นหาข้อมูลผู้ใช้จาก public.user / acc_id ต้องตรงกับ auth.users.id
     const { data: userData, error: userError } = await supabase
       .from("user")
       .select("acc_id, role, status")
       .eq("acc_id", authData.user.id)
       .maybeSingle();
-
     if (userError) {
       await supabase.auth.signOut();
       console.error("Failed to fetch user profile:", userError.message);
@@ -55,7 +51,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 4. ถ้าไม่มีข้อมูลผู้ใช้ใน public.user ให้ปฏิเสธ
+    // ถ้าไม่มีข้อมูลผู้ใช้ใน public.user ให้ปฏิเสธ
     if (!userData) {
       await supabase.auth.signOut();
       return NextResponse.json(
@@ -64,8 +60,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 5. ตรวจสอบสถานะบัญชี
-    // สมมติว่าบัญชีที่ใช้งานได้ใช้ค่า status = "active"
+    // ตรวจสอบสถานะบัญชีว่า active ไหม
     if (userData.status !== "active") {
       await supabase.auth.signOut();
       return NextResponse.json(
@@ -74,7 +69,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 6. ตรวจสอบ Role และกำหนดเส้นทาง
+    // ตรวจสอบ Role และกำหนดเส้นทาง
     let redirectTo: string;
 
     if (userData.role === "admin") {
@@ -89,14 +84,14 @@ export async function POST(request: Request) {
       );
     }
 
-    // 7. ส่งผลลัพธ์กลับไปยังหน้า Login
+    // ส่งผลลัพธ์กลับไปยังหน้า Login
     return NextResponse.json({
       success: true,
       role: userData.role,
       redirectTo,
     });
   } catch (error) {
-    console.error("Login API error:", error);
+    console.error("Login API error:", error);     
 
     return NextResponse.json(
       { error: "เกิดข้อผิดพลาดภายในระบบ" },
@@ -104,3 +99,4 @@ export async function POST(request: Request) {
     );
   }
 }
+
