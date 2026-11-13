@@ -30,26 +30,26 @@ function billAmount(it: PendingBill, target: BillTarget): number {
 export function summarize(
   items: PendingBill[],
   checksOf: (it: PendingBill) => Check[],
-  targets: Map<string, BillTarget>,
+  targets: Partial<Record<string, BillTarget>>,
 ): TargetSummary[] {
-  const map = new Map<string, TargetSummary>();
+  const map: Record<string, TargetSummary> = {}; // key = scopedetail_id
   for (const it of items) {
     if (!it.billType || !isUsable(it, checksOf(it))) continue;
     const source = ocrSourceOf(it.billType, it.fuelType);
-    const target = source ? targets.get(source) : undefined;
+    const target = source ? targets[source] : undefined;
     if (!target) continue;
 
-    let s = map.get(target.scopedetail_id);
+    let s = map[target.scopedetail_id];
     if (!s) {
       s = { target, bills: [], monthTotals: Array(12).fill(null), billTotal: 0 };
-      map.set(target.scopedetail_id, s);
+      map[target.scopedetail_id] = s;
     }
     const amount = billAmount(it, target);
     s.bills.push(it);
     s.monthTotals[it.month - 1] = round4((s.monthTotals[it.month - 1] ?? 0) + amount);
     s.billTotal = round4(s.billTotal + amount);
   }
-  return [...map.values()];
+  return Object.values(map);
 }
 
 /* ===================== รายปี: เติมเดือนที่ขาด ===================== */

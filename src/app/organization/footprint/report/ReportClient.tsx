@@ -347,7 +347,7 @@ export default function ReportClient({
           <div className="mt-6 flex justify-center" data-no-export="true">
             <Link
               href="/organization/tver-simulation"
-              className="btn btn-accent rounded-[20px] px-8 py-4 text-base font-semibold"
+              className="btn btn-primary rounded-[20px] px-8 py-4 text-base font-semibold"
             >
               เริ่มจำลองโครงการ T-VER <span className="btn-arrow">›</span>
             </Link>

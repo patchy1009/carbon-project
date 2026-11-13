@@ -1,13 +1,8 @@
 @import "tailwindcss";
 
-/* ฟอนต์และสีพื้นของทั้งเว็บ
- * เดิมมี 3 อย่างตีกันจนทั้งเว็บกลายเป็นฟอนต์ Arial:
- *   1) @theme ตั้ง --font-sans = IBM Plex Sans Thai
- *   2) @theme inline ด้านล่างตั้ง --font-sans ซ้ำเป็น --font-geist-sans (ไม่มีอยู่จริง) จึงทับข้อ 1
- *   3) body { font-family: Arial } ทับ class font-sans อีกชั้น
- * ตอนนี้: font-sans = IBM Plex Sans Thai Looped (ฟอนต์มีหัว ใช้ทั้งเว็บรวมเมนู navbar)
- *         font-display = Prompt (เฉพาะโลโก้ภาษาอังกฤษ "Carbon Calculator")
- * และเอาโหมดมืดอัตโนมัติออก (เว็บออกแบบเป็นพื้นขาว เดิมเครื่องที่ตั้งโหมดมืดจะได้พื้นดำปนการ์ดขาว) */
+/* ฟอนต์และสีพื้นของทั้งเว็บ */
+/* font-sans = ฟอนต์หลักของทั้งเว็บ (ใช้กับเนื้อหาและปุ่มต่าง ๆ) = IBM Plex Sans Thai Looped
+font-display = ใช้กับสิ่งที่ต้องการเน้น */
 @theme {
   --font-sans: var(--font-body), "Noto Sans Thai Looped", "Leelawadee UI", Tahoma, sans-serif;
   --font-display: var(--font-prompt), var(--font-body), "Leelawadee UI", sans-serif;
@@ -29,13 +24,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ปุ่ม/ลิงก์ที่กดด้วยคีย์บอร์ด เห็นกรอบโฟกัสชัดเจน (เดิมไม่มี) */
+/* สีกรอบโฟกัส */
 :focus-visible {
-  outline: 2px solid #32885f;
-  outline-offset: 2px;
+  outline: 3px solid #9eccce;
+  outline-offset: 1px;
 }
 
-/* แอนิเมชันของกล่องแจ้งเตือน/ยืนยัน (src/components/DialogHost.tsx) */
+/* แอนิเมชันของกล่องแจ้งเตือน/ยืนยัน */
 @keyframes dialog-fade {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -45,14 +40,13 @@ body {
   to { opacity: 1; transform: none; }
 }
 
-/* scroll bar ที่มองเห็นตลอด สำหรับลิสต์ในกรอบ (เช่น รายการใน dashboard)
- * Edge/Windows 11 ซ่อน scroll bar จนกว่าจะเอาเมาส์ไปชี้ จึงกำหนดสไตล์เองให้เห็นเสมอ */
+/* scroll bar ในหน้า dashboard */
 .scroll-list {
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
 .scroll-list::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 .scroll-list::-webkit-scrollbar-track {
   background: #f1f5f9;
@@ -66,19 +60,15 @@ body {
   background: #94a3b8;
 }
 
-/* =====================================================================
+/*
  * ปุ่มตามหน้าที่ (ใช้คู่กัน: className="btn btn-primary ...")
- *   ปุ่มแต่ละแบบมีสีต่างกัน ให้รู้ว่ากดแล้วจะเกิดอะไร:
- *   btn-primary  เขียวหลัก   — บันทึก / คำนวณ / ถัดไป / เข้าสู่ระบบ (การกระทำหลักของหน้า)
- *   btn-create   น้ำเงินเทาอ่อน — ปุ่ม "+ เพิ่ม/บันทึกใหม่..." ทั้งแอดมินและองค์กร ชี้แล้วเป็นน้ำเงินเทาเข้ม (สีต้น navbar)
- *   btn-accent   เหลืองทอง   — ชวนไปทำต่อ เช่น ดาวน์โหลดรายงาน / เริ่มจำลองโครงการ
- *   btn-outline  ขาวมีเส้นขอบ — ยกเลิก / กลับ / แก้ไข (การกระทำรอง)
+ *   btn-primary  เขียวหลัก   — ปุ่มหลักพวกบันทึก / จำลอง 
+ *   btn-create   เทา ชี้แล้วน้ำเงิน - ปุ่มที่มันกดจากแดชบอร์ด
+ *   btn-accent   เหลือง   — ปุ่มดาวน์โหลด
+ *   btn-outline  ขาว ชี้ขอบเขียว — ถัดไป / กลับ
  *   (btn-soft เดิม เขียวอ่อน ถูกรวมเข้า btn-create แล้ว)
- * ลูกเล่น: เอาเมาส์ชี้ = ปุ่มลอยขึ้นเล็กน้อย + สีเข้มขึ้น + มีเงา, กด = ยุบลงนิดหนึ่ง
- *   ลูกศร "›" ที่ใส่ class btn-arrow จะเลื่อนไปทางขวาตอนชี้
- * ข้อควรระวัง: อย่าใส่ class สีของ Tailwind (bg-[...], text-[...], border-[...]) ซ้ำบนปุ่มเดียวกัน
- *   เพราะ class ของ Tailwind ชนะ class ในไฟล์นี้ (อยู่คนละชั้น) สีตอนชี้จะไม่เปลี่ยน
- * ===================================================================== */
+ *   ลูกศร "›" ที่ใส่ class btn-arrow จะเลื่อนไปทางขวาตอนชี้ / ลูกศร "‹" ที่ใส่ btn-arrow-back เลื่อนไปทางซ้าย
+ */
 @layer components {
   .btn {
     cursor: pointer;
@@ -88,25 +78,25 @@ body {
   .btn:active:not(:disabled) { transform: translateY(0) scale(0.98); }
   .btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-  .btn-primary { background: #32885f; color: #fff; box-shadow: 0 1px 2px rgba(16, 60, 40, 0.15); }
-  .btn-primary:hover:not(:disabled) { background: #27704d; box-shadow: 0 6px 16px rgba(50, 136, 95, 0.3); }
+  .btn-primary { background: #75b898; color: #fff; box-shadow: 0 1px 2px rgba(16, 60, 40, 0.15); }
+  .btn-primary:hover:not(:disabled) { background: #18794a; box-shadow: 0 6px 16px rgba(50, 136, 95, 0.3); }
 
-  /* ปุ่มสร้าง/เพิ่ม (ใช้ร่วมกันทั้งฝั่งแอดมินและองค์กร): ปกติพื้นอ่อน ตัวอักษรน้ำเงินเทา -> ชี้แล้วพื้นเข้ม ตัวอักษรขาว
-   * รวมกับ btn-soft เดิม (เขียวอ่อน ฝั่งองค์กร) ให้เหลือแบบเดียว: ท่าทางแบบองค์กร + สีแบบแอดมิน */
   .btn-create { background: #e6edf3; color: #2d4a63; }
-  .btn-create:hover:not(:disabled) { background: #2d4a63; color: #fff; box-shadow: 0 6px 16px rgba(45, 74, 99, 0.28); }
+  .btn-create:hover:not(:disabled) { background: #2b577d; color: #fff; box-shadow: 0 6px 16px rgba(45, 74, 99, 0.28); }
 
-  .btn-accent { background: #f2c94c; color: #3a2e06; }
-  .btn-accent:hover:not(:disabled) { background: #e9b829; box-shadow: 0 6px 16px rgba(233, 184, 41, 0.35); }
+  .btn-accent { background: #fddf85; color: #3a2e06; }
+  .btn-accent:hover:not(:disabled) { background: #f6cc4f; box-shadow: 0 6px 16px rgba(233, 184, 41, 0.35); }
 
   .btn-outline { background: #fff; color: #475569; border: 1px solid #cbd5e1; }
-  .btn-outline:hover:not(:disabled) { border-color: #32885f; color: #27704d; background: #f2f8f5; }
+  .btn-outline:hover:not(:disabled) { border-color: #077531; color: #085600; background: #f2f8f5; }
 
 
   .btn-arrow { display: inline-block; transition: transform 0.18s; }
   .btn:hover .btn-arrow { transform: translateX(3px); }
+  .btn-arrow-back { display: inline-block; transition: transform 0.18s; }
+  .btn:hover .btn-arrow-back { transform: translateX(-3px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .btn, .btn:hover, .btn:active, .btn-arrow { transform: none !important; transition: none; }
+  .btn, .btn:hover, .btn:active, .btn-arrow, .btn-arrow-back { transform: none !important; transition: none; }
 }

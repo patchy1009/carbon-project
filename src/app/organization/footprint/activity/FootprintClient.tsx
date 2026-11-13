@@ -2,13 +2,12 @@
 'use client';
 
 import Select from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation'; // ใช้เปลี่ยนหน้าไปขั้นที่ 3
 import { supabase } from '@/lib/supabaseClient';
 import Modal from '@/components/Modal';
 import FootprintStepper from '@/components/FootprintStepper';
-import YearPicker from '@/components/YearPicker';
 import { scopeColor } from '@/lib/scopeColors'; // สีประจำ scope (ไฟล์กลาง ใช้ร่วมกับหน้ารายงาน)
 import type { ScopeGroup } from '@/types/footprint';
 import BillRow from '@/components/bills/BillRow';
@@ -118,13 +117,13 @@ export default function FootprintClient({
 
   // รายการใหม่: ดูว่ากรอกข้อมูลสำนักงานในขั้นที่ 1 ไว้ไหม (ค่าที่ค้างใน sessionStorage)
   // ฝั่ง server ถือว่ามี เพื่อไม่ให้กล่องเตือนกะพริบตอนโหลด
-  // ใช้ useSyncExternalStore เพราะ sessionStorage อ่านได้เฉพาะในเบราว์เซอร์
-  // ค่าที่ 1 = ไม่ต้องรอฟังการเปลี่ยนแปลง, ค่าที่ 2 = อ่านค่าในเบราว์เซอร์, ค่าที่ 3 = ค่าตอนอยู่ฝั่ง server
-  const hasOfficeInfo = useSyncExternalStore(
-    () => () => {},
-    () => hasOfficeValues(readOfficeDraft(orgId, 'new')),
-    () => true,
-  );
+  // sessionStorage อ่านได้เฉพาะในเบราว์เซอร์ -> อ่านใน useEffect หลังหน้าโหลดเสร็จ
+  const [hasOfficeInfo, setHasOfficeInfo] = useState(true);
+  useEffect(() => {
+    const draft = readOfficeDraft(orgId, 'new');
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- อ่านค่าจาก sessionStorage ครั้งเดียวตอนเปิดหน้า
+    setHasOfficeInfo(hasOfficeValues(draft));
+  }, [orgId]);
 
   const [values, setValues] = useState<Record<string, string>>(existingValues);
   const router = useRouter();
@@ -170,13 +169,13 @@ export default function FootprintClient({
   const bills = useBillOcr();
 
   // ช่องกิจกรรมที่รับข้อมูลจากบิล: จับคู่ด้วย activity_detail.ocr_source ที่แอดมินตั้ง (ไม่เดาจากชื่อ)
-  const billTargets = new Map<OcrSource, BillTarget>();
+  const billTargets: Partial<Record<OcrSource, BillTarget>> = {};
   for (const g of scopeGroups) {
     for (const d of g.details) {
       if (d.ocr_source) {
-        billTargets.set(d.ocr_source, {
+        billTargets[d.ocr_source] = {
           scopedetail_id: d.scopedetail_id, detail_name: d.detail_name, unit: d.unit, source: d.ocr_source,
-        });
+        };
       }
     }
   }
@@ -186,7 +185,7 @@ export default function FootprintClient({
   // หาช่องกิจกรรมที่จะรับยอดจากบิลใบนี้
   const targetOf = (it: PendingBill) => {
     const src = it.billType ? ocrSourceOf(it.billType, it.fuelType) : null;
-    return src ? billTargets.get(src) : undefined;
+    return src ? billTargets[src] : undefined;
   };
 
   // ยอดรวมจากบิลที่ยืนยันแล้ว แยกตามช่องกิจกรรม + ตัวเลือกเติมเดือนที่ขาด (รายปี)
@@ -240,9 +239,13 @@ export default function FootprintClient({
     });
   }
 
-  // เดิมเลือกได้แค่ปีปัจจุบัน +1 ย้อนหลัง 5 ปี -> ย้อนหลังได้ 30 ปี และพิมพ์ค้นหาปีได้ (YearPicker)
+  // ปีที่เลือกได้: ปีหน้า ถึงย้อนหลัง 30 ปี (ใหม่สุดอยู่บน)
   const YEAR_MIN_BE = nowBE - 30;
   const YEAR_MAX_BE = nowBE + 1;
+  const yearOptions = [];
+  for (let y = YEAR_MAX_BE; y >= YEAR_MIN_BE; y--) yearOptions.push({ value: y, label: y });
+  // ปีของรายการเดิมอยู่นอกช่วง ก็ยังต้องเลือกได้
+  if (selYear && (selYear > YEAR_MAX_BE || selYear < YEAR_MIN_BE)) yearOptions.unshift({ value: selYear, label: selYear });
 
   // เปลี่ยนช่วงเวลาที่เลือก แล้วล้าง error ของช่องช่วงเวลา
   function updatePeriod(type: PeriodType, m: number, y: number) {
@@ -296,9 +299,7 @@ export default function FootprintClient({
 
     const accepted: File[] = [];
     const rejected: string[] = []; // รวมไฟล์ที่ใช้ไม่ได้ แจ้งครั้งเดียว (เดิมเด้ง alert ทีละไฟล์)
-    const seen = new Set(
-      bills.items.filter((p) => p.slot === type).map((p) => fileKey(p.file))
-    );
+    const seen: string[] = bills.items.filter((p) => p.slot === type).map((p) => fileKey(p.file));
 
     for (const f of files) {
       if (!ALLOWED_TYPES.includes(f.type)) {
@@ -313,11 +314,11 @@ export default function FootprintClient({
         rejected.push(`"${f.name}" ใหญ่เกิน 10 MB`);
         continue;
       }
-      if (seen.has(fileKey(f))) {
+      if (seen.includes(fileKey(f))) {
         rejected.push(`"${f.name}" ถูกเลือกไว้แล้วในหมวดนี้`);
         continue;
       }
-      seen.add(fileKey(f));
+      seen.push(fileKey(f));
       accepted.push(f);
     }
 
@@ -663,8 +664,8 @@ export default function FootprintClient({
     const full = used >= maxPerType;
 
     return (
-      <div key={type} className="overflow-hidden rounded-[25px] border border-[#BDC9C1] bg-white">
-        <div className="flex items-center justify-between border-b border-[#BDC9C1] bg-[#F2F4F6] px-4 py-2">
+      <div key={type} className="rounded-[25px] border border-[#BDC9C1] bg-white">
+        <div className="flex items-center justify-between rounded-t-[25px] border-b border-[#BDC9C1] bg-[#F2F4F6] px-4 py-2">
           <div className="flex items-center gap-2">
             <span className="h-3 w-3 rounded-full bg-[#6FB898]" />
             <h3 className="text-base text-[#191C1E]">{label}</h3>
@@ -723,8 +724,8 @@ export default function FootprintClient({
   function renderBillSummary() {
     if (billSummaries.length === 0) return null;
     return (
-      <div className="overflow-hidden rounded-[25px] border border-[#32885F] bg-white">
-        <div className="flex items-center justify-between border-b border-[#BDC9C1] bg-[#ECFDF5] px-4 py-2">
+      <div className="rounded-[25px] border border-[#32885F] bg-white">
+        <div className="flex items-center justify-between rounded-t-[25px] border-b border-[#BDC9C1] bg-[#ECFDF5] px-4 py-2">
           <h3 className="text-base text-[#191C1E]">
             สรุปยอดจากบิลที่ยืนยันแล้ว ({periodType === 'year' ? `ปี ${yearBEOf(ocrPeriod.month)}` : periodLabel('month', ocrPeriod.month)})
           </h3>
@@ -855,8 +856,8 @@ export default function FootprintClient({
       )}
 
       {/* ข้อมูลกิจกรรม: ชื่อก่อน แล้วค่อยเลือกช่วงเวลา */}
-      <div className="mb-6 overflow-hidden rounded-[25px] border border-[#BDC9C1] bg-white">
-        <div className="flex items-center gap-2 border-b border-[#BDC9C1] bg-[#F2F4F6] px-4 py-2">
+      <div className="mb-6 rounded-[25px] border border-[#BDC9C1] bg-white">
+        <div className="flex items-center gap-2 rounded-t-[25px] border-b border-[#BDC9C1] bg-[#F2F4F6] px-4 py-2">
           <span className="h-3 w-3 rounded-full bg-[#6FB898]" />
           <h2 className="text-base text-[#191C1E]">ข้อมูลกิจกรรม</h2>
         </div>
@@ -948,14 +949,14 @@ export default function FootprintClient({
                   ]}
                 />
               )}
-              {/* เดิมเป็น <select> -> ช่องเลือกปีที่พิมพ์ค้นหาได้ */}
-              <YearPicker
-                value={selYear}
-                onChange={(y) => updatePeriod(periodType, selMonth, y)}
-                min={YEAR_MIN_BE}
-                max={YEAR_MAX_BE}
-                hasError={!!fieldErrors.period && !selYear}
-                className="w-40"
+              {/* [แก้ไข] เดิมเป็น YearPicker (พิมพ์ค้นหาปีได้) -> dropdown กลางธรรมดา */}
+              <Select
+                value={selYear || ''}
+                onChange={(v) => updatePeriod(periodType, selMonth, Number(v))}
+                className={`h-11 w-40 rounded-[20px] border bg-[#F7F9FB] px-4 text-sm ${
+                  fieldErrors.period && !selYear ? 'border-red-500' : 'border-[#BDC9C1]'
+                }`}
+                options={[{ value: '', label: 'ปี พ.ศ.', placeholder: true }, ...yearOptions]}
               />
             </div>
             {fieldErrors.period && <p className="text-xs text-red-600">{fieldErrors.period}</p>}
@@ -1098,9 +1099,9 @@ export default function FootprintClient({
         <Link
           // กลับไปขั้นที่ 1 พร้อม ?resume=1 เพื่อให้เห็นค่าข้อมูลสำนักงานที่กรอกไว้
           href={backHref}
-          className="btn btn-outline flex h-[60px] items-center rounded-[20px] px-8 text-base font-semibold"
+          className="btn btn-outline flex h-[60px] items-center gap-1 rounded-[20px] px-8 text-base font-semibold"
         >
-          ‹ กลับ
+          <span className="btn-arrow-back">‹</span> กลับ
         </Link>
         {/* ปุ่มที่ 2: ไปขั้นที่ 3 (กิจกรรมพิเศษ: ประชุม/อีเวนต์ และการเดินทาง ของ cyn2) ได้ทันทีโดยไม่ต้องบันทึกก่อน
             ถ้ามีค่าที่แก้แล้วยังไม่บันทึก ถามก่อน เพราะออกจากหน้านี้แล้วค่าที่กรอกจะหาย */}

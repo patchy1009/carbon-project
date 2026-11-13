@@ -3,8 +3,7 @@ import { IBM_Plex_Sans_Thai_Looped, Prompt } from 'next/font/google';
 import './globals.css';
 import DialogHost from '@/components/DialogHost';
 
-// ฟอนต์หลักของทั้งเว็บเปลี่ยนเป็นแบบ "มีหัว" (Looped) ตระกูลเดียวกับของเดิม (IBM Plex Sans Thai)
-// ขนาด/ความกว้างตัวอักษรใกล้เคียงของเดิม หน้าที่จัดไว้จึงไม่เพี้ยน
+// ฟอนต์หลักของทั้งเว็บคือ IBM Plex Sans Thai Looped (class: font-sans) สำหรับเนื้อหาและปุ่มต่าง ๆ
 const ibmPlexSansThaiLooped = IBM_Plex_Sans_Thai_Looped({
   subsets: ['thai', 'latin'],
   weight: ['300', '400', '500', '600', '700'],
@@ -12,7 +11,6 @@ const ibmPlexSansThaiLooped = IBM_Plex_Sans_Thai_Looped({
 });
 
 // ฟอนต์ Prompt สำหรับโลโก้ "Carbon Calculator" บน navbar (class: font-display)
-// เดิมโค้ดเขียน font-['Prompt'] แต่ไม่เคยโหลดฟอนต์นี้ จึงแสดงเป็นฟอนต์ตัวมีเชิง (serif) ของเครื่องแทน
 const prompt = Prompt({
   subsets: ['thai', 'latin'],
   weight: ['400', '500', '600', '700'],

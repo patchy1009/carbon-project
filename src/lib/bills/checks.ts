@@ -24,7 +24,7 @@ export type BillTarget = {
 export type CheckContext = {
   period: ActivityPeriod;
   items: PendingBill[];                    // บิลทั้งหมดในหน้า (ใช้หาบิลซ้ำ)
-  targets: Map<OcrSource, BillTarget>;
+  targets: Partial<Record<OcrSource, BillTarget>>;
 };
 
 // เพดานเตือนปริมาณสูงผิดปกติต่อ 1 บิล (หน่วยของบิล: kWh / ลิตร) ปรับตามขนาดองค์กรได้
@@ -85,7 +85,7 @@ export function checkBill(it: PendingBill, ctx: CheckContext): Check[] {
   // 6) มีช่องกิจกรรมรับข้อมูลจากบิลนี้ไหม และหน่วยแปลงกันได้ไหม (ตรวจความสัมพันธ์กับ activity_detail)
   const source = it.billType ? ocrSourceOf(it.billType, it.fuelType) : null;
   if (source) {
-    const target = ctx.targets.get(source);
+    const target = ctx.targets[source];
     if (!target) {
       add('fail', 'NO_TARGET', 'ยังไม่มีรายการกิจกรรมที่รับข้อมูลจากบิลประเภทนี้ กรุณาติดต่อผู้ดูแลระบบ');
     } else if (unitFactor(BILL_UNIT[it.billType as BillType], target.unit) === null) {
@@ -97,7 +97,7 @@ export function checkBill(it: PendingBill, ctx: CheckContext): Check[] {
   // 7) บิลซ้ำ: ไฟล์เดียวกัน หรือเลขที่บิลเดียวกัน กับบิลที่แนบไว้ก่อนหน้า (ใบหลังโดนธง ไม่ถูกนับ)
   const idx = ctx.items.findIndex((x) => x.uid === it.uid);
   const before = ctx.items.slice(0, idx).filter((x) => x.status === 'ready');
-  const sameFile = it.fileHash && before.find((x) => x.fileHash === it.fileHash);
+  const sameFile = it.fileKey && before.find((x) => x.fileKey === it.fileKey);
   const key = billKey(it.billNumber);
   const sameNo = key && before.find((x) => billKey(x.billNumber) === key);
   if (sameFile) add('fail', 'DUP_FILE', `ไฟล์นี้ซ้ำกับ ${sameFile.file.name} ที่แนบไว้แล้ว`);

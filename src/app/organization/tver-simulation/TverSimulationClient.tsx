@@ -4,7 +4,6 @@
 import Select, { ChevronDown } from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation'; // dropdown "โครงการที่บันทึกไว้" -> เปิดหน้าของโครงการนั้น
 import { calculateTverCredits } from '@/lib/tverCredits'; // [MERGE aom + cyn2] สูตรเครดิตของ cyn2
 import { supabase } from '@/lib/supabaseClient';
 import { TVER_TREE_COUNT_NAME, type TreeListItem, type TverProjectDetail } from '@/types/tver-project';
@@ -58,11 +57,11 @@ export default function TverSimulationClient({
   savedProjects?: SavedProjectOption[]; // โครงการที่บันทึกไว้ขององค์กรนี้ (page.tsx ดึงมา)
 }) {
   const isEditMode = existingProject !== null;
-  const router = useRouter();
 
   // เลือกจาก dropdown: ค่าว่าง = เริ่มโครงการใหม่ / id = เปิดโครงการนั้น (/tver-simulation?edit=<id>)
   function openSavedProject(id: string) {
-    router.push(id ? `/organization/tver-simulation?edit=${encodeURIComponent(id)}` : '/organization/tver-simulation');
+    // โหลดหน้าใหม่ทั้งหน้า ฟอร์มจะเริ่มจากค่าของโครงการที่เลือก
+    window.location.assign(id ? `/organization/tver-simulation?edit=${encodeURIComponent(id)}` : '/organization/tver-simulation');
   }
 
   // รายการใต้ช่องชื่อโครงการ: null = ปิด / 'filter' = กรองตามที่พิมพ์ / 'all' = ทั้งหมด (กดปุ่มลูกศร)

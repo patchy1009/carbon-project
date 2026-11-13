@@ -1,12 +1,11 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { createServerClient } from "@supabase/ssr";
+import { NextResponse, type NextRequest } from "next/server";   //ใช้สร้าง response และอ่าน request
+import { createServerClient } from "@supabase/ssr";   // สร้าง Supabase Client สำหรับฝั่ง Server ที่จัดการ Cookies ได้
 
 // วิ่งก่อนทุกหน้าใน /organization และ /admin
-// 1) รีเฟรช token ของ Supabase ที่หมดอายุแล้วเขียน cookie ใหม่
-// 2) ยังไม่ล็อกอิน -> เด้งไปหน้า login (เช็ก role ละเอียดใน requireOrgId / requireAdminId)
+// จัดการ session ของ Supabase 
+// ยังไม่ล็อกอิน -> เด้งไปหน้า login (เช็ก role ละเอียดใน requireOrgId / requireAdminId)
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
-
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -29,16 +28,13 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  // [MERGE aom + cyn2] หน้าที่เข้าได้โดยไม่ต้องล็อกอิน
-  //   เดิม (aom) มีแค่ /organization/login
-  //   เพิ่มหน้าของ cyn2: homepage (หน้าแรก — src/app/page.tsx redirect มาที่นี่), register, forgot_password
-  //   ถ้าไม่เพิ่ม ผู้ใช้ที่ยังไม่ล็อกอินจะถูกเด้งไปหน้า login ตลอด สมัครสมาชิก/ตั้งรหัสใหม่ไม่ได้
+  
+  // หน้าที่เข้าได้เลย
   const PUBLIC_PATHS = [
-    "/organization/login", // [aom]
-    "/organization/homepage", // [cyn2]
-    "/organization/register", // [cyn2]
-    "/organization/forgot_password", // [cyn2]
+    "/organization/login", 
+    "/organization/homepage", 
+    "/organization/register", 
+    "/organization/forgot_password", 
   ];
   const isLoginPage = PUBLIC_PATHS.includes(request.nextUrl.pathname);
   if (!user && !isLoginPage) {
@@ -48,6 +44,4 @@ export async function proxy(request: NextRequest) {
   return response;
 }
 
-export const config = {
-  matcher: ["/organization/:path*", "/admin/:path*"],
-};
+export const config = { matcher: ["/organization/:path*", "/admin/:path*"] };

@@ -39,8 +39,6 @@ export default async function TverSimulationPage({
 
   return (
     <TverSimulationClient
-      // key: สลับไปอีกโครงการ (เปลี่ยนแค่ ?edit=) ให้ฟอร์มเริ่มใหม่จากค่าของโครงการนั้น
-      key={project?.orgtreeproject_id ?? 'new'}
       orgId={orgId}
       trees={(treesRes.data ?? []) as TreeListItem[]}
       criteria={(criteriaRes.data ?? []) as TverProjectDetail[]}

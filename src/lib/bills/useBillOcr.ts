@@ -14,7 +14,7 @@ export type PendingBill = {
   status: 'reading' | 'ready' | 'error';
   error?: string;                // ไฟล์ใช้ไม่ได้ (ต้องเอาออก)
   note?: string;                 // อ่านอัตโนมัติไม่สำเร็จ ให้กรอกเอง
-  fileHash?: string;             // กันแนบไฟล์เดียวกันซ้ำ
+  fileKey?: string;              // ชื่อ|ขนาด|เวลาแก้ไขของไฟล์ ใช้กันแนบไฟล์เดียวกันซ้ำ
   ocr?: OcrResult;               // ผลดิบจาก OCR (ไว้แสดงคำเตือนของ OCR)
 
   // ---- ค่าที่ผู้ใช้ตรวจ/แก้ได้ (ค่าเริ่มต้นมาจาก OCR) ----
@@ -33,10 +33,9 @@ export type BillEdit = Partial<
   Pick<PendingBill, 'billType' | 'billNumber' | 'month' | 'year' | 'fuelType' | 'quantity' | 'ack' | 'confirmed'>
 >;
 
-// คำนวณรหัสประจำไฟล์ ไว้ใช้ตรวจว่าแนบไฟล์เดิมซ้ำหรือไม่
-async function sha256(file: File) {
-  const d = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
-  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+// รหัสประจำไฟล์ ไว้ตรวจว่าแนบไฟล์เดิมซ้ำหรือไม่ (เดิมคำนวณ SHA-256 ของไฟล์ -> ใช้ชื่อ ขนาด และเวลาแก้ไขแทน)
+function fileKeyOf(file: File) {
+  return `${file.name}|${file.size}|${file.lastModified}`;
 }
 
 /* แปลง JSON จาก Python -> ค่าเริ่มต้นของฟอร์มตรวจบิล (ค่าที่ผิดรูปแบบถือว่าอ่านไม่ได้)
@@ -68,7 +67,7 @@ export function useBillOcr() {
   // ส่งบิล 1 ไฟล์ไปอ่านที่ /api/ocr แล้วเก็บผลลัพธ์ลงรายการ
   async function read(it: PendingBill) {
     try {
-      const fileHash = await sha256(it.file);
+      const fileKey = fileKeyOf(it.file);
       const fd = new FormData();
       fd.append('file', it.file);
       const res = await fetch('/api/ocr', { method: 'POST', body: fd });
@@ -76,22 +75,22 @@ export function useBillOcr() {
 
       if (res.ok) {
         const ocr = json as OcrResult;
-        patch(it.uid, { status: 'ready', fileHash, ocr, ...fromOcr(ocr, it.slot) });
+        patch(it.uid, { status: 'ready', fileKey, ocr, ...fromOcr(ocr, it.slot) });
         return;
       }
       if (res.status === 401) {
-        patch(it.uid, { status: 'error', fileHash, error: 'หมดเวลาเข้าสู่ระบบ กรุณาเข้าสู่ระบบใหม่' });
+        patch(it.uid, { status: 'error', fileKey, error: 'หมดเวลาเข้าสู่ระบบ กรุณาเข้าสู่ระบบใหม่' });
         return;
       }
       // 400/413/415/422 = ไฟล์ใช้ไม่ได้ (ชนิดไม่รองรับ / ใหญ่เกิน / อ่านข้อความไม่ได้) ให้เอาออก
       if (res.status >= 400 && res.status < 500) {
-        patch(it.uid, { status: 'error', fileHash, error: json.error ?? 'ไฟล์ไม่ถูกต้อง' });
+        patch(it.uid, { status: 'error', fileKey, error: json.error ?? 'ไฟล์ไม่ถูกต้อง' });
         return;
       }
       // 5xx = ระบบ OCR ล่ม/ช้าเกิน -> ไม่ต้องทิ้งไฟล์ ให้ผู้ใช้กรอกข้อมูลบิลเอง
       patch(it.uid, {
         status: 'ready',
-        fileHash,
+        fileKey,
         billType: it.slot,
         note: `อ่านอัตโนมัติไม่สำเร็จ (${json.error ?? 'ระบบ OCR ไม่ตอบสนอง'}) กรุณากรอกข้อมูลบิลเอง`,
       });
@@ -114,7 +113,7 @@ export function useBillOcr() {
   // เพิ่มบิลใหม่เข้ารายการแล้วเริ่มอ่าน เรียกจาก handleFiles หลังกรองชนิด/ขนาด/จำนวนไฟล์แล้ว
   function add(slot: BillType, files: File[]) {
     const fresh: PendingBill[] = files.map((file) => ({
-      uid: crypto.randomUUID(), file, slot, status: 'reading',
+      uid: `${Date.now()}-${Math.random()}`, file, slot, status: 'reading',
       billType: '', billNumber: '', month: 0, year: 0, fuelType: '', quantity: '',
       ack: false, confirmed: false,
     }));

@@ -326,7 +326,6 @@ export default function TverProjectClient({
                   }`}
                   value={detailForm.condition_operator}
                   onChange={(v) => setDetailForm({ ...detailForm, condition_operator: v })}
-                  ariaLabel="เงื่อนไข"
                   options={[
                     { value: '', label: '–', placeholder: true },
                     // ในรายการแสดงทั้งเครื่องหมายและคำอธิบาย (เดิมคำอธิบายอยู่ใน title)

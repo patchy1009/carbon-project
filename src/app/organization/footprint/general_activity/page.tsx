@@ -303,9 +303,9 @@ export default function ActivityBasedFootprintPage() {
           <button
             type="button"
             onClick={goBack}
-            className="btn btn-outline flex h-[60px] items-center rounded-[20px] px-8 text-base font-semibold"
+            className="btn btn-outline flex h-[60px] items-center gap-1 rounded-[20px] px-8 text-base font-semibold"
           >
-            ‹ กลับ
+            <span className="btn-arrow-back">‹</span> กลับ
           </button>
           <button
             type="button"
