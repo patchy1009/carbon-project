@@ -23,6 +23,7 @@ import {
 import { supabase } from "@/lib/supabaseClient";
 import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
 import { getErrorMessage } from "@/lib/errorMessage";
+import { checkEmailBeforeReset } from "@/lib/checkEmail"; // เช็กว่ามีบัญชีที่ใช้อีเมลนี้ก่อนส่งลิงก์รีเซ็ต
 import { PASSWORD_HINT, PASSWORD_MIN_LENGTH, validatePasswordStrength } from "@/lib/authRules"; // กติการหัสผ่านกลาง (ยาวอย่างน้อย 8 ตัว มีตัวอักษรอังกฤษและตัวเลข)
 
 function formatTime(seconds: number): string {
@@ -310,6 +311,13 @@ export default function ForgotPasswordPage() {
     setLoading(true);
 
     try {
+      // ไม่มีบัญชีที่ใช้อีเมลนี้ -> แจ้งให้สมัครสมาชิกก่อน ไม่ส่งลิงก์
+      const emailProblem = await checkEmailBeforeReset(normalizedEmail);
+      if (emailProblem) {
+        setErrorMessage(emailProblem);
+        return;
+      }
+
       const { error } = await supabase.auth.resetPasswordForEmail(
         normalizedEmail,
         {

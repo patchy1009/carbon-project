@@ -33,6 +33,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
 import { getErrorMessage } from "@/lib/errorMessage";
 import { EMAIL_REGEX, USERNAME_REGEX, PASSWORD_HINT, validatePasswordStrength } from "@/lib/authRules";
+import { checkEmailBeforeReset } from "@/lib/checkEmail"; // เช็กว่ามีบัญชีที่ใช้อีเมลนี้ก่อนส่งลิงก์รีเซ็ต
 import { industries } from "@/types/industries";
 
 interface AuthModalProps {
@@ -157,7 +158,7 @@ export default function AuthModal({
     }
   };
 
-  // 1.1 ขอลิงก์รีเซ็ตรหัสผ่าน: Supabase ส่งลิงก์ (อายุตามที่ตั้งไว้ใน Supabase = 10 นาที) ไปที่อีเมลที่ลงทะเบียน (TOR 3.2)
+  // 1.1 ขอลิงก์รีเซ็ตรหัสผ่าน: เช็กก่อนว่ามีบัญชีที่ใช้อีเมลนี้ แล้ว Supabase ส่งลิงก์ (อายุตามที่ตั้งไว้ใน Supabase = 10 นาที) ไปที่อีเมลที่ลงทะเบียน (TOR 3.2)
   const handleForgotPasswordSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setForgotError("");
@@ -176,6 +177,13 @@ export default function AuthModal({
 
     setLoading(true);
     try {
+      // ไม่มีบัญชีที่ใช้อีเมลนี้ -> แจ้งให้สมัครสมาชิกก่อน ไม่ส่งลิงก์
+      const emailProblem = await checkEmailBeforeReset(cleanEmail);
+      if (emailProblem) {
+        setForgotError(emailProblem);
+        return;
+      }
+
       const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         // ลิงก์ในอีเมลพาไปหน้าตั้งรหัสผ่านใหม่ (organization/forgot_password)
         redirectTo: `${window.location.origin}/organization/forgot_password`,
