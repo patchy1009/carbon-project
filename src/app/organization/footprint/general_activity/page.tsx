@@ -120,14 +120,29 @@ export default function ActivityBasedFootprintPage() {
 
   /* ---------- หาค่า EF จากตาราง emission_factor ---------- */
 
-  // ค่า EF ของไฟฟ้า (หาจากชื่อที่มีคำว่า grid/ไฟฟ้า หรือชนิด electricity)
+  // ในตารางมีค่า EF ไฟฟ้าหลายชุด (เช่น grid mix ปี 2016-2018 = 0.4999 และปี 2022-2024 = 0.475)
+  // เดิมใช้ .find() ได้แถวแรกที่เจอ ซึ่งขึ้นกับลำดับแถวจากฐานข้อมูล อาจได้ค่าเก่า
+  // จึงเลือกแถวที่ชื่อมี "ปี ค.ศ." มากที่สุด (ชุดข้อมูลใหม่ล่าสุด) ถ้าชื่อไม่มีปีเลยจะใช้แถวแรกเหมือนเดิม
+  const latestYearInName = (name: string | null | undefined) => {
+    const years = (name || '').match(/(?<!\d)(?:19|20)\d{2}(?!\d)/g) ?? [];
+    return years.length ? Math.max(...years.map(Number)) : 0;
+  };
+  const pickLatestEF = (rows: EfRow[]): EfRow | undefined =>
+    rows.reduce<EfRow | undefined>(
+      (best, row) => (!best || latestYearInName(row.ef_name) > latestYearInName(best.ef_name) ? row : best),
+      undefined
+    );
+
+  // ค่า EF ของไฟฟ้า (หาจากชื่อที่มีคำว่า grid/ไฟฟ้า หรือชนิด electricity) เลือกชุดข้อมูลปีล่าสุด
   // found = false หมายถึงไม่พบในตาราง: หน้านี้จะไม่คำนวณ (ค่า 0.4999 ที่ส่งกลับเป็นแค่ค่ากันพัง ไม่ได้ถูกใช้คำนวณจริง)
   const fetchElectricityEFFromDB = () => {
-    const matchedItem = emissionFactorsList.find((ef) => {
-      const efName = (ef.ef_name || '').toLowerCase();
-      const efType = (ef.eftype?.type_name || '').toLowerCase();
-      return efName.includes('grid') || efName.includes('ไฟฟ้า') || efType.includes('electricity');
-    });
+    const matchedItem = pickLatestEF(
+      emissionFactorsList.filter((ef) => {
+        const efName = (ef.ef_name || '').toLowerCase();
+        const efType = (ef.eftype?.type_name || '').toLowerCase();
+        return efName.includes('grid') || efName.includes('ไฟฟ้า') || efType.includes('electricity');
+      })
+    );
 
     const value = matchedItem ? Number(matchedItem.ef_value) : 0;
     return {
@@ -153,12 +168,14 @@ export default function ActivityBasedFootprintPage() {
     else if (lowerKey.includes('lpg')) targetKeyword = 'lpg';
     else if (lowerKey.includes('cng')) targetKeyword = 'cng';
 
-    const matchedItem = emissionFactorsList.find((ef) => {
+    const candidates = emissionFactorsList.filter((ef) => {
       const efName = (ef.ef_name || '').toLowerCase();
       const efType = (ef.eftype?.type_name || '').toLowerCase();
       const efFuelType = (ef.fuel_type || '').toLowerCase();
       return efName.includes(targetKeyword) || efType.includes(targetKeyword) || efFuelType.includes(targetKeyword);
     });
+    // ไฟฟ้า (grid) มีหลายปี เลือกปีล่าสุด ส่วนเชื้อเพลิงอื่นใช้แถวแรกเหมือนเดิม
+    const matchedItem = targetKeyword === 'grid' ? pickLatestEF(candidates) : candidates[0];
 
     const value = matchedItem ? Number(matchedItem.ef_value) : 0;
     return {
