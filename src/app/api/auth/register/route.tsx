@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
+import { getErrorMessage } from "@/lib/errorMessage"; // แปล error ของ Supabase (ภาษาอังกฤษ) เป็นภาษาไทย
 
 // Supabase client ฝั่ง server (ใช้ anon key ทำงานตามสิทธิ์ของคนที่ยังไม่ล็อกอิน)
 const supabase = createClient(
@@ -130,8 +131,8 @@ export async function POST(request: Request) {
     );
   } catch (error: unknown) {
     console.error("API Register error:", error);
-    const message =
-      error instanceof Error ? error.message : "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ";
+    // signUp ของ Supabase ส่ง error เป็นภาษาอังกฤษ (เช่น "email rate limit exceeded") จึงแปลก่อนส่งให้หน้าเว็บ
+    const message = getErrorMessage(error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

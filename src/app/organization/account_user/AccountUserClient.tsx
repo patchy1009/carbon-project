@@ -95,7 +95,7 @@ export default function AccountUserClient({
 
       setOrgMessage({
         type: "error",
-        text: `ออกจากระบบไม่สำเร็จ: ${error.message}`,
+        text: `ออกจากระบบไม่สำเร็จ: ${getErrorMessage(error)}`,
       });
 
       return;
