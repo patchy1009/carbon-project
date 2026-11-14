@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 import { redirect } from 'next/navigation';
 import { createSupabaseServer } from '@/lib/supabaseServer';
 import AccountUserClient from './AccountUserClient';
+import { getErrorMessage } from '@/lib/errorMessage'; // แปล error จากฐานข้อมูล (ภาษาอังกฤษ) เป็นภาษาไทย
 
 export default async function AccountUserPage() {
   const supabase = await createSupabaseServer();
@@ -30,7 +31,7 @@ export default async function AccountUserPage() {
       initialUsername={userRes.data?.username ?? user.user_metadata?.username ?? ''}
       initialCompanyName={orgRes.data?.org_name ?? user.user_metadata?.company_name ?? ''}
       initialIndustry={orgRes.data?.business_type ?? null}
-      loadError={orgRes.error ? `โหลดข้อมูลไม่สำเร็จ: ${orgRes.error.message}` : null}
+      loadError={orgRes.error ? `โหลดข้อมูลไม่สำเร็จ: ${getErrorMessage(orgRes.error)}` : null}
     />
   );
 }

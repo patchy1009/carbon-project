@@ -60,6 +60,9 @@ const MESSAGE_PATTERNS: Array<[RegExp, string]> = [
   [/email rate limit exceeded/i, "ระบบส่งอีเมลถึงขีดจำกัดชั่วคราว กรุณารอสักครู่แล้วลองใหม่"],
   [/auth session missing|session.*(missing|expired|not found)/i, AUTH_CODE_MESSAGES.session_expired],
   [/code verifier/i, AUTH_CODE_MESSAGES.bad_code_verifier],
+  // ฐานข้อมูลเห็นว่าโทเค็นล็อกอินถูกออกจาก "อนาคต" (นาฬิกาเซิร์ฟเวอร์คลาดกันเล็กน้อย) มักหายเองเมื่อรีเฟรช
+  [/jwt issued at future|issued in the future/i, "เวลาของระบบคลาดเคลื่อนเล็กน้อย กรุณารีเฟรชหน้านี้อีกครั้ง"],
+  [/jwt expired/i, AUTH_CODE_MESSAGES.session_expired],
   [/failed to fetch|fetch failed|network ?error|network request failed|load failed/i,
     "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่"],
   [/row-level security|permission denied/i, DB_CODE_MESSAGES["42501"]],
