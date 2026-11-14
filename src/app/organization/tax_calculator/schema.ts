@@ -1,8 +1,9 @@
-// [MERGE aom + cyn2 รอบ 3] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ ไม่ได้แก้โค้ด — กฎตรวจฟอร์มภาษี ใช้ validateForm กลางของ aom
+// กฎตรวจข้อมูลของฟอร์มประเมินภาษี (TOR ข้อ 12.2, 12.5) ใช้กับ validateForm กลางของระบบ (lib/validation.ts)
 import { required, notNumericOnly, maxLength, isDecimal, notDuplicate, type formSchema } from '@/lib/validation';
 import { normalizeNumberString } from '@/lib/normalization';
+import { noSqlSyntax } from '@/lib/sqlSyntax'; // ตรวจ Syntax ป้องกัน SQL Injection (TOR 12.5)
 
-/* schema ของหน้าประเมินการยกเว้นภาษี (TOR ข้อ 11.2)
+/* schema ของหน้าประเมินการยกเว้นภาษี (TOR ข้อ 12.2)
  * ตรวจ 2 อย่างที่ผู้ใช้กรอก: ราคาขายต่อหน่วย และค่าใช้จ่ายของโครงการ (กี่รายการก็ได้)
  * ช่องของค่าใช้จ่ายมีจำนวนไม่แน่นอน จึงสร้าง schema ตามรายการที่มีอยู่ตอนกดคำนวณ
  *   - ราคา: ห้ามว่าง / ต้องเป็นตัวเลข (รับเลขไทยและ comma) / ทศนิยมไม่เกิน 2 ตำแหน่ง / มากกว่า 0 (ตรวจใน checkTaxRanges)
@@ -39,6 +40,7 @@ export function buildTaxSchema(rows: CostRowShape[]): formSchema<string> {
           required('ชื่อรายการค่าใช้จ่าย'),
           notNumericOnly('ชื่อรายการค่าใช้จ่าย'),
           maxLength('ชื่อรายการค่าใช้จ่าย', 150),
+          noSqlSyntax('ชื่อรายการค่าใช้จ่าย'),
           notDuplicate('ชื่อรายการค่าใช้จ่าย', others),
         ],
       };

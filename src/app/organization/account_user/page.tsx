@@ -1,5 +1,4 @@
-// [MERGE aom + cyn2 รอบ 3] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ ไม่ได้แก้โค้ด — แยกเป็น page.tsx (server: requireOrgId ของ aom) + AccountUserClient.tsx
-// ส่วนที่ทำงานฝั่ง server ของหน้าตั้งค่าข้อมูลองค์กร: เช็กล็อกอินและดึงข้อมูลผู้ใช้/องค์กร
+// หน้าบัญชีผู้ใช้ (TOR ข้อ 4) ฝั่ง server: เช็กล็อกอินและดึงข้อมูลผู้ใช้/องค์กรส่งให้ AccountUserClient.tsx
 export const dynamic = 'force-dynamic';
 
 import { redirect } from 'next/navigation';

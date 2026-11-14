@@ -1,4 +1,4 @@
-// [MERGE aom + cyn2 รอบ 3] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ ไม่ได้แก้โค้ด — API ลบบัญชีองค์กร (DELETE /api/account) ตรวจล็อกอิน + role ก่อนลบ
+// API ลบบัญชีองค์กร (DELETE /api/account) ตรวจล็อกอิน + role ก่อนลบ แล้วลบข้อมูลขององค์กรนั้นทุกตาราง และลบบัญชีใน Supabase Auth
 //   ใช้ SUPABASE_SERVICE_ROLE_KEY (ฝั่ง server เท่านั้น ห้ามขึ้นต้นด้วย NEXT_PUBLIC_) ต้องเพิ่มใน .env.local ไม่งั้นลบบัญชีไม่ได้
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -97,7 +97,7 @@ function isMissingTable(error: { code?: string } | null): boolean {
   return !!error && (error.code === "PGRST205" || error.code === "42P01");
 }
 
-// [แก้ไข] ตาราง organization มีทั้ง acc_id (id บัญชีล็อกอิน) และ org_id (id ขององค์กร ซึ่งเป็นคนละค่ากัน)
+// ตาราง organization มีทั้ง acc_id (id บัญชีล็อกอิน) และ org_id (id ขององค์กร ซึ่งเป็นคนละค่ากัน)
 // ตารางข้อมูลอื่นๆ ใช้ org_id จึงต้องดึง org_id ของผู้ใช้คนนี้มาก่อน แล้วลบด้วยค่านั้น
 // (ใส่ acc_id ไว้ด้วยเผื่อบางตารางเก็บค่านี้ในคอลัมน์ org_id ทั้งสองค่าเป็นของผู้ใช้คนนี้เท่านั้น)
 async function getOwnerIds(admin: AdminClient, userId: string): Promise<string[]> {
@@ -137,7 +137,7 @@ async function getParentIds(
 async function deleteOrgData(admin: AdminClient, userId: string): Promise<string[]> {
   const warnings: string[] = [];
 
-  // [แก้ไข] ต้องดึง org_id ก่อนลบตาราง organization (ไม่งั้นหาไม่เจอ)
+  // ต้องดึง org_id ก่อนลบตาราง organization (ไม่งั้นหาไม่เจอ)
   const ownerIds = await getOwnerIds(admin, userId);
 
   // 1) ตารางแม่-ลูก: ลบลูกที่เป็น NO ACTION ก่อน แล้วลบแม่ (ลูกแบบ CASCADE ฐานข้อมูลลบให้เอง)
@@ -205,7 +205,7 @@ export async function DELETE() {
       return NextResponse.json({ error: "กรุณาเข้าสู่ระบบ" }, { status: 401 });
     }
 
-    // [แก้ไข] ตัดขั้นตอนยืนยันรหัสผ่านซ้ำออก ผู้ใช้ยืนยันด้วยปุ่มใน popup แทน
+    // ไม่ขอรหัสผ่านซ้ำ ผู้ใช้ยืนยันด้วยปุ่มใน popup ของหน้าบัญชีผู้ใช้แล้ว
 
     const admin = createAdminClient();
 

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import AuthModal from "@/components/AuthModal";
 
 // หน้าเข้าสู่ระบบ เปิดกล่องล็อกอินให้ทันทีเมื่อเข้าหน้านี้
-// [MERGE aom + cyn2] โค้ดส่วนใหญ่เป็นของ cyn2 (เอาข้อความ "กำลังโหลด..." ออก), คอมเมนต์บรรทัดนี้ของ aom
+// ผู้ดูแลระบบและองค์กรเข้าจากหน้านี้หน้าเดียวกัน (TOR ข้อ 2.1) ตัวกล่องล็อกอินคือ AuthModal
 export default function LoginPage() {
   const [isOpen, setIsOpen] = useState(true);
   const router = useRouter();

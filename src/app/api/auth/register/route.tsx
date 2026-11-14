@@ -1,9 +1,15 @@
-/* [MERGE aom + cyn2] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (ฟีเจอร์ที่ aom ไม่มี) — แก้เฉพาะจุด [MERGE-FIX aom] (ย้ายการบันทึก user/organization ไปหลังยืนยัน OTP)
- * API ลงทะเบียน: สร้างบัญชี Supabase Auth (แถว user/organization สร้างหลังยืนยัน OTP) */
+/*
+ * API ลงทะเบียนองค์กร (TOR ข้อ 1.1, 1.2, 1.5)  POST /api/auth/register
+ * ขั้นตอน: ตรวจข้อมูล (ครบ/เป็นข้อความ/ไม่มี Syntax คล้าย SQL) -> เช็ก Username ซ้ำ -> เช็กอีเมลซ้ำ
+ *          -> สร้างบัญชีใน Supabase Auth (Supabase ส่งรหัส OTP ไปที่อีเมลให้)
+ * ที่นี่ "ยังไม่" บันทึกตาราง user / organization เพราะยังไม่ได้ยืนยัน OTP (ยังไม่ล็อกอิน ตาม RLS บันทึกไม่ได้)
+ * การบันทึกสองตารางนั้นทำที่ AuthModal (components/AuthModal.tsx) หลังยืนยัน OTP สำเร็จ
+ */
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js"; // เปลี่ยนมาใช้ตัวนี้สำหรับฝั่ง Server
+import { createClient } from "@supabase/supabase-js";
+import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
 
-// สร้าง Supabase Client สำหรับฝั่ง Server โดยเฉพาะ
+// Supabase client ฝั่ง server (ใช้ anon key ทำงานตามสิทธิ์ของคนที่ยังไม่ล็อกอิน)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -13,7 +19,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { username, email, password, companyName, industry } = body;
-    
+
     if (!username || !email || !password || !companyName) {
       return NextResponse.json(
         { error: "กรุณากรอกข้อมูลให้ครบถ้วน" },
@@ -21,13 +27,34 @@ export async function POST(request: Request) {
       );
     }
 
+    // ตรวจ Syntax คล้ายคำสั่ง SQL ฝั่ง server (TOR 1.5) กันการยิง API ตรงโดยไม่ผ่านหน้าเว็บ
+    // ทุกช่องต้องเป็นข้อความ แล้วตรวจก่อนทำอย่างอื่น (รหัสผ่านใช้โหมด lenient เพราะรหัสผ่านที่ดีมีสัญลักษณ์ได้)
+    if (
+      [username, email, password, companyName].some((v) => typeof v !== "string") ||
+      (industry !== undefined && typeof industry !== "string")
+    ) {
+      return NextResponse.json({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, { status: 400 });
+    }
+
+    if (
+      containsSqlSyntax(username) ||
+      containsSqlSyntax(email) ||
+      containsSqlSyntax(companyName) ||
+      containsSqlSyntax(password, { lenient: true }) ||
+      (typeof industry === "string" && containsSqlSyntax(industry))
+    ) {
+      return NextResponse.json(
+        { error: "ข้อมูลที่กรอกมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL)" },
+        { status: 400 }
+      );
+    }
+
     const cleanEmail = email.trim().toLowerCase();
     const cleanUsername = username.trim();
 
-    // 1. ตรวจสอบ Username ซ้ำในตาราง user
-    // [MERGE-FIX aom] เดิมอ่านตาราง user ตรงๆ แต่คนที่ยังไม่ล็อกอินอ่านไม่ได้ (RLS) -> ได้ผล "ไม่ซ้ำ" เสมอ
-    // เปลี่ยนมาเรียกฟังก์ชัน is_username_taken ใน supabase/rls_user_organization.sql
-    // ซึ่งตอบแค่ true/false ไม่เปิดข้อมูลของผู้ใช้คนอื่น
+    // 1. ตรวจ Username ซ้ำ
+    // คนที่ยังไม่ล็อกอินอ่านตาราง user ตรงๆ ไม่ได้ (RLS) จึงเรียกฟังก์ชัน is_username_taken
+    // (supabase/rls_user_organization.sql) ซึ่งตอบแค่ true/false ไม่เปิดข้อมูลของผู้ใช้คนอื่น
     const { data: usernameTaken, error: checkUsernameError } = await supabase.rpc(
       "is_username_taken",
       { p_username: cleanUsername }
@@ -49,7 +76,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. ตรวจสอบ Email ซ้ำในตาราง user
+    // 2. ตรวจอีเมลซ้ำในตาราง user อีกชั้นหนึ่ง
+    // (ถ้า RLS ไม่ให้อ่านตาราง user จะไม่พบแถว ตัวกันอีเมลซ้ำที่ใช้ได้จริงคือขั้นที่ 3)
     const { data: existingUser, error: checkError } = await supabase
       .from("user")
       .select("email")
@@ -67,7 +95,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3. สมัครสมาชิกผ่าน Supabase Auth
+    // 3. สร้างบัญชีใน Supabase Auth (รหัสผ่านถูกแฮชโดย Supabase และ Supabase ส่ง OTP ทางอีเมล)
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email: cleanEmail,
       password,
@@ -84,6 +112,7 @@ export async function POST(request: Request) {
       throw signUpError;
     }
 
+    // อีเมลนี้เคยสมัครและยืนยันแล้ว: Supabase ไม่แจ้ง error แต่ส่งผู้ใช้ที่ identities ว่างกลับมา
     if (
       signUpData.user &&
       signUpData.user.identities &&
@@ -94,10 +123,6 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-
-    // 4. [MERGE-FIX aom] เอาการบันทึกตาราง user + organization ออกจากตรงนี้
-    // เหตุผล: ตอนนี้ยังไม่ได้ยืนยัน OTP = ยังไม่ล็อกอิน -> RLS ไม่ให้บันทึก (และเดิมไม่ได้เช็ก error)
-    // ย้ายไปทำในหน้า register หลัง verifyOtp แล้ว (src/app/organization/register/page.tsx)
 
     return NextResponse.json(
       { message: "สมัครสมาชิกสำเร็จ กรุณาตรวจสอบ OTP ทางอีเมล" },

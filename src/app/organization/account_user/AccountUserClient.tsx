@@ -1,12 +1,20 @@
 "use client";
-// [MERGE aom + cyn2 รอบ 3] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ ไม่ได้แก้โค้ด — หน้าจอบัญชีผู้ใช้ (แยกจาก page.tsx เดิม) + ปุ่มลบบัญชี (เรียก /api/account)
+/*
+ * หน้าจอบัญชีผู้ใช้ขององค์กร (TOR ข้อ 3.1, 4.1–4.3) มี 3 ส่วน
+ *   1) ข้อมูลบัญชี: แสดงอีเมล (แก้ไม่ได้) และแก้ Username, ชื่อองค์กร, ประเภทธุรกิจ ได้ (ตรวจ Syntax ก่อนบันทึก)
+ *   2) เปลี่ยนรหัสผ่าน: ต้องกรอกรหัสผ่านเดิมยืนยันก่อน (ตรวจกับ Supabase Auth) รหัสใหม่ต้องไม่ซ้ำรหัสเดิม
+ *   3) ลบบัญชีและข้อมูลองค์กร: กดยืนยันใน popup แล้วเรียก DELETE /api/account
+ * หน้า server (page.tsx) ดึงข้อมูลตั้งต้นมาส่งให้ทาง props ไฟล์นี้ทำงานฝั่ง browser
+ */
 
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { CheckCircle2, ChevronDown, Trash2 } from "lucide-react"; // [แก้ไข] เพิ่ม Trash2 (ตัด Download ออก เพราะไม่มีปุ่มดาวน์โหลดแล้ว)
+import { CheckCircle2, ChevronDown, Trash2 } from "lucide-react";
 import { industries } from "@/types/industries";
+import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
+import { getErrorMessage } from "@/lib/errorMessage";
 
 type Message = {
   type: "success" | "error";
@@ -54,9 +62,8 @@ export default function AccountUserClient({
   const [newPasswordError, setNewPasswordError] = useState("");
   const [confirmPasswordError, setConfirmPasswordError] = useState("");
 
-  // ===== [เพิ่ม] ลบบัญชีและข้อมูลองค์กร =====
+  // ===== ลบบัญชีและข้อมูลองค์กร =====
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  // [แก้ไข] ตัด state ของช่องพิมพ์ยืนยัน (deleteConfirmText) และช่องรหัสผ่าน (deletePassword) ออก
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
@@ -97,9 +104,9 @@ export default function AccountUserClient({
     router.replace("/organization/homepage");
   };
 
-  // ===== [เพิ่ม] ลบบัญชีและข้อมูลองค์กร =====
-  // [แก้ไข] ขั้นตอน: กดปุ่มลบบัญชี -> popup ยืนยัน -> กด "ลบบัญชีถาวร" -> เรียก API (DELETE /api/account)
-  // ไม่ต้องพิมพ์ข้อความหรือกรอกรหัสผ่านแล้ว API รู้ว่าเป็นใครจาก session ที่ล็อกอินอยู่
+  // ===== ลบบัญชีและข้อมูลองค์กร =====
+  // ขั้นตอน: กดปุ่มลบบัญชี -> popup ยืนยัน -> กด "ลบบัญชีถาวร" -> เรียก API (DELETE /api/account)
+  // ไม่ต้องพิมพ์ข้อความหรือกรอกรหัสผ่านอีก API รู้ว่าเป็นใครจาก session ที่ล็อกอินอยู่
   const closeDeleteModal = () => {
     if (deleteLoading) return;
     setShowDeleteModal(false);
@@ -185,6 +192,25 @@ export default function AccountUserClient({
       return;
     }
 
+    // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งข้อมูลไปบันทึก (TOR 4.3)
+    if (containsSqlSyntax(username.trim())) {
+      setOrgMessage({
+        type: "error",
+        text: "ชื่อผู้ใช้งาน (Username) มีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่",
+      });
+
+      return;
+    }
+
+    if (containsSqlSyntax(companyName.trim())) {
+      setOrgMessage({
+        type: "error",
+        text: "ชื่อองค์กร / บริษัท มีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่",
+      });
+
+      return;
+    }
+
     setOrgLoading(true);
 
     try {
@@ -217,10 +243,10 @@ export default function AccountUserClient({
 
       // ให้ฝั่ง server ดึงข้อมูลล่าสุดมาใหม่
       router.refresh();
-    } catch (err: any) {
+    } catch (err) {
       setOrgMessage({
         type: "error",
-        text: `บันทึกข้อมูลไม่สำเร็จ: ${err.message}`,
+        text: `บันทึกข้อมูลไม่สำเร็จ: ${getErrorMessage(err)}`,
       });
     } finally {
       setOrgLoading(false);
@@ -251,6 +277,9 @@ export default function AccountUserClient({
     if (!currentPassword) {
       setCurrentPasswordError("กรุณากรอกรหัสผ่านเดิม");
       hasError = true;
+    } else if (containsSqlSyntax(currentPassword, { lenient: true })) {
+      setCurrentPasswordError("รหัสผ่านเดิมมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
+      hasError = true;
     }
 
     // ตรวจสอบรูปแบบรหัสผ่านใหม่
@@ -258,6 +287,10 @@ export default function AccountUserClient({
 
     if (passwordValidationError) {
       setNewPasswordError(passwordValidationError);
+      hasError = true;
+    } else if (containsSqlSyntax(newPassword, { lenient: true })) {
+      // ตรวจ Syntax คล้ายคำสั่ง SQL (รหัสผ่านใช้โหมด lenient) TOR 3.4
+      setNewPasswordError("รหัสผ่านมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
       hasError = true;
     }
 
@@ -314,10 +347,10 @@ export default function AccountUserClient({
       setCurrentPasswordError("");
       setNewPasswordError("");
       setConfirmPasswordError("");
-    } catch (err: any) {
+    } catch (err) {
       setPassMessage({
         type: "error",
-        text: `เปลี่ยนรหัสผ่านไม่สำเร็จ: ${err.message}`,
+        text: `เปลี่ยนรหัสผ่านไม่สำเร็จ: ${getErrorMessage(err)}`,
       });
     } finally {
       setPassLoading(false);
@@ -669,7 +702,7 @@ export default function AccountUserClient({
         </div>
       </div>
 
-      {/* ===== [แก้ไข] การ์ดลบบัญชี: ใช้สไตล์การ์ดเดียวกับส่วนอื่น (border-slate-200/80) และตัดปุ่มดาวน์โหลดออก ===== */}
+      {/* ===== การ์ดลบบัญชี ===== */}
       <div className="bg-white rounded-[2.5rem] p-6 md:p-8 border border-slate-200/80 shadow-md space-y-4">
         <div>
           <h3 className="text-lg font-bold text-slate-800">ลบบัญชี</h3>
@@ -678,7 +711,7 @@ export default function AccountUserClient({
           </p>
         </div>
 
-        {/* [แก้ไข] ปุ่มลบเป็นแบบกรอบแดง (outline) ไม่พื้นแดงทึบ เพื่อไม่ให้เด่น */}
+        {/* ปุ่มลบเป็นแบบกรอบแดง (outline) ไม่พื้นแดงทึบ เพื่อไม่ให้เด่น */}
         <button
           type="button"
           onClick={() => setShowDeleteModal(true)}
@@ -689,7 +722,7 @@ export default function AccountUserClient({
         </button>
       </div>
 
-      {/* ===== [เพิ่ม] หน้าต่างยืนยันการลบบัญชี ===== */}
+      {/* ===== หน้าต่างยืนยันการลบบัญชี ===== */}
       {showDeleteModal && (
         <div
           role="dialog"
@@ -715,7 +748,7 @@ export default function AccountUserClient({
               </div>
             )}
 
-            {/* [แก้ไข] ตัดช่องพิมพ์ยืนยันและช่องรหัสผ่านออก เหลือปุ่มยกเลิก / ลบบัญชีถาวร */}
+            {/* ปุ่มยกเลิก / ลบบัญชีถาวร */}
             <div className="flex gap-3 pt-2">
               <button
                 type="button"

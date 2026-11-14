@@ -1,13 +1,17 @@
-/* ===================== [MERGE aom + cyn2] =====================
- * ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (ตามที่ตกลง: ระบบล็อกอิน / ลงทะเบียน ใช้ของ cyn2)
- *   - โค้ด aom เดิม (ตรวจช่องกรอกแบบกรอบแดง, กล่องแจ้งเตือน showAlert, ล็อกอินผ่าน /api/auth/login) ถูกแทนที่
- *     เพราะ cyn2 ทำ login/register/OTP/ลืมรหัสผ่าน ครบกว่า
- * แก้เฉพาะจุดที่ทำให้เชื่อมกับโค้ด aom ได้ (ค้นคำว่า [MERGE-FIX]):
- *   1) ล็อกอินผ่าน /api/auth/login ของ aom (ความปลอดภัยแบบ aom: ตรวจ status/role ฝั่ง server)
- *      admin ไป /admin/ef-gwp (เดิม /admin/recommendation ไม่มีหน้านี้ -> 404)
- *   2) ลิงก์รีเซ็ตรหัสผ่านในอีเมลชี้ไป /organization/forgot_password (เดิม /organization/reset-password ไม่มีหน้านี้)
- * ============================================================== */
 "use client";
+
+/*
+ * กล่อง (Modal) เข้าสู่ระบบ / สมัครสมาชิก / ขอลิงก์รีเซ็ตรหัสผ่าน (TOR ข้อ 1, 2, 3.2)
+ * กล่องเดียวทำงานหลาย "ขั้น" (state ชื่อ step):
+ *   login    เข้าสู่ระบบ: ส่งไปที่ /api/auth/login (server ตรวจรหัสผ่าน สถานะบัญชี และ role)
+ *            ผู้ดูแลระบบไป /admin/ef-gwp  องค์กรไป /organization/dashboard
+ *   register กรอกข้อมูลสมัคร: ตรวจช่องที่กรอก (รูปแบบ + Syntax คล้าย SQL) แล้วส่งไป /api/auth/register
+ *   otp      กรอกรหัส OTP 6 หลักที่ส่งไปทางอีเมล (ส่งซ้ำได้เมื่อครบเวลา) ยืนยันแล้วบันทึกตาราง user และ organization
+ *   success  สมัครสำเร็จ
+ *   forgot   กรอกอีเมลเพื่อรับลิงก์ตั้งรหัสผ่านใหม่ ลิงก์พาไปหน้า /organization/forgot_password
+ * ฟอร์มสมัครสมาชิกมีที่นี่ที่เดียว เปิดได้ 2 ทาง: ปุ่มเมนูด้านบน (organization/layout.tsx)
+ * และหน้า /organization/register ซึ่งเปิดกล่องนี้ในโหมด register (register/RegisterClient.tsx)
+ */
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -26,33 +30,15 @@ import {
 } from "lucide-react";
 import Modal from "./Modal";
 import { supabase } from "@/lib/supabaseClient";
+import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
+import { getErrorMessage } from "@/lib/errorMessage";
+import { EMAIL_REGEX, PASSWORD_REGEX, USERNAME_REGEX } from "@/lib/authRules";
+import { industries } from "@/types/industries";
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialMode?: "login" | "register";
-}
-
-const industries = [
-  "สำนักงานและบริการทั่วไป",
-  "การผลิต อุตสาหกรรม และแปรรูป",
-  "การขนส่ง โลจิสติกส์ และคลังสินค้า",
-  "โรงแรม การท่องเที่ยว งานบริการ",
-  "ค้าปลีก ค้าส่ง และการจัดการสินค้า",
-  "ก่อสร้าง อสังหาริมทรัพย์ และโครงสร้างพื้นฐาน",
-];
-
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
-const USERNAME_REGEX = /^[a-zA-Z0-9_-]{3,20}$/;
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "object" && error !== null && "message" in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === "string" && message.trim()) return message;
-  }
-  return "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ กรุณาลองใหม่อีกครั้ง";
 }
 
 export default function AuthModal({
@@ -131,7 +117,7 @@ export default function AuthModal({
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // 1. ฟังก์ชันจัดการ Login
+  // 1. เข้าสู่ระบบ: ตรวจช่องที่กรอก แล้วส่งให้ /api/auth/login
   const handleLoginSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoginErrorMessage("");
@@ -139,14 +125,15 @@ export default function AuthModal({
       setLoginErrorMessage("กรุณากรอกอีเมลและรหัสผ่านให้ครบถ้วน");
       return;
     }
+    // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งไปล็อกอิน (TOR 2.2) รหัสผ่านใช้โหมด lenient
+    if (containsSqlSyntax(loginEmail.trim()) || containsSqlSyntax(loginPassword, { lenient: true })) {
+      setLoginErrorMessage("ข้อมูลที่กรอกมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
+      return;
+    }
     setLoading(true);
     try {
-      /* [MERGE-FIX] ความปลอดภัยใช้แบบ aom: ล็อกอินผ่าน API ฝั่ง server (/api/auth/login ของ aom)
-       *   เดิม (cyn2) ล็อกอินใน browser ด้วย supabase.auth.signInWithPassword แล้วอ่าน role เอง
-       *   ปัญหาของแบบเดิม: ไม่ตรวจ status (บัญชีที่ถูกระงับยังล็อกอินได้), role ที่ไม่รู้จักถูกส่งไปหน้าองค์กร
-       *   API ของ aom: ตรวจรหัสผ่าน -> ตรวจว่ามีแถวในตาราง user -> status = active -> role ถูกต้อง
-       *                ไม่ผ่านข้อใด = signOut ทันที แล้วบอกหน้าที่ต้องไป (redirectTo) ตาม role
-       *   หน้าตาฟอร์ม/ข้อความ error ยังเป็นของ cyn2 ทั้งหมด */
+      // ล็อกอินผ่าน API ฝั่ง server (ไม่ล็อกอินใน browser เอง) เพราะ server ตรวจให้ครบ:
+      //   รหัสผ่านถูก -> มีแถวในตาราง user -> status = active -> role ถูกต้อง แล้วบอกหน้าที่ต้องไป (redirectTo) ตาม role
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -164,7 +151,6 @@ export default function AuthModal({
 
       onClose();
       // session ถูกเขียนลง cookie โดย server -> โหลดหน้าใหม่ทั้งหน้า ให้ navbar (onAuthStateChange) เห็นผู้ใช้ทันที
-      // (admin ไป /admin/ef-gwp แทน /admin/recommendation ของเดิมซึ่งไม่มีหน้านี้)
       window.location.href = result.redirectTo;
     } catch (err: unknown) {
       setLoginErrorMessage(getErrorMessage(err));
@@ -173,7 +159,7 @@ export default function AuthModal({
     }
   };
 
-  // 1.1 ฟังก์ชันส่งลิงก์รีเซ็ตรหัสผ่าน (Forgot Password)
+  // 1.1 ขอลิงก์รีเซ็ตรหัสผ่าน: Supabase ส่งลิงก์ (อายุตามที่ตั้งไว้ใน Supabase = 10 นาที) ไปที่อีเมลที่ลงทะเบียน (TOR 3.2)
   const handleForgotPasswordSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setForgotError("");
@@ -184,11 +170,16 @@ export default function AuthModal({
       setForgotError("กรุณากรอกรูปแบบอีเมลให้ถูกต้อง");
       return;
     }
+    // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งอีเมลไปขอลิงก์ (TOR 3.4)
+    if (containsSqlSyntax(cleanEmail)) {
+      setForgotError("อีเมลมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
+      return;
+    }
 
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-        // [MERGE-FIX] เดิม "/organization/reset-password" (ไม่มีหน้านี้) -> หน้าตั้งรหัสผ่านใหม่ของ cyn2 คือ forgot_password
+        // ลิงก์ในอีเมลพาไปหน้าตั้งรหัสผ่านใหม่ (organization/forgot_password)
         redirectTo: `${window.location.origin}/organization/forgot_password`,
       });
       if (error) throw error;
@@ -200,7 +191,7 @@ export default function AuthModal({
     }
   };
 
-  // 2. ฟังก์ชันส่ง OTP (สมัครสมาชิกผ่าน API)
+  // 2. สมัครสมาชิก: ตรวจทุกช่อง (ถ้าผิดจะขึ้นกรอบแดงที่ช่องนั้น) แล้วส่งให้ /api/auth/register ซึ่งจะส่ง OTP ทางอีเมล
   const handleSendOtp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMessage("");
@@ -210,7 +201,7 @@ export default function AuthModal({
     const cleanEmail = email.trim().toLowerCase();
     const cleanCompanyName = companyName.trim();
 
-    let errors = {
+    const errors = {
       username: "",
       email: "",
       password: "",
@@ -233,6 +224,10 @@ export default function AuthModal({
     } else if (!EMAIL_REGEX.test(cleanEmail)) {
       errors.email = "รูปแบบอีเมลไม่ถูกต้อง เช่น name@company.co.th";
       hasError = true;
+    } else if (containsSqlSyntax(cleanEmail)) {
+      // ตรวจ Syntax คล้ายคำสั่ง SQL (ใช้กับอีเมล ชื่อองค์กร และรหัสผ่าน)
+      errors.email = "อีเมลมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่";
+      hasError = true;
     }
 
     if (!password) {
@@ -241,10 +236,16 @@ export default function AuthModal({
     } else if (!PASSWORD_REGEX.test(password)) {
       errors.password = "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร และมีตัวอักษรกับตัวเลขผสมกัน";
       hasError = true;
+    } else if (containsSqlSyntax(password, { lenient: true })) {
+      errors.password = "รหัสผ่านมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่";
+      hasError = true;
     }
 
     if (!cleanCompanyName) {
       errors.companyName = "กรุณากรอกชื่อองค์กรหรือบริษัท";
+      hasError = true;
+    } else if (containsSqlSyntax(cleanCompanyName)) {
+      errors.companyName = "ชื่อองค์กรมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่";
       hasError = true;
     }
 
@@ -287,7 +288,8 @@ export default function AuthModal({
     }
   };
 
-  // 3. ฟังก์ชันยืนยัน OTP และบันทึกข้อมูลลงตาราง user & organization
+  // 3. ยืนยัน OTP (TOR 1.4) แล้วบันทึกข้อมูลลงตาราง user และ organization
+  //    ต้องทำหลังยืนยัน OTP เพราะตอนนั้นผู้ใช้จึงจะล็อกอินแล้ว (RLS อนุญาตเฉพาะเจ้าของแถว)
   const handleVerifyOtp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMessage("");
@@ -340,6 +342,7 @@ export default function AuthModal({
     }
   };
 
+  // ส่ง OTP ใหม่ (ทำได้เมื่อครบเวลานับถอยหลัง)
   const handleResendOtp = async () => {
     if (!canResend || loading) return;
     setErrorMessage("");
@@ -362,6 +365,7 @@ export default function AuthModal({
     }
   };
 
+  // class ของช่องกรอก: มีกรอบแดงเมื่อช่องนั้นมีข้อผิดพลาด
   const getInputClass = (hasError: boolean) =>
     `w-full px-4 py-3 pl-10 rounded-2xl border text-sm focus:outline-none focus:ring-2 bg-slate-50/50 text-slate-800 placeholder:text-slate-400 ${
       hasError

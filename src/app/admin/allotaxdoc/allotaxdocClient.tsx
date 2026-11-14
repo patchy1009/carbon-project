@@ -1,7 +1,6 @@
-// [MERGE aom + cyn2 รอบ 3] ไฟล์ของ aom + ฟีเจอร์ของ cyn2: เป้าหมายโครงการ (project_target_rule) และต้นทุนโครงการ (project_cost_type)
-//   บันทึก/แก้/ลบลง DB จริง (เดิม aom เก็บแค่ในหน้าจอ รีเฟรชแล้วหาย) — รับโค้ด cyn2 ทั้งชุด ไม่ได้แก้
-//   ต้องมี RLS: project_target_rule -> supabase/rls_tver_allocation.sql, project_cost_type -> supabase/rls_project_cost.sql
-// หน้าจัดการเอกสารภาษีของแอดมิน: อัปโหลด แก้ชื่อ ลบ และดาวน์โหลดเอกสาร
+// หน้าของผู้ดูแลระบบ 3 ส่วน: (1) เป้าหมายการจัดสรรเครดิต ข้อ 5.4 (ตาราง project_target_rule)
+//   (2) ต้นทุนโครงการปลูกป่า ข้อ 5.5 (ตาราง project_cost_type)  (3) เอกสารที่ให้องค์กรดาวน์โหลด ข้อ 13 (อัปโหลด แก้ชื่อ ลบ ดาวน์โหลด)
+//   (1) และ (2) บันทึก/แก้/ลบลงฐานข้อมูลจริง ต้องมี RLS: project_target_rule -> supabase/rls_tver_allocation.sql, project_cost_type -> supabase/rls_project_cost.sql
 'use client';
 
 import Select from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
@@ -302,7 +301,7 @@ export default function AlloTaxDocClient({
     setCosts((prev) => prev.filter((x) => x.cost_id !== c.cost_id));
   }
 
-  // [เพิ่ม] แก้ไขรายการต้นทุน (ชื่อ ราคา VAT) ผ่าน popup ใช้กฎตรวจชุดเดียวกับตอนเพิ่ม
+  // แก้ไขรายการต้นทุน (ชื่อ ราคา VAT) ผ่าน popup ใช้กฎตรวจชุดเดียวกับตอนเพิ่ม
   const [editCost, setEditCost] = useState<CostRow | null>(null);
   const [editCostName, setEditCostName] = useState('');
   const [editCostPrice, setEditCostPrice] = useState('');
@@ -737,7 +736,7 @@ export default function AlloTaxDocClient({
                       {c.net_price.toFixed(2)}
                     </td>
                     <td className={T.tdActions}>
-                      {/* [เพิ่ม] ปุ่มแก้ไข + ลบ แบบเดียวกับตารางอื่นของแอดมิน */}
+                      {/* ปุ่มแก้ไข + ลบ แบบเดียวกับตารางอื่นของแอดมิน */}
                       <RowActions onEdit={() => openEditCost(c)} onDelete={() => handleDeleteCost(c)} />
                     </td>
                   </tr>
@@ -938,7 +937,7 @@ export default function AlloTaxDocClient({
         </ModalShell>
       )}
 
-      {/* [เพิ่ม] Modal แก้ไขรายการต้นทุน */}
+      {/* Modal แก้ไขรายการต้นทุน */}
       {editCost && (
         <ModalShell onClose={() => setEditCost(null)}>
           <form onSubmit={handleSaveCost} className="space-y-4" noValidate>

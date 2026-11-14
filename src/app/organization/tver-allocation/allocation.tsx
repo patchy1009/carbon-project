@@ -1,13 +1,12 @@
 "use client";
-// [MERGE aom + cyn2 รอบ 3] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ ไม่ได้แก้โค้ด — หน้าจัดสรรคาร์บอนเครดิต (แทน tver_simulation เดิมที่ cyn2 ลบแล้ว)
-//   ใช้เครดิตปีที่ 1 (credit_year_1) ที่หน้า tver-simulation ของ aom คำนวณด้วยสูตร cyn2 (lib/tverCredits.ts)
-//   บันทึกผ่านฟังก์ชัน save_credit_allocation ในฐานข้อมูล (ไม่มีไฟล์ SQL ใน repo ต้องมีใน Supabase)
 
-// หน้าจัดสรรคาร์บอนเครดิต (TOR ข้อ 10.2–10.4)
+// หน้าจัดสรรคาร์บอนเครดิต (TOR ข้อ 11.2–11.4) ฝั่ง browser
 //   โครงการเลือกมาจากหน้าจำลองโครงการแล้ว (ส่งมาทาง ?project=) ในหน้านี้เลือกแค่
 //   1) เป้าหมาย (จากตาราง project_target_rule ที่แอดมินตั้ง)  2) รายการปล่อยก๊าซ
 //   - ใช้ "เครดิตปีที่ 1" ที่หน้าจำลองโครงการบันทึกไว้เท่านั้น ไม่คำนวณเครดิตซ้ำในหน้านี้
+//   - เครดิตปีที่ 1 (credit_year_1) คำนวณที่หน้าจำลองโครงการ ด้วยสูตร T-VER ใน lib/tverCredits.ts
 //   - ผลแสดงเป็นตารางต่อกิจกรรม และบันทึกด้วยฟังก์ชัน save_credit_allocation (ฐานข้อมูลคำนวณซ้ำอีกรอบ)
+//     ฟังก์ชันนี้อยู่ใน Supabase (ไม่มีไฟล์ SQL ของมันใน repo)
 //   - ลำดับการหักเครดิต = ลำดับในรายการ (เก่า -> ใหม่) ไม่ขึ้นกับลำดับที่คลิก
 //     ผลที่เห็นในหน้านี้จึงตรงกับที่บันทึก และเปิดมาแก้ไขใหม่แล้วได้ผลเดิม
 
@@ -319,7 +318,7 @@ export default function AllocationClient({ project, loadError, goals, activities
                 </div>
               </section>
 
-              {/* ขวา: ผลการจัดสรร (ข้อ 10.4 แสดงเป็นตาราง) */}
+              {/* ขวา: ผลการจัดสรร (ข้อ 11.4 แสดงเป็นตาราง) */}
               <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-7">
                 {!calculated || !result || !goal ? (
                   <div className="flex min-h-[450px] flex-col items-center justify-center text-center">

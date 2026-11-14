@@ -1,11 +1,10 @@
 "use client";
-// [MERGE aom + cyn2 รอบ 3] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ ไม่ได้แก้โค้ด — หน้าจอคำนวณภาษี (แยกจาก page.tsx เดิม) ใช้ Select กลางของ aom ลิงก์กลับไปหน้าจัดสรร tver-allocation
 
-// หน้าประเมินการยกเว้นภาษีนิติบุคคลจากการขายคาร์บอนเครดิต (TOR ข้อ 11.1–11.4)
-//   1) เลือกโครงการ (11.1)  เลือกได้เฉพาะโครงการที่จัดสรรเครดิตแล้ว เครดิตที่นำไปขาย (CreditSold) มาจากผลจัดสรรของหน้าจัดสรร ผู้ใช้ไม่ต้องกรอก
-//   2) กรอกราคาขายต่อหน่วยและค่าใช้จ่ายของโครงการ (11.2)  ค่าใช้จ่ายเลือกจากรายการมาตรฐานที่แอดมินตั้งไว้ (ข้อ 5.5) แล้วแก้จำนวนเงินได้ หรือเพิ่มรายการเอง
-//   3) คำนวณรายได้ (11.3) และภาษีที่ได้รับยกเว้น (11.4) ด้วยสูตร 7, 8, 9 ในไฟล์นี้  แล้วบันทึกด้วยฟังก์ชัน save_tax_assessment
-//   ใช้เครดิตปีที่ 1 เท่านั้น ตาม TOR ข้อ 10.3 (หน้าที่อ่านข้อมูลจากฐานข้อมูลอยู่ที่ page.tsx ไฟล์นี้รับมาทาง props)
+// หน้าประเมินการยกเว้นภาษีนิติบุคคลจากการขายคาร์บอนเครดิต (TOR ข้อ 12.1–12.4) ฝั่ง browser
+//   1) เลือกโครงการ (12.1)  เลือกได้เฉพาะโครงการที่จัดสรรเครดิตแล้ว เครดิตที่นำไปขาย (CreditSold) มาจากผลจัดสรรของหน้าจัดสรร ผู้ใช้ไม่ต้องกรอก
+//   2) กรอกราคาขายต่อหน่วยและค่าใช้จ่ายของโครงการ (12.2)  ค่าใช้จ่ายเลือกจากรายการมาตรฐานที่แอดมินตั้งไว้ (ข้อ 5.5) แล้วแก้จำนวนเงินได้ หรือเพิ่มรายการเอง
+//   3) คำนวณรายได้ (12.3) และภาษีที่ได้รับยกเว้น (12.4) ด้วยสูตร 7, 8, 9 ในไฟล์นี้  แล้วบันทึกด้วยฟังก์ชัน save_tax_assessment
+//   ใช้เครดิตปีที่ 1 เท่านั้น ตาม TOR ข้อ 11.3 (หน้าที่อ่านข้อมูลจากฐานข้อมูลอยู่ที่ page.tsx ไฟล์นี้รับมาทาง props)
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -39,7 +38,7 @@ type Snapshot = { price: number; costs: SavedCost[] }; // ค่าที่ใ�
 type Message = { text: string; type: "success" | "error" };
 
 /* -------------------------------------------------------------------------- */
-/*  สูตรประเมินภาษี (Proposal สูตรที่ 7, 8, 9 / TOR ข้อ 11.3-11.4)               */
+/*  สูตรประเมินภาษี (Proposal สูตรที่ 7, 8, 9 / TOR ข้อ 12.3-12.4)               */
 /*  ฟังก์ชัน save_tax_assessment ในฐานข้อมูลคำนวณสูตรเดียวกันซ้ำตอนบันทึก ผลต้องตรงกัน */
 /* -------------------------------------------------------------------------- */
 
@@ -124,7 +123,7 @@ export default function TaxCalculatorClient({ loadError, projects, initialProjec
   }, []);
 
   // แถวค่าใช้จ่ายตั้งต้นของโครงการ:
-  //   เคยบันทึกผลประเมินไว้ -> ใช้ค่าที่บันทึกไว้ เพื่อแก้ไขต่อได้ (ข้อ 11.2)
+  //   เคยบันทึกผลประเมินไว้ -> ใช้ค่าที่บันทึกไว้ เพื่อแก้ไขต่อได้ (ข้อ 12.2)
   //   ยังไม่เคยบันทึก     -> ดึงรายการต้นทุนมาตรฐานของแอดมิน (ข้อ 5.5) มาใส่ให้ทั้งหมด พร้อมราคาสุทธิ
   //                         ตามแผนภาพ 5.2.2.11 ที่ข้อมูลต้นทุนโครงการ "ถูกนำเข้ามาประมวลผล" องค์กรแก้จำนวนเงิน/ลบ/เพิ่มเองได้
   const initialRows = (p: TaxProject | undefined): CostRow[] =>
@@ -134,7 +133,7 @@ export default function TaxCalculatorClient({ loadError, projects, initialProjec
 
   const first = projects.find((p) => p.id === initialProjectId);
   const [projectId, setProjectId] = useState(initialProjectId);
-  // ถ้าเคยบันทึกผลประเมินไว้ ให้เริ่มจากค่าที่บันทึกไว้ เพื่อแก้ไขต่อได้ (ข้อ 11.2)
+  // ถ้าเคยบันทึกผลประเมินไว้ ให้เริ่มจากค่าที่บันทึกไว้ เพื่อแก้ไขต่อได้ (ข้อ 12.2)
   const [price, setPrice] = useState(first?.saved ? String(first.saved.price) : "");
   const [rows, setRows] = useState<CostRow[]>(() => initialRows(first));
   const [errors, setErrors] = useState<formError<string>>({});
@@ -472,9 +471,6 @@ export default function TaxCalculatorClient({ loadError, projects, initialProjec
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-600">
                       รายได้จากการขายคาร์บอนเครดิต
-                      <span className="block text-[10px] font-normal text-slate-400">
-                        สูตรที่ 8: {credit(result.creditSold)} tCO₂e × {baht(result.price)} บาท
-                      </span>
                     </span>
                     <span className="font-extrabold text-slate-800">฿ {baht(result.revenue)}</span>
                   </div>
@@ -496,7 +492,6 @@ export default function TaxCalculatorClient({ loadError, projects, initialProjec
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-600">
                       กำไรสุทธิเฉพาะโครงการ
-                      <span className="block text-[10px] font-normal text-slate-400">สูตรที่ 7: รายได้ − ค่าใช้จ่าย</span>
                     </span>
                     <span className={`font-extrabold ${result.profit < 0 ? "text-red-600" : "text-emerald-700"}`}>
                       ฿ {baht(result.profit)}
@@ -506,9 +501,6 @@ export default function TaxCalculatorClient({ loadError, projects, initialProjec
                   <div className="flex items-center justify-between border-t border-slate-100 pt-3">
                     <span className="font-bold text-slate-700">
                       ภาษีเงินได้นิติบุคคลที่ได้รับการยกเว้น
-                      <span className="block text-[10px] font-normal text-slate-400">
-                        สูตรที่ 9: กำไรสุทธิ × {CIT_RATE * 100}%
-                      </span>
                     </span>
                     <span className="text-sm font-extrabold text-emerald-800">฿ {baht(result.taxExempt)}</span>
                   </div>
@@ -519,11 +511,6 @@ export default function TaxCalculatorClient({ loadError, projects, initialProjec
                     </p>
                   )}
                 </div>
-
-                <p className="text-[10px] text-slate-400">
-                  กำไรของโครงการ T-VER ได้รับการยกเว้นภาษีเงินได้นิติบุคคลต่อเนื่อง 3 รอบระยะเวลาบัญชี
-                  ระบบนี้ประเมินจากเครดิตปีที่ 1 ที่จัดสรรไว้เท่านั้น
-                </p>
 
                 <button
                   type="button"
