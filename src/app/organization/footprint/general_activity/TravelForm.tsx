@@ -98,12 +98,12 @@ export default function TravelForm({ orgId, initialData, onDataChange, getEFDeta
       vehicleType: vType,
       fuelType: rawFuel,
       distanceKm: Number(dist) || 0,
-      trips: Number(tripCount) || 1,
+      trips: Number(tripCount), // ไม่เติมค่าแทน ช่องว่างจะถูกตรวจตอนกดคำนวณ (inputRules.ts)
       ef_id: efObj.id,
     };
 
     if (isEv) {
-      payload.electricityKwh = Number(evKwh) || 0.165;
+      payload.electricityKwh = Number(evKwh);
     }
 
     onDataChange(payload);

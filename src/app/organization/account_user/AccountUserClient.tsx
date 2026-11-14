@@ -15,6 +15,7 @@ import { CheckCircle2, ChevronDown, Trash2 } from "lucide-react";
 import { industries } from "@/types/industries";
 import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
 import { getErrorMessage } from "@/lib/errorMessage";
+import { PASSWORD_MIN_LENGTH, validatePasswordStrength } from "@/lib/authRules"; // กติการหัสผ่านกลาง (ยาวอย่างน้อย 15 ตัว)
 
 type Message = {
   type: "success" | "error";
@@ -68,21 +69,7 @@ export default function AccountUserClient({
   const [deleteError, setDeleteError] = useState("");
 
   // ตรวจสอบรูปแบบรหัสผ่านใหม่
-  const validateNewPassword = (password: string) => {
-    if (password.length < 8) {
-      return "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร";
-    }
-
-    if (!/[A-Za-z]/.test(password)) {
-      return "รหัสผ่านต้องมีตัวอักษรภาษาอังกฤษอย่างน้อย 1 ตัว";
-    }
-
-    if (!/\d/.test(password)) {
-      return "รหัสผ่านต้องมีตัวเลขอย่างน้อย 1 ตัว";
-    }
-
-    return "";
-  };
+  const validateNewPassword = (password: string) => validatePasswordStrength(password);
 
   // ออกจากระบบ
   const handleLogout = async () => {
@@ -285,12 +272,12 @@ export default function AccountUserClient({
     // ตรวจสอบรูปแบบรหัสผ่านใหม่
     const passwordValidationError = validateNewPassword(newPassword);
 
-    if (passwordValidationError) {
-      setNewPasswordError(passwordValidationError);
-      hasError = true;
-    } else if (containsSqlSyntax(newPassword, { lenient: true })) {
-      // ตรวจ Syntax คล้ายคำสั่ง SQL (รหัสผ่านใช้โหมด lenient) TOR 3.4
+    if (newPassword && containsSqlSyntax(newPassword, { lenient: true })) {
+      // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อน (รหัสผ่านใช้โหมด lenient) TOR 3.4 แล้วค่อยตรวจความยาว
       setNewPasswordError("รหัสผ่านมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
+      hasError = true;
+    } else if (passwordValidationError) {
+      setNewPasswordError(passwordValidationError);
       hasError = true;
     }
 
@@ -577,7 +564,7 @@ export default function AccountUserClient({
                     );
                   }
                 }}
-                placeholder="อย่างน้อย 8 ตัวอักษร มีตัวอักษรและตัวเลข"
+                placeholder={`อย่างน้อย ${PASSWORD_MIN_LENGTH} ตัวอักษร`}
                 className={`w-full px-4 py-2.5 rounded-2xl border text-xs text-slate-800 focus:outline-none focus:ring-2 bg-slate-50/50 ${
                   newPasswordError
                     ? "border-red-500 focus:ring-red-500"

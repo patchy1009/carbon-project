@@ -36,6 +36,7 @@ import {
 import FootprintStepper from "@/components/FootprintStepper";
 import { supabase } from "@/lib/supabaseClient";
 import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection (TOR 9.4)
+import { findMissingInput } from "./inputRules"; // ตรวจช่องบังคับกรอกให้ครบ
 import { getErrorMessage } from "@/lib/errorMessage";
 import { Calculator } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -204,6 +205,10 @@ export default function ActivityBasedFootprintPage() {
     if (!meetingData && !travelingData) {
       return "กรุณากรอกข้อมูลการประชุม หรือข้อมูลการเดินทางอย่างน้อย 1 หมวดก่อนคำนวณ";
     }
+
+    // (0) ช่องบังคับต้องกรอกครบและใช้ได้ (ฟอร์มไม่เติมค่าแทนให้เองแล้ว) ไม่ครบ = ไม่คำนวณ ไม่บันทึก
+    const missing = findMissingInput(meetingData, travelingData);
+    if (missing) return missing;
 
     // (1) [TOR 9.4] ช่องข้อความต้องไม่มี Syntax คล้ายคำสั่ง SQL (ชื่อกิจกรรม / ชื่ออุปกรณ์ / ชื่อการเดินทาง)
     const textsToCheck: Array<[string, string]> = [];

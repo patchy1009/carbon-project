@@ -32,7 +32,7 @@ import Modal from "./Modal";
 import { supabase } from "@/lib/supabaseClient";
 import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
 import { getErrorMessage } from "@/lib/errorMessage";
-import { EMAIL_REGEX, PASSWORD_REGEX, USERNAME_REGEX } from "@/lib/authRules";
+import { EMAIL_REGEX, USERNAME_REGEX, PASSWORD_MIN_LENGTH, validatePasswordStrength } from "@/lib/authRules";
 import { industries } from "@/types/industries";
 
 interface AuthModalProps {
@@ -233,11 +233,12 @@ export default function AuthModal({
     if (!password) {
       errors.password = "กรุณากรอกรหัสผ่าน";
       hasError = true;
-    } else if (!PASSWORD_REGEX.test(password)) {
-      errors.password = "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร และมีตัวอักษรกับตัวเลขผสมกัน";
-      hasError = true;
     } else if (containsSqlSyntax(password, { lenient: true })) {
+      // ตรวจ Syntax SQL ก่อนตรวจความยาว เพื่อให้รหัสที่เป็นคำสั่ง SQL ถูกปฏิเสธด้วยข้อความนี้เสมอ แม้จะสั้น
       errors.password = "รหัสผ่านมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่";
+      hasError = true;
+    } else if (validatePasswordStrength(password)) {
+      errors.password = validatePasswordStrength(password);
       hasError = true;
     }
 
@@ -562,9 +563,6 @@ export default function AuthModal({
                 />
                 <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
               </div>
-              {!fieldErrors.email && (
-                <p className="mt-1 text-[11px] text-slate-400">ใช้อีเมลองค์กรที่สามารถรับรหัส OTP ได้</p>
-              )}
               {fieldErrors.email && (
                 <p className="mt-1 text-xs text-red-500 font-medium">{fieldErrors.email}</p>
               )}
@@ -575,7 +573,7 @@ export default function AuthModal({
               <div className="relative mt-1">
                 <input
                   type="password"
-                  placeholder="อย่างน้อย 8 ตัวอักษร มีตัวอักษรและตัวเลข"
+                  placeholder={`อย่างน้อย ${PASSWORD_MIN_LENGTH} ตัวอักษร`}
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
@@ -585,9 +583,6 @@ export default function AuthModal({
                 />
                 <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
               </div>
-              {!fieldErrors.password && (
-                <p className="mt-1 text-[11px] text-slate-400">ต้องมีอย่างน้อย 8 ตัวอักษร โดยมีตัวอักษรภาษาอังกฤษและตัวเลขผสมกัน</p>
-              )}
               {fieldErrors.password && (
                 <p className="mt-1 text-xs text-red-500 font-medium">{fieldErrors.password}</p>
               )}
@@ -608,9 +603,6 @@ export default function AuthModal({
                 />
                 <Building2 className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
               </div>
-              {!fieldErrors.companyName && (
-                <p className="mt-1 text-[11px] text-slate-400">ระบุชื่อบริษัทหรือองค์กรของคุณ</p>
-              )}
               {fieldErrors.companyName && (
                 <p className="mt-1 text-xs text-red-500 font-medium">{fieldErrors.companyName}</p>
               )}

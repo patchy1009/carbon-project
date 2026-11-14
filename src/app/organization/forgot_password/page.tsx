@@ -23,12 +23,7 @@ import {
 import { supabase } from "@/lib/supabaseClient";
 import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
 import { getErrorMessage } from "@/lib/errorMessage";
-import { PASSWORD_REGEX } from "@/lib/authRules";
-
-// รหัสผ่านใหม่ต้องยาวอย่างน้อย 8 ตัว และมีทั้งตัวอักษรอังกฤษกับตัวเลข
-function validatePassword(password: string): boolean {
-  return PASSWORD_REGEX.test(password);
-}
+import { PASSWORD_MIN_LENGTH, validatePasswordStrength } from "@/lib/authRules"; // กติการหัสผ่านกลาง (ยาวอย่างน้อย 15 ตัว)
 
 function formatTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
@@ -345,16 +340,15 @@ export default function ForgotPasswordPage() {
     setErrorMessage("");
     setSuccessMessage("");
 
-    if (!validatePassword(password)) {
-      setErrorMessage(
-        "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร และมีทั้งตัวอักษรภาษาอังกฤษกับตัวเลข"
-      );
+    // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อน (รหัสผ่านใช้โหมด lenient) แล้วค่อยตรวจความยาว
+    if (containsSqlSyntax(password, { lenient: true })) {
+      setErrorMessage("รหัสผ่านมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
       return;
     }
 
-    // ตรวจ Syntax คล้ายคำสั่ง SQL (รหัสผ่านใช้โหมด lenient)
-    if (containsSqlSyntax(password, { lenient: true })) {
-      setErrorMessage("รหัสผ่านมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
+    const passwordProblem = validatePasswordStrength(password);
+    if (passwordProblem) {
+      setErrorMessage(passwordProblem);
       return;
     }
 
@@ -562,9 +556,9 @@ export default function ForgotPasswordPage() {
                       id="new-password"
                       type="password"
                       required
-                      minLength={8}
+                      minLength={PASSWORD_MIN_LENGTH}
                       autoComplete="new-password"
-                      placeholder="อย่างน้อย 8 ตัวอักษร มีตัวอักษรและตัวเลข"
+                      placeholder={`อย่างน้อย ${PASSWORD_MIN_LENGTH} ตัวอักษร`}
                       value={password}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                         setPassword(e.target.value);
@@ -589,7 +583,7 @@ export default function ForgotPasswordPage() {
                       id="confirm-password"
                       type="password"
                       required
-                      minLength={8}
+                      minLength={PASSWORD_MIN_LENGTH}
                       autoComplete="new-password"
                       placeholder="กรอกรหัสผ่านใหม่อีกครั้ง"
                       value={confirmPassword}

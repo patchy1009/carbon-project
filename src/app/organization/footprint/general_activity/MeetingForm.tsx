@@ -136,11 +136,12 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
       return;
     }
 
+    // ส่งค่าตามที่กรอกจริง ไม่เติมค่าแทนให้เอง ช่องที่ว่าง/เป็น 0 จะถูกตรวจและบอกผู้ใช้ตอนกดคำนวณ (inputRules.ts)
     const formattedSets: EquipmentSetInput[] = sets.map(item => ({
-      equipmentName: item.equipmentName.trim() || "อุปกรณ์",
-      devices: Number(item.devices) || 1,
-      durationHours: Number(item.durationHours) || 1,
-      electricityKwh: Number(item.electricityKwh) || 0.06,
+      equipmentName: item.equipmentName.trim(),
+      devices: Number(item.devices),
+      durationHours: Number(item.durationHours),
+      electricityKwh: Number(item.electricityKwh),
     }));
 
     const rawFuel = catType === 'online' ? 'electricity' : (vType === 'ev' ? 'electricity' : fType);
@@ -158,9 +159,9 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
       payload.vehicleType = vType;
       payload.fuelType = rawFuel;
       payload.distanceKm = Number(dist) || 0;
-      payload.trips = Number(tripCount) || 1;
+      payload.trips = Number(tripCount);
       if (vType === "ev") {
-        payload.electricityKwh = Number(evKwh) || 0.165;
+        payload.electricityKwh = Number(evKwh);
       }
     }
 
@@ -411,7 +412,7 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
           {equipmentSets.map((set, index) => (
             <div key={set.id} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end pt-2 border-t border-gray-200">
               <div className="sm:col-span-4">
-                <label className="mb-1 block text-[11px] font-medium text-gray-600">ชนิดอุปกรณ์ {index + 1}</label>
+                <label className="mb-1 block text-[11px] font-medium text-gray-600">ชนิดอุปกรณ์ {index + 1} *</label>
                 <input
                   type="text"
                   value={set.equipmentName}
@@ -421,7 +422,7 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="mb-1 block text-[11px] font-medium text-gray-600">จำนวน</label>
+                <label className="mb-1 block text-[11px] font-medium text-gray-600">จำนวน *</label>
                 <input
                   type="number"
                   min="1"
@@ -431,7 +432,7 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="mb-1 block text-[11px] font-medium text-gray-600">ชม.ใช้งาน</label>
+                <label className="mb-1 block text-[11px] font-medium text-gray-600">ชม.ใช้งาน *</label>
                 <input
                   type="number"
                   min="0.5"
@@ -442,7 +443,7 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
                 />
               </div>
               <div className="sm:col-span-3">
-                <label className="mb-1 block text-[11px] font-medium text-gray-600" title="ดูได้จากป้ายที่อะแดปเตอร์หรือตัวเครื่อง เช่น โน้ตบุ๊กทั่วไปประมาณ 60 วัตต์">กำลังไฟ (วัตต์)</label>
+                <label className="mb-1 block text-[11px] font-medium text-gray-600" title="ดูได้จากป้ายที่อะแดปเตอร์หรือตัวเครื่อง เช่น โน้ตบุ๊กทั่วไปประมาณ 60 วัตต์">กำลังไฟ (วัตต์) *</label>
                 <input
                   type="number"
                   min="1"
