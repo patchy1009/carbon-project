@@ -174,8 +174,12 @@ export default function ActivityBasedFootprintPage() {
       const efFuelType = (ef.fuel_type || '').toLowerCase();
       return efName.includes(targetKeyword) || efType.includes(targetKeyword) || efFuelType.includes(targetKeyword);
     });
-    // ไฟฟ้า (grid) มีหลายปี เลือกปีล่าสุด ส่วนเชื้อเพลิงอื่นใช้แถวแรกเหมือนเดิม
-    const matchedItem = targetKeyword === 'grid' ? pickLatestEF(candidates) : candidates[0];
+    // ไฟฟ้า (grid) มีหลายปี เลือกปีล่าสุด
+    // เชื้อเพลิงอื่น (E20, LPG, CNG) ในตารางมีทั้งแถว Stationary/Mobile และแถว On-road vehicles ชื่อซ้ำกัน
+    //   เดิมได้แถวแรกที่เจอ ซึ่งขึ้นกับลำดับแถวจากฐานข้อมูล จึงเลือก On-road vehicles ก่อนเสมอ
+    //   (รถที่ใช้เดินทางคือ On-road และชุดนี้มีครบทุกเชื้อเพลิงที่ฟอร์มให้เลือก) ถ้าไม่มี On-road ใช้แถวแรกเหมือนเดิม
+    const isOnRoad = (ef: EfRow) => (ef.eftype?.type_name || '').toLowerCase().includes('on-road');
+    const matchedItem = targetKeyword === 'grid' ? pickLatestEF(candidates) : (candidates.find(isOnRoad) ?? candidates[0]);
 
     const value = matchedItem ? Number(matchedItem.ef_value) : 0;
     return {

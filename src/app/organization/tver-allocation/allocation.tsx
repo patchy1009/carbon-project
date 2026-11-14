@@ -15,6 +15,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Calculator, Save } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { getErrorMessage } from "@/lib/errorMessage"; // แปล error ของฐานข้อมูล (ภาษาอังกฤษ) เป็นภาษาไทย
 
 export type GoalOption = {
   target_id: string;
@@ -140,7 +141,7 @@ export default function AllocationClient({ project, loadError, goals, activities
     });
     setSubmitting(false);
     if (error) {
-      setMessage({ text: `บันทึกไม่สำเร็จ: ${error.message}`, type: "error" });
+      setMessage({ text: `บันทึกไม่สำเร็จ: ${getErrorMessage(error)}`, type: "error" });
       return;
     }
     setSavedNow(true);

@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 import { notFound, redirect } from "next/navigation";
 import { requireOrgId } from "@/lib/auth";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getErrorMessage } from "@/lib/errorMessage"; // แปล error ของฐานข้อมูล (ภาษาอังกฤษ) เป็นภาษาไทย
 import AllocationClient, {
   type ActivityOption,
   type GoalOption,
@@ -49,7 +50,7 @@ export default async function TverAllocationPage({
     .eq("orgtreeproject_id", requestedProject)
     .eq("org_id", orgId)
     .maybeSingle();
-  if (projectRes.error) throw new Error("โหลดโครงการไม่สำเร็จ: " + projectRes.error.message);
+  if (projectRes.error) throw new Error("โหลดโครงการไม่สำเร็จ: " + getErrorMessage(projectRes.error));
   const projectRow = (projectRes.data ?? null) as unknown as ProjectRow | null;
   if (!projectRow) notFound();
 
@@ -97,7 +98,7 @@ export default async function TverAllocationPage({
       .from("org_credit_allocation_detail")
       .select("orgactlist_id")
       .eq("orgallocate_id", alloc.orgallocate_id);
-    if (detailRes.error) savedError = detailRes.error.message;
+    if (detailRes.error) savedError = getErrorMessage(detailRes.error);
 
     saved = {
       targetId: alloc.target_id,
@@ -109,8 +110,8 @@ export default async function TverAllocationPage({
   }
 
   // แสดงข้อความ error แรกที่เจอ (เดิมกลืน error ทิ้ง ทำให้หน้าว่างเฉยๆ ไม่รู้สาเหตุ)
-  const loadError =
-    goalsRes.error?.message ?? activitiesRes.error?.message ?? allocRes.error?.message ?? savedError ?? null;
+  const firstError = goalsRes.error ?? activitiesRes.error ?? allocRes.error;
+  const loadError = firstError ? getErrorMessage(firstError) : savedError;
 
   return (
     <AllocationClient

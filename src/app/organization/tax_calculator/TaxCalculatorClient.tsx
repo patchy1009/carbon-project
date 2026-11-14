@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { Calculator, Plus, Save, Trash2 } from "lucide-react";
 import Select from "@/components/Select";
 import { supabase } from "@/lib/supabaseClient";
+import { getErrorMessage } from "@/lib/errorMessage"; // แปล error ของฐานข้อมูล (ภาษาอังกฤษ) เป็นภาษาไทย
 import { validateForm, type formError } from "@/lib/validation";
 import { amountKey, buildTaxSchema, checkTaxRanges, nameKey, priceKey } from "./schema";
 
@@ -240,7 +241,7 @@ export default function TaxCalculatorClient({ loadError, projects, initialProjec
     });
     setSubmitting(false);
     if (error) {
-      setMessage({ text: `บันทึกไม่สำเร็จ: ${error.message}`, type: "error" });
+      setMessage({ text: `บันทึกไม่สำเร็จ: ${getErrorMessage(error)}`, type: "error" });
       return;
     }
     setSavedNow(true);

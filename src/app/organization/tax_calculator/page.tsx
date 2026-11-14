@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 import { requireOrgId } from "@/lib/auth";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getErrorMessage } from "@/lib/errorMessage"; // แปล error ของฐานข้อมูล (ภาษาอังกฤษ) เป็นภาษาไทย
 import TaxCalculatorClient, { type CostOption, type SavedCost, type TaxProject } from "./TaxCalculatorClient";
 
 type AllocationRow = { year1_credit: number | string | null; sell_credit: number | string | null };
@@ -65,7 +66,7 @@ export default async function TaxCalculatorPage({
         projectRows.map((p) => p.orgtreeproject_id)
       );
     sellRows = (sellRes.data ?? []) as unknown as SellRow[];
-    sellError = sellRes.error?.message ?? null;
+    sellError = sellRes.error ? getErrorMessage(sellRes.error) : null;
   }
   const sellByProject = new Map(sellRows.map((s) => [s.orgtreeproject_id, s]));
 
@@ -100,7 +101,8 @@ export default async function TaxCalculatorPage({
     projects.find((p) => p.id === requestedProject)?.id ?? projects.find((p) => p.allocated)?.id ?? projects[0]?.id ?? "";
 
   // แสดงข้อความ error แรกที่เจอ (เดิมกลืน error ทิ้ง ทำให้หน้าว่างเฉยๆ ไม่รู้สาเหตุ)
-  const loadError = projectsRes.error?.message ?? catalogRes.error?.message ?? sellError;
+  const firstError = projectsRes.error ?? catalogRes.error;
+  const loadError = firstError ? getErrorMessage(firstError) : sellError;
 
   return (
     <TaxCalculatorClient
