@@ -518,7 +518,7 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
             {isEvSelected && (
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">อัตราสิ้นเปลืองไฟฟ้า (kWh ต่อ 100 กม.) *</label>
-                <p className="mb-1 text-[11px] text-gray-500">ไม่ทราบใช้ค่าเริ่มต้นได้ ถ้าทราบดูจากคู่มือหรือสเปกรถ ซึ่งเขียนเป็น kWh/100 กม. (รถ EV ทั่วไปประมาณ 15 – 22)</p>
+                <p className="mb-1 text-[11px] text-gray-500">ค่าเริ่มต้นเป็นค่าเฉลี่ย องค์กรสามารถแก้เป็นค่าของรถจากคู่มือได้ (kWh/100 กม.)</p>
                 <input
                   type="number"
                   min="1"

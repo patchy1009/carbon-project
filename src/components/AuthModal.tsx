@@ -40,12 +40,15 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialMode?: "login" | "register";
+  // ข้อความแจ้งเตือนแสดงเหนือฟอร์มเข้าสู่ระบบ (เช่น "ต้องเข้าสู่ระบบก่อน" ตอนถูกบล็อกจากหน้าที่ต้องล็อกอิน)
+  loginNotice?: string;
 }
 
 export default function AuthModal({
   isOpen,
   onClose,
   initialMode = "login",
+  loginNotice = "",
 }: AuthModalProps) {
   const router = useRouter();
   const [step, setStep] = useState<"login" | "register" | "otp" | "success" | "forgot">(initialMode);
@@ -388,6 +391,12 @@ export default function AuthModal({
             <h2 className="mb-6 text-center text-2xl font-bold text-slate-800">
               เข้าสู่ระบบ
             </h2>
+
+            {loginNotice && (
+              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                {loginNotice}
+              </div>
+            )}
 
             {loginErrorMessage && (
               <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">

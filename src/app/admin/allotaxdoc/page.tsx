@@ -14,7 +14,7 @@ export default async function AlloTaxDocPage() {
     supabase.from('documents').select('*').order('upload_date'),
     supabase
       .from('project_target_rule')
-      .select('target_id, target_name, offset_ratio, sell_ratio, updated_date')
+      .select('target_id, target_name, offset_ratio, sell_ratio, updated_at')
       .order('offset_ratio', { ascending: false })
       .order('target_name'),
     supabase

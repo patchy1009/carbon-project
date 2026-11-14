@@ -36,6 +36,30 @@ const STORAGE_KEY = "pw_reset_expiry_time";
 const FLOW_KEY = "is_in_reset_flow";
 const TEN_MINUTES_MS = 10 * 60 * 1000; // 10 นาที (600 วินาที)
 
+// ลิงก์รีเซ็ตถูกแลกเป็น session ปกติ ระบบเลยมองว่าล็อกอินแล้ว (เข้า account_user ได้ทั้งที่ยังตั้งรหัสไม่เสร็จ)
+// จึงจดธงเป็น cookie ผูกกับ session_id ของ session นั้น proxy.ts เช็กธงนี้ ถ้าตรงจะไม่ให้เข้าหน้าอื่น
+// แต่แจ้งว่าต้องเข้าสู่ระบบก่อน (ล็อกอินด้วยรหัสผ่านตามปกติจะได้ session_id ใหม่ ธงเก่าจึงไม่มีผล)
+// ชื่อ cookie ต้องตรงกับใน proxy.ts
+const RESET_FLOW_COOKIE = "pw_reset_session";
+
+function markResetFlow(accessToken: string | null | undefined) {
+  try {
+    const payload = accessToken?.split(".")[1];
+    if (!payload) return;
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const claims = JSON.parse(atob(base64 + "=".repeat((4 - (base64.length % 4)) % 4)));
+    if (typeof claims?.session_id !== "string") return;
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `${RESET_FLOW_COOKIE}=${claims.session_id}; Path=/; Max-Age=2592000; SameSite=Lax${secure}`;
+  } catch {
+    // อ่าน token ไม่ได้ -> ไม่จดธง (ทำงานเหมือนเดิม)
+  }
+}
+
+function clearResetFlow() {
+  document.cookie = `${RESET_FLOW_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+}
+
 // จดไว้ตั้งแต่โมดูลโหลดว่า URL มี ?code= (ลิงก์รีเซ็ตรหัสผ่านแบบ PKCE) หรือไม่
 // เพราะ Supabase client จะแลก code เป็น session เองแล้วลบ ?code= ออกจาก URL
 // ถ้าไปเช็กใน useEffect อาจช้าเกินไป (URL ถูกลบไปแล้ว)
@@ -99,7 +123,7 @@ export default function ForgotPasswordPage() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
 
       if (event === "PASSWORD_RECOVERY") {
@@ -108,6 +132,7 @@ export default function ForgotPasswordPage() {
         setErrorMessage("");
         setSuccessMessage("");
         sessionStorage.setItem(FLOW_KEY, "true");
+        markResetFlow(session?.access_token);
 
         if (!sessionStorage.getItem(STORAGE_KEY)) {
           sessionStorage.setItem(STORAGE_KEY, (Date.now() + TEN_MINUTES_MS).toString());
@@ -147,6 +172,7 @@ export default function ForgotPasswordPage() {
               setErrorMessage("");
               setSuccessMessage("");
               sessionStorage.setItem(FLOW_KEY, "true");
+              markResetFlow(verifiedSession.session.access_token);
               if (!sessionStorage.getItem(STORAGE_KEY)) {
                 sessionStorage.setItem(
                   STORAGE_KEY,
@@ -181,6 +207,7 @@ export default function ForgotPasswordPage() {
               setErrorMessage("");
               setSuccessMessage("");
               sessionStorage.setItem(FLOW_KEY, "true");
+              markResetFlow(sessionData.session.access_token);
               // เริ่มนับ 10 นาทีใหม่ทุกครั้งที่เข้าจากลิงก์ใหม่ (กันค่าเก่าค้างจนขึ้นว่าหมดอายุ)
               sessionStorage.setItem(
                 STORAGE_KEY,
@@ -221,6 +248,7 @@ export default function ForgotPasswordPage() {
               setStep("reset");
               setErrorMessage("");
               sessionStorage.setItem(FLOW_KEY, "true");
+              markResetFlow(accessToken);
 
               if (!sessionStorage.getItem(STORAGE_KEY)) {
                 sessionStorage.setItem(STORAGE_KEY, (Date.now() + TEN_MINUTES_MS).toString());
@@ -252,6 +280,7 @@ export default function ForgotPasswordPage() {
             if (Date.now() >= targetTime) {
               sessionStorage.removeItem(STORAGE_KEY);
               sessionStorage.removeItem(FLOW_KEY);
+              clearResetFlow();
               await supabase.auth.signOut();
               setStep("request");
               return;
@@ -388,6 +417,7 @@ export default function ForgotPasswordPage() {
       // เคลียร์ค่า Session Storage ทั้งหมดเมื่อทำรายการสำเร็จ
       sessionStorage.removeItem(STORAGE_KEY);
       sessionStorage.removeItem(FLOW_KEY);
+      clearResetFlow();
 
       const { error: signOutError } = await supabase.auth.signOut();
 
@@ -536,6 +566,7 @@ export default function ForgotPasswordPage() {
                 onClick={async () => {
                   sessionStorage.removeItem(STORAGE_KEY);
                   sessionStorage.removeItem(FLOW_KEY);
+                  clearResetFlow();
                   await supabase.auth.signOut();
                   setPassword("");
                   setConfirmPassword("");

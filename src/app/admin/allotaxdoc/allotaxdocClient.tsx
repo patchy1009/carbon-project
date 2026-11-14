@@ -77,7 +77,7 @@ export type TargetRule = {
   target_name: string;
   offset_ratio: number;
   sell_ratio: number;
-  updated_date?: string | null;
+  updated_at?: string | null;
 };
 
 type TargetErrors = { target_name?: string; offset_ratio?: string };
@@ -201,7 +201,7 @@ export default function AlloTaxDocClient({
     if (editTargetId) {
       const updated = await updateRecord<TargetRule>(
         'project_target_rule', 'target_id', editTargetId,
-        { ...values, updated_date: new Date().toISOString() }, '*', 'แก้ไขเป้าหมาย'
+        { ...values, updated_at: new Date().toISOString() }, '*', 'แก้ไขเป้าหมาย'
       );
       if (!updated) { setSavingTarget(false); return; }
       setTargets((prev) => sortTargets(prev.map((t) => (t.target_id === editTargetId ? updated : t))));
@@ -329,7 +329,7 @@ export default function AlloTaxDocClient({
       'project_cost_type', 'cost_id', editCost.cost_id,
       {
         cost_name: checked.name, price: checked.price, vat: editCostVat,
-        net_price: netOf(checked.price, editCostVat), updated_date: new Date().toISOString(),
+        net_price: netOf(checked.price, editCostVat), updated_at: new Date().toISOString(),
       },
       '*', 'แก้ไขรายการต้นทุน'
     );
