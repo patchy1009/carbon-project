@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { redirect } from 'next/navigation';
 import { createSupabaseServer } from '@/lib/supabaseServer';
+import { getCurrentUser } from '@/lib/auth'; // อ่าน role ของผู้ที่ล็อกอินอยู่
 import AccountUserClient from './AccountUserClient';
 import { getErrorMessage } from '@/lib/errorMessage'; // แปล error จากฐานข้อมูล (ภาษาอังกฤษ) เป็นภาษาไทย
 
@@ -14,6 +15,12 @@ export default async function AccountUserPage() {
 
   // ไม่ได้ล็อกอิน -> กลับหน้าแรก (พฤติกรรมเดิม)
   if (!user) redirect('/organization/homepage');
+
+  // หน้านี้สำหรับองค์กรเท่านั้น (TOR ข้อ 3-4 "โดยองค์กร")
+  //   ผู้ดูแลระบบล็อกอินอยู่แล้ว จึงพาไปหน้าของแอดมินแทน (ไม่ต้องเด้งไปหน้า login)
+  const current = await getCurrentUser();
+  if (current?.role === 'admin') redirect('/admin/ef-gwp');
+  if (!current) redirect('/organization/login');
 
   const [userRes, orgRes] = await Promise.all([
     supabase.from('user').select('username').eq('acc_id', user.id).maybeSingle(),
