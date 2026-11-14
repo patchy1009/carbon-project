@@ -18,7 +18,7 @@
  *   - ตาราง general_activity_* ต้องเปิด RLS (supabase/rls_general_activity.sql) ไม่งั้นองค์กรเห็นข้อมูลกันเอง
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import MeetingForm, { MeetingData } from "./MeetingForm";
 import TravelForm, { TravelData } from "./TravelForm";
 import CalculationResult from "./CalculationResult";
@@ -38,7 +38,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection (TOR 9.4)
 import { findMissingInput } from "./inputRules"; // ตรวจช่องบังคับกรอกให้ครบ
 import { getErrorMessage } from "@/lib/errorMessage";
-import { Calculator } from "lucide-react";
+import { AlertCircle, Calculator, CheckCircle2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 // แถวของตาราง emission_factor ที่หน้านี้ใช้ (join ชนิด EF มาด้วยในชื่อ eftype)
@@ -77,6 +77,10 @@ export default function ActivityBasedFootprintPage() {
   const [loadingSystem, setLoadingSystem] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [hasCalculated, setHasCalculated] = useState(false);
+  // ข้อความแจ้งผลบนหน้าจอ (แทน popup ของเบราว์เซอร์) และสถานะให้ฟอร์มทำกรอบแดงที่ช่องที่ขาด
+  const [notice, setNotice] = useState<{ type: "error" | "success"; text: string } | null>(null);
+  const [showRequired, setShowRequired] = useState(false);
+  const noticeRef = useRef<HTMLDivElement>(null);
 
   // ข้อมูลที่ฟอร์มส่งขึ้นมา (null = ยังไม่ได้กรอก)
   const [meetingData, setMeetingData] = useState<MeetingData | null>(null);
@@ -100,7 +104,7 @@ export default function ActivityBasedFootprintPage() {
       try {
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         if (authError || !user) {
-          alert("กรุณาเข้าสู่ระบบก่อนใช้งานระบบประเมินคาร์บอนฟุตพรินต์");
+          setNotice({ type: "error", text: "กรุณาเข้าสู่ระบบก่อนใช้งานระบบประเมินคาร์บอนฟุตพรินต์" });
           return;
         }
         setOrgId(user.id);
@@ -266,14 +270,33 @@ export default function ActivityBasedFootprintPage() {
     return null;
   };
 
+  // แก้ข้อมูลในฟอร์มแล้ว ข้อความเตือนเดิมถือว่าเก่า -> ซ่อน (ข้อความสำเร็จไม่ซ่อน)
+  const hideOldError = () => setNotice((n) => (n && n.type === "error" ? null : n));
+  const handleMeetingChange = (d: MeetingData | null) => {
+    setMeetingData(d);
+    hideOldError();
+  };
+  const handleTravelChange = (d: TravelData | null) => {
+    setTravelingData(d);
+    hideOldError();
+  };
+
+  // มีข้อความใหม่ -> เลื่อนหน้าให้เห็นข้อความนั้น
+  useEffect(() => {
+    if (notice) noticeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [notice]);
+
   /* ---------- กดปุ่ม "คำนวณและบันทึก" ---------- */
 
   const handleCalculateAndSave = async () => {
+    setNotice(null);
     const problem = validateInputs();
     if (problem) {
-      alert(problem);
+      setShowRequired(true); // ช่องบังคับที่ว่างจะมีกรอบสีแดง
+      setNotice({ type: "error", text: problem });
       return;
     }
+    setShowRequired(false);
 
     setIsSaving(true);
 
@@ -429,10 +452,10 @@ export default function ActivityBasedFootprintPage() {
       }
 
       setHasCalculated(true);
-      alert("คำนวณและบันทึกข้อมูลลงฐานข้อมูลสำเร็จเรียบร้อยแล้ว!");
+      setNotice({ type: "success", text: "คำนวณและบันทึกข้อมูลลงฐานข้อมูลสำเร็จเรียบร้อยแล้ว" });
     } catch (error) {
       console.error("Save error:", error);
-      alert(`เกิดข้อผิดพลาดในการบันทึก: ${getErrorMessage(error)}`);
+      setNotice({ type: "error", text: `เกิดข้อผิดพลาดในการบันทึก: ${getErrorMessage(error)}` });
     } finally {
       setIsSaving(false);
     }
@@ -448,8 +471,8 @@ export default function ActivityBasedFootprintPage() {
       <FootprintStepper current={3} />
 
       <div className="space-y-6">
-        <MeetingForm orgId={orgId!} onDataChange={setMeetingData} fetchElectricityEF={fetchElectricityEFFromDB} getEFDetail={getEFDetail} />
-        <TravelForm orgId={orgId!} onDataChange={setTravelingData} getEFDetail={getEFDetail} />
+        <MeetingForm orgId={orgId!} onDataChange={handleMeetingChange} fetchElectricityEF={fetchElectricityEFFromDB} getEFDetail={getEFDetail} showRequired={showRequired} />
+        <TravelForm orgId={orgId!} onDataChange={handleTravelChange} getEFDetail={getEFDetail} showRequired={showRequired} />
 
         {/* ปุ่ม "‹ กลับ" ไปขั้นที่ 2 และปุ่มคำนวณ */}
         <div className="flex flex-wrap items-center gap-4 pt-2">
@@ -470,6 +493,28 @@ export default function ActivityBasedFootprintPage() {
             {isSaving ? "กำลังคำนวณและบันทึก..." : "คำนวณและบันทึกข้อมูลลงฐานข้อมูล"}
           </button>
         </div>
+
+        {notice && (
+          <div
+            ref={noticeRef}
+            role={notice.type === "error" ? "alert" : "status"}
+            className={`flex items-start gap-3 rounded-xl border px-4 py-3 ${
+              notice.type === "error" ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"
+            }`}
+          >
+            {notice.type === "error" ? (
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            ) : (
+              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
+            )}
+            <div className="text-sm">
+              <p className="font-semibold">{notice.text}</p>
+              {notice.type === "error" && (
+                <p className="mt-1 text-xs text-red-600">กรุณาแก้ไขข้อมูล (ช่องที่มีกรอบสีแดงคือช่องที่ต้องกรอก) แล้วกดคำนวณอีกครั้ง</p>
+              )}
+            </div>
+          </div>
+        )}
 
         {hasCalculated && (
           <CalculationResult

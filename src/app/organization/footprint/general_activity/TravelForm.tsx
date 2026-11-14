@@ -7,7 +7,8 @@
  */
 
 import React, { useState, useEffect, useRef } from "react";
-import { Trash2 } from "lucide-react";
+import { AlertCircle, Trash2 } from "lucide-react";
+import { showConfirm } from "@/lib/dialog"; // กล่องยืนยันของระบบ (แทน confirm ของเบราว์เซอร์)
 import { supabase } from "@/lib/supabaseClient";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { evKwhPerKmToPer100, evPer100ToKwhPerKm, VEHICLE_OPTIONS, FUEL_OPTIONS_MAP } from "./calculation";
@@ -29,6 +30,7 @@ export type TravelFormProps = {
   initialData?: TravelData | null;
   onDataChange: (data: TravelData | null) => void;
   getEFDetail: (fuelKey: string) => { id: string | null; value: number };
+  showRequired?: boolean; // true หลังกดคำนวณแล้วข้อมูลไม่ครบ: ช่องบังคับที่ว่างหรือใช้ไม่ได้จะมีกรอบสีแดง
 };
 
 // 1 แถวของตาราง general_activity_traveling (ประวัติ) เฉพาะคอลัมน์ที่ฟอร์มนี้อ่าน
@@ -41,8 +43,9 @@ type PastTravelRow = {
   electricity_kwh: number | string | null;
 };
 
-export default function TravelForm({ orgId, initialData, onDataChange, getEFDetail }: TravelFormProps) {
+export default function TravelForm({ orgId, initialData, onDataChange, getEFDetail, showRequired = false }: TravelFormProps) {
   const [travelName, setTravelName] = useState("");
+  const [actionError, setActionError] = useState(""); // ข้อความผิดพลาดตอนลบ แสดงในฟอร์ม (แทน popup)
   const [vehicleType, setVehicleType] = useState("car");
   const [fuelType, setFuelType] = useState(FUEL_OPTIONS_MAP["car"][0].id);
   const [distanceKm, setDistanceKm] = useState("20");
@@ -80,6 +83,10 @@ export default function TravelForm({ orgId, initialData, onDataChange, getEFDeta
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // กรอบช่องกรอก: แดงเมื่อกดคำนวณแล้วข้อมูลไม่ครบ และช่องนี้ว่าง/ใช้ไม่ได้ (นับเฉพาะเมื่อตั้งชื่อการเดินทางแล้ว เพราะไม่มีชื่อ = ไม่ใช้หมวดนี้)
+  const fieldCls = (bad: boolean) =>
+    showRequired && travelName.trim() !== "" && bad ? "border-red-500 bg-red-50" : "border-gray-300 bg-white";
 
   // รวมค่าที่กรอกทั้งหมดเป็น TravelData ส่งขึ้นไปให้หน้า page.tsx (ยังไม่ตั้งชื่อการเดินทาง = ส่ง null)
   // รถ EV ใช้เชื้อเพลิง 'electricity' (ค่า EF ของไฟฟ้า)
@@ -154,7 +161,8 @@ export default function TravelForm({ orgId, initialData, onDataChange, getEFDeta
   // ลบการเดินทางนี้ออกจากฐานข้อมูลทันที หลังผู้ใช้กดยืนยัน
   const handleDeleteTravel = async () => {
     if (!travelName.trim()) return;
-    if (!confirm(`คุณต้องการลบการเดินทาง "${travelName}" ออกจากระบบใช่หรือไม่?`)) return;
+    setActionError("");
+    if (!(await showConfirm(`คุณต้องการลบการเดินทาง "${travelName}" ออกจากระบบใช่หรือไม่?`, { danger: true }))) return;
 
     try {
       const { error } = await supabase
@@ -165,13 +173,12 @@ export default function TravelForm({ orgId, initialData, onDataChange, getEFDeta
 
       if (error) throw error;
 
-      alert("ลบการเดินทางออกจากระบบเรียบร้อยแล้ว");
       setPastTravelsData(prev => prev.filter(item => item.activity_name !== travelName.trim()));
       setTravelName("");
       onDataChange(null);
     } catch (err) {
       console.error("Delete error:", err);
-      alert(`เกิดข้อผิดพลาดในการลบ: ${getErrorMessage(err)}`);
+      setActionError(`ลบการเดินทางไม่สำเร็จ: ${getErrorMessage(err)}`);
     }
   };
 
@@ -214,6 +221,13 @@ export default function TravelForm({ orgId, initialData, onDataChange, getEFDeta
           )}
         </div>
       </div>
+
+      {actionError && (
+        <div role="alert" className="mx-6 mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{actionError}</span>
+        </div>
+      )}
 
       <div className="p-6 space-y-5">
         <div className="relative" ref={dropdownRef}>
@@ -308,7 +322,7 @@ export default function TravelForm({ orgId, initialData, onDataChange, getEFDeta
                 setEvElectricityKwh(perKm);
                 emitChange(travelName, vehicleType, fuelType, distanceKm, trips, perKm);
               }}
-              className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
+              className={`w-full rounded-xl border ${fieldCls(!(Number(evElectricityKwh) > 0))} px-3 py-2.5 text-sm outline-none focus:border-[#32885F]`}
             />
           </div>
         )}
@@ -325,7 +339,7 @@ export default function TravelForm({ orgId, initialData, onDataChange, getEFDeta
                 setDistanceKm(e.target.value);
                 emitChange(travelName, vehicleType, fuelType, e.target.value, trips, evElectricityKwh);
               }}
-              className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
+              className={`w-full rounded-xl border ${fieldCls(!(Number(distanceKm) > 0))} px-3 py-2.5 text-sm outline-none focus:border-[#32885F]`}
             />
           </div>
           <div>
@@ -338,7 +352,7 @@ export default function TravelForm({ orgId, initialData, onDataChange, getEFDeta
                 setTrips(e.target.value);
                 emitChange(travelName, vehicleType, fuelType, distanceKm, e.target.value, evElectricityKwh);
               }}
-              className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
+              className={`w-full rounded-xl border ${fieldCls(!(Number.isInteger(Number(trips)) && Number(trips) >= 1))} px-3 py-2.5 text-sm outline-none focus:border-[#32885F]`}
             />
           </div>
         </div>

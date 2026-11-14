@@ -32,12 +32,14 @@ export default function CalculationResult({
   travelRecommendation = [],
 }: CalculationResultProps) {
   const [isDownloading, setIsDownloading] = useState(false);
+  const [pdfError, setPdfError] = useState(""); // ข้อความผิดพลาดตอนดาวน์โหลด PDF แสดงในหน้า (แทน popup)
 
   const totalEmission = meetingEmission + travelEmission;
 
   // กดดาวน์โหลด: ส่งข้อมูลที่แสดงอยู่ไป POST ที่ /pdf แล้วรับไฟล์ PDF กลับมาเป็นไฟล์ดาวน์โหลด
   const handleDownloadPdf = async () => {
     setIsDownloading(true);
+    setPdfError("");
     try {
       const payload: CalculationResultProps = {
         meetingEmission,
@@ -67,7 +69,7 @@ export default function CalculationResult({
         } catch {
           // ตอบกลับไม่ใช่ JSON ก็ใช้ข้อความมาตรฐานด้านบน
         }
-        alert(errorMsg);
+        setPdfError(errorMsg);
         return;
       }
 
@@ -84,7 +86,7 @@ export default function CalculationResult({
       URL.revokeObjectURL(blobUrl);
     } catch (error) {
       console.error("Download Error:", error);
-      alert("ไม่สามารถเชื่อมต่อระบบดาวน์โหลด PDF ได้");
+      setPdfError("ไม่สามารถเชื่อมต่อระบบดาวน์โหลด PDF ได้ กรุณาลองใหม่อีกครั้ง");
     } finally {
       setIsDownloading(false);
     }
@@ -149,6 +151,13 @@ export default function CalculationResult({
             )}
           </button>
         </div>
+
+        {pdfError && (
+          <div role="alert" className="mx-6 mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+            <span aria-hidden="true">⚠</span>
+            <span>{pdfError}</span>
+          </div>
+        )}
 
         <div className="p-6 space-y-5">
           {/* หมวดการประชุม */}

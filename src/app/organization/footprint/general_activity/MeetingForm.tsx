@@ -8,7 +8,8 @@
  */
 
 import React, { useState, useEffect, useRef } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { AlertCircle, Plus, Trash2 } from "lucide-react";
+import { showConfirm } from "@/lib/dialog"; // กล่องยืนยันของระบบ (แทน confirm ของเบราว์เซอร์)
 import { supabase } from "@/lib/supabaseClient";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { evKwhPerKmToPer100, evPer100ToKwhPerKm, VEHICLE_OPTIONS, FUEL_OPTIONS_MAP } from "./calculation";
@@ -61,6 +62,7 @@ export type MeetingFormProps = {
   onDataChange: (data: MeetingData | null) => void;
   fetchElectricityEF: () => { id: string | null; value: number };
   getEFDetail: (fuelKey: string) => { id: string | null; value: number };
+  showRequired?: boolean; // true หลังกดคำนวณแล้วข้อมูลไม่ครบ: ช่องบังคับที่ว่างหรือใช้ไม่ได้จะมีกรอบสีแดง
 };
 
 const MEETING_TYPES = [
@@ -71,8 +73,9 @@ const MEETING_TYPES = [
 // ในโค้ดเก็บกำลังไฟเป็น kWh ต่อชั่วโมง (ตรงกับคอลัมน์ electricity_kwh ในฐานข้อมูล) แต่ช่องกรอกแสดงเป็นวัตต์ (W) ตามป้ายบนอุปกรณ์
 const toWatt = (kwhPerHour: number) => Math.round(kwhPerHour * 1000 * 1000) / 1000;
 
-export default function MeetingForm({ orgId, initialData, onDataChange, fetchElectricityEF, getEFDetail }: MeetingFormProps) {
+export default function MeetingForm({ orgId, initialData, onDataChange, fetchElectricityEF, getEFDetail, showRequired = false }: MeetingFormProps) {
   const [meetingName, setMeetingName] = useState("");
+  const [actionError, setActionError] = useState(""); // ข้อความผิดพลาดตอนลบ แสดงในฟอร์ม (แทน popup)
   const [category_type, setCategoryType] = useState("online");
   const [pastMeetingsData, setPastMeetingsData] = useState<PastMeetingRow[]>([]);
   const [isOpenDropdown, setIsOpenDropdown] = useState(false);
@@ -118,6 +121,10 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // กรอบช่องกรอก: แดงเมื่อกดคำนวณแล้วข้อมูลไม่ครบ และช่องนี้ว่าง/ใช้ไม่ได้ (นับเฉพาะเมื่อตั้งชื่อกิจกรรมแล้ว เพราะไม่มีชื่อ = ไม่ใช้หมวดนี้)
+  const fieldCls = (bad: boolean) =>
+    showRequired && meetingName.trim() !== "" && bad ? "border-red-500 bg-red-50" : "border-gray-300 bg-white";
 
   // รวมค่าที่กรอกทั้งหมดเป็น MeetingData ส่งขึ้นไปให้หน้า page.tsx (ยังไม่ตั้งชื่อกิจกรรม = ส่ง null)
   // ประชุมออนไลน์และประชุมออนไซต์ที่ไปด้วย EV ใช้เชื้อเพลิง 'electricity' (ค่า EF ของไฟฟ้า)
@@ -242,7 +249,8 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
   // ลบกิจกรรมนี้ (ทุกแถวที่ชื่อเดียวกัน) ออกจากฐานข้อมูลทันที หลังผู้ใช้กดยืนยัน
   const handleDeleteActivity = async () => {
     if (!meetingName.trim()) return;
-    if (!confirm(`คุณต้องการลบกิจกรรม "${meetingName}" ออกจากระบบใช่หรือไม่?`)) return;
+    setActionError("");
+    if (!(await showConfirm(`คุณต้องการลบกิจกรรม "${meetingName}" ออกจากระบบใช่หรือไม่?`, { danger: true }))) return;
 
     try {
       const { error } = await supabase
@@ -253,13 +261,12 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
 
       if (error) throw error;
 
-      alert("ลบกิจกรรมออกจากระบบเรียบร้อยแล้ว");
       setPastMeetingsData(prev => prev.filter(item => item.activity_name !== meetingName.trim()));
       setMeetingName("");
       onDataChange(null);
     } catch (err) {
       console.error("Delete error:", err);
-      alert(`เกิดข้อผิดพลาดในการลบ: ${getErrorMessage(err)}`);
+      setActionError(`ลบกิจกรรมไม่สำเร็จ: ${getErrorMessage(err)}`);
     }
   };
 
@@ -295,10 +302,7 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
 
   // ลบอุปกรณ์ชุดที่ระบุ (ต้องเหลืออย่างน้อย 1 ชุด)
   const handleRemoveEquipmentSet = (id: string) => {
-    if (equipmentSets.length === 1) {
-      alert("ต้องมีรายการอุปกรณ์ไฟฟ้าอย่างน้อย 1 เซต");
-      return;
-    }
+    if (equipmentSets.length === 1) return; // ปุ่มลบของแถวสุดท้ายกดไม่ได้อยู่แล้ว (ต้องเหลืออย่างน้อย 1 ชุด)
     const updated = equipmentSets.filter(item => item.id !== id);
     setEquipmentSets(updated);
     emitChange(meetingName, category_type, updated, vehicleType, fuelType, distanceKm, trips, evElectricityKwh);
@@ -334,6 +338,13 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
           )}
         </div>
       </div>
+
+      {actionError && (
+        <div role="alert" className="mx-6 mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{actionError}</span>
+        </div>
+      )}
 
       <div className="p-6 space-y-5">
         <div className="relative" ref={dropdownRef}>
@@ -418,7 +429,7 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
                   value={set.equipmentName}
                   onChange={(e) => handleEquipmentChange(set.id, "equipmentName", e.target.value)}
                   placeholder="เช่น คอมพิวเตอร์"
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs outline-none focus:border-[#32885F]"
+                  className={`w-full rounded-lg border ${fieldCls(!set.equipmentName.trim())} px-3 py-2 text-xs outline-none focus:border-[#32885F]`}
                 />
               </div>
               <div className="sm:col-span-2">
@@ -428,7 +439,7 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
                   min="1"
                   value={set.devices}
                   onChange={(e) => handleEquipmentChange(set.id, "devices", Number(e.target.value))}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs outline-none focus:border-[#32885F]"
+                  className={`w-full rounded-lg border ${fieldCls(!(Number.isInteger(set.devices) && set.devices >= 1))} px-3 py-2 text-xs outline-none focus:border-[#32885F]`}
                 />
               </div>
               <div className="sm:col-span-2">
@@ -439,7 +450,7 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
                   step="0.5"
                   value={set.durationHours}
                   onChange={(e) => handleEquipmentChange(set.id, "durationHours", Number(e.target.value))}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs outline-none focus:border-[#32885F]"
+                  className={`w-full rounded-lg border ${fieldCls(!(set.durationHours > 0))} px-3 py-2 text-xs outline-none focus:border-[#32885F]`}
                 />
               </div>
               <div className="sm:col-span-3">
@@ -450,14 +461,16 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
                   step="1"
                   value={toWatt(set.electricityKwh)}
                   onChange={(e) => handleEquipmentChange(set.id, "electricityKwh", Number(e.target.value) / 1000)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs outline-none focus:border-[#32885F]"
+                  className={`w-full rounded-lg border ${fieldCls(!(set.electricityKwh > 0))} px-3 py-2 text-xs outline-none focus:border-[#32885F]`}
                 />
               </div>
               <div className="sm:col-span-1 flex justify-end pb-0.5">
                 <button
                   type="button"
                   onClick={() => handleRemoveEquipmentSet(set.id)}
-                  className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition"
+                  disabled={equipmentSets.length <= 1}
+                  title={equipmentSets.length <= 1 ? "ต้องมีอุปกรณ์อย่างน้อย 1 รายการ" : "ลบอุปกรณ์รายการนี้"}
+                  className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -516,7 +529,7 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
                     setEvElectricityKwh(perKm);
                     emitChange(meetingName, category_type, equipmentSets, vehicleType, fuelType, distanceKm, trips, perKm);
                   }}
-                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
+                  className={`w-full rounded-xl border ${fieldCls(!(Number(evElectricityKwh) > 0))} px-3 py-2.5 text-sm outline-none focus:border-[#32885F]`}
                 />
               </div>
             )}
@@ -533,7 +546,7 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
                     setDistanceKm(e.target.value);
                     emitChange(meetingName, category_type, equipmentSets, vehicleType, fuelType, e.target.value, trips, evElectricityKwh);
                   }}
-                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
+                  className={`w-full rounded-xl border ${fieldCls(!(Number(distanceKm) > 0))} px-3 py-2.5 text-sm outline-none focus:border-[#32885F]`}
                 />
               </div>
               <div>
@@ -546,7 +559,7 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
                     setTrips(e.target.value);
                     emitChange(meetingName, category_type, equipmentSets, vehicleType, fuelType, distanceKm, e.target.value, evElectricityKwh);
                   }}
-                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
+                  className={`w-full rounded-xl border ${fieldCls(!(Number.isInteger(Number(trips)) && Number(trips) >= 1))} px-3 py-2.5 text-sm outline-none focus:border-[#32885F]`}
                 />
               </div>
             </div>
