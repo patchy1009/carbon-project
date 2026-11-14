@@ -120,7 +120,7 @@ export default function TaxCalculatorClient({ loadError, projects, initialProjec
   //   กันกรณีเพิ่งบันทึกการจัดสรรที่หน้าก่อนหน้า แล้วเห็นข้อมูลเก่าจากแคชของ Next
   useEffect(() => {
     router.refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ทำครั้งเดียวตอนเปิดหน้า (router ไม่เปลี่ยนค่า)
   }, []);
 
   // แถวค่าใช้จ่ายตั้งต้นของโครงการ:

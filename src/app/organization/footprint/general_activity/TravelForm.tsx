@@ -6,7 +6,7 @@
  * ฟอร์มนี้ไม่คำนวณเอง ทุกครั้งที่ผู้ใช้แก้ช่องใด จะส่งข้อมูลทั้งชุดขึ้นไปให้หน้า page.tsx ผ่าน onDataChange
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AlertCircle, Trash2 } from "lucide-react";
 import { showConfirm } from "@/lib/dialog"; // กล่องยืนยันของระบบ (แทน confirm ของเบราว์เซอร์)
 import { supabase } from "@/lib/supabaseClient";
@@ -119,6 +119,7 @@ export default function TravelForm({ orgId, initialData, onDataChange, getEFDeta
   // ถ้าหน้าแม่ส่ง initialData มา ให้เติมค่าลงฟอร์ม
   useEffect(() => {
     if (initialData) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- เติมค่าเริ่มต้นลงฟอร์มเมื่อหน้าแม่ส่งข้อมูลเดิมมา
       setTravelName(initialData.travel_name || "");
       setVehicleType(initialData.vehicleType || "car");
       setFuelType(initialData.fuelType || "gasohol_e10");

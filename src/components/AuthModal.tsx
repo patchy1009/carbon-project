@@ -32,7 +32,7 @@ import Modal from "./Modal";
 import { supabase } from "@/lib/supabaseClient";
 import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
 import { getErrorMessage } from "@/lib/errorMessage";
-import { EMAIL_REGEX, USERNAME_REGEX, PASSWORD_MIN_LENGTH, validatePasswordStrength } from "@/lib/authRules";
+import { EMAIL_REGEX, USERNAME_REGEX, PASSWORD_HINT, validatePasswordStrength } from "@/lib/authRules";
 import { industries } from "@/types/industries";
 
 interface AuthModalProps {
@@ -79,11 +79,12 @@ export default function AuthModal({
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [resendTimer, setResendTimer] = useState(300);
-  const [canResend, setCanResend] = useState(false);
+  const canResend = resendTimer === 0; // ครบเวลานับถอยหลังแล้วจึงขอ OTP ใหม่ได้
 
   // รีเซ็ตค่าเมื่อเปิด/ปิด Modal
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- ล้างค่าเก่าในฟอร์มทุกครั้งที่เปิด Modal
       setStep(initialMode);
       setLoginErrorMessage("");
       setErrorMessage("");
@@ -99,12 +100,9 @@ export default function AuthModal({
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | undefined;
     if (step === "otp" && resendTimer > 0) {
-      setCanResend(false);
       timer = setInterval(() => {
         setResendTimer((prev) => prev - 1);
       }, 1000);
-    } else if (resendTimer === 0) {
-      setCanResend(true);
     }
     return () => {
       if (timer) clearInterval(timer);
@@ -234,7 +232,7 @@ export default function AuthModal({
       errors.password = "กรุณากรอกรหัสผ่าน";
       hasError = true;
     } else if (containsSqlSyntax(password, { lenient: true })) {
-      // ตรวจ Syntax SQL ก่อนตรวจความยาว เพื่อให้รหัสที่เป็นคำสั่ง SQL ถูกปฏิเสธด้วยข้อความนี้เสมอ แม้จะสั้น
+      // ตรวจ Syntax SQL ก่อนตรวจรูปแบบรหัสผ่าน เพื่อให้รหัสที่เป็นคำสั่ง SQL ถูกปฏิเสธด้วยข้อความนี้เสมอ แม้จะสั้น
       errors.password = "รหัสผ่านมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่";
       hasError = true;
     } else if (validatePasswordStrength(password)) {
@@ -279,7 +277,6 @@ export default function AuthModal({
       setCompanyName(cleanCompanyName);
       setOtpInput("");
       setResendTimer(300);
-      setCanResend(false);
       setStep("otp");
       setSuccessMessage("ส่งรหัส OTP ไปยังอีเมลของคุณแล้ว กรุณาตรวจสอบอีเมลและกรอกรหัส OTP 6 หลักเพื่อยืนยัน");
     } catch (error: unknown) {
@@ -357,7 +354,6 @@ export default function AuthModal({
       if (error) throw error;
       setOtpInput("");
       setResendTimer(300);
-      setCanResend(false);
       setSuccessMessage("ส่งรหัส OTP ใหม่ไปยังอีเมลของคุณแล้ว กรุณาตรวจสอบอีเมลและกรอกรหัส OTP 6 หลักเพื่อยืนยัน");
     } catch (error: unknown) {
       setErrorMessage(`ไม่สามารถส่ง OTP ใหม่ได้: ${getErrorMessage(error)}`);
@@ -573,7 +569,7 @@ export default function AuthModal({
               <div className="relative mt-1">
                 <input
                   type="password"
-                  placeholder={`อย่างน้อย ${PASSWORD_MIN_LENGTH} ตัวอักษร`}
+                  placeholder={PASSWORD_HINT}
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);

@@ -6,7 +6,7 @@
  *   3) ปุ่มดาวน์โหลด PDF: ส่งตัวเลขที่แสดงอยู่ไปให้ ./pdf/route.tsx สร้างไฟล์ (ไม่อ่านฐานข้อมูลซ้ำ)
  */
 
-import React, { useState } from "react";
+import { useState } from "react";
 import { ELECTRICITY_PRICE_BAHT_PER_KWH, vehicleLabel, GroupedVehicleRecommendation } from "./calculation";
 
 // emission เป็นหน่วยตัน (tCO2e)  ค่าไฟเป็นบาท  ไฟฟ้าเป็น kWh

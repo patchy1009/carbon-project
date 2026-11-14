@@ -78,7 +78,7 @@ export default function AllocationClient({ project, loadError, goals, activities
   //   รายการกิจกรรม/เป้าหมาย/เครดิตอ่านจาก props โดยตรง จึงอัปเดตทันทีโดยไม่ล้างสิ่งที่ผู้ใช้เลือกไว้
   useEffect(() => {
     router.refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ทำครั้งเดียวตอนเปิดหน้า (router ไม่เปลี่ยนค่า)
   }, []);
 
   // เริ่มจากผลที่เคยบันทึกไว้ (ถ้ามี) เพื่อให้แก้ไขต่อได้

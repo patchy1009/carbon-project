@@ -15,7 +15,7 @@ import { CheckCircle2, ChevronDown, Trash2 } from "lucide-react";
 import { industries } from "@/types/industries";
 import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
 import { getErrorMessage } from "@/lib/errorMessage";
-import { PASSWORD_MIN_LENGTH, validatePasswordStrength } from "@/lib/authRules"; // กติการหัสผ่านกลาง (ยาวอย่างน้อย 15 ตัว)
+import { PASSWORD_HINT, validatePasswordStrength } from "@/lib/authRules"; // กติการหัสผ่านกลาง (ยาวอย่างน้อย 8 ตัว มีตัวอักษรอังกฤษและตัวเลข)
 
 type Message = {
   type: "success" | "error";
@@ -273,7 +273,7 @@ export default function AccountUserClient({
     const passwordValidationError = validateNewPassword(newPassword);
 
     if (newPassword && containsSqlSyntax(newPassword, { lenient: true })) {
-      // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อน (รหัสผ่านใช้โหมด lenient) TOR 3.4 แล้วค่อยตรวจความยาว
+      // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อน (รหัสผ่านใช้โหมด lenient) TOR 3.4 แล้วค่อยตรวจรูปแบบรหัสผ่าน
       setNewPasswordError("รหัสผ่านมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
       hasError = true;
     } else if (passwordValidationError) {
@@ -564,7 +564,7 @@ export default function AccountUserClient({
                     );
                   }
                 }}
-                placeholder={`อย่างน้อย ${PASSWORD_MIN_LENGTH} ตัวอักษร`}
+                placeholder={PASSWORD_HINT}
                 className={`w-full px-4 py-2.5 rounded-2xl border text-xs text-slate-800 focus:outline-none focus:ring-2 bg-slate-50/50 ${
                   newPasswordError
                     ? "border-red-500 focus:ring-red-500"

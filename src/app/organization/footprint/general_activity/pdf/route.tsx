@@ -6,7 +6,6 @@
  */
 import { NextResponse } from 'next/server';
 import { ELECTRICITY_PRICE_BAHT_PER_KWH, vehicleLabel } from '../calculation';
-import React from 'react';
 import {
   renderToBuffer,
   Document,
@@ -294,6 +293,120 @@ const RecCategoryList = ({
   );
 };
 
+// ข้อมูลที่ใช้วาดเอกสาร PDF (แปลงเป็นตัวเลข/รายการที่ปลอดภัยแล้วจาก request)
+type ReportData = {
+  meetingEmission: number;
+  travelEmission: number;
+  meetingElecKWh: number;
+  meetingElecCost: number;
+  travelElecKWh: number;
+  travelElecCost: number;
+  meetingRecommendation: GroupedRecommendation[];
+  travelRecommendation: GroupedRecommendation[];
+};
+
+// สร้างหน้าเอกสาร PDF (แยกออกจาก POST เพื่อให้ POST ไม่มี JSX อยู่ใน try/catch)
+function buildReportDocument(data: ReportData) {
+  const {
+    meetingEmission,
+    travelEmission,
+    meetingElecKWh,
+    meetingElecCost,
+    travelElecKWh,
+    travelElecCost,
+    meetingRecommendation,
+    travelRecommendation,
+  } = data;
+  const totalEmission = meetingEmission + travelEmission;
+  const hasAnyRec =
+    hasValidRecs(meetingRecommendation) ||
+    hasValidRecs(travelRecommendation);
+
+  return (
+    <Document>
+      <Page size="A4" style={styles.page}>
+        <Text style={styles.header}>
+          สรุปผลการประเมินคาร์บอนฟุตพรินต์องค์กร
+        </Text>
+
+        {/* สรุปผลการคำนวณหลัก */}
+        <View style={styles.summaryContainer} wrap={false}>
+          <View style={styles.card}>
+            <View style={styles.row}>
+              <View>
+                <Text style={styles.cardTitle}>
+                  หมวดการประชุม อบรม และจัดอีเวนต์
+                </Text>
+                {meetingElecKWh > 0 && (
+                  <Text style={styles.subText}>
+                    {`ปริมาณไฟฟ้า: ${formatNum(meetingElecKWh, 2)} kWh | ค่าไฟโดยประมาณ (${ELECTRICITY_PRICE_BAHT_PER_KWH} บาท/kWh): ${formatNum(meetingElecCost, 2)} บาท`}
+                  </Text>
+                )}
+              </View>
+              <Text style={{ fontSize: 11 }}>
+                {`${formatNum(meetingEmission)} tCO2e`}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.row}>
+              <View>
+                <Text style={styles.cardTitle}>
+                  หมวดการเดินทาง
+                </Text>
+                {travelElecKWh > 0 && (
+                  <Text style={styles.subText}>
+                    {`ปริมาณไฟฟ้า: ${formatNum(travelElecKWh, 2)} kWh | ค่าไฟโดยประมาณ (${ELECTRICITY_PRICE_BAHT_PER_KWH} บาท/kWh): ${formatNum(travelElecCost, 2)} บาท`}
+                  </Text>
+                )}
+              </View>
+              <Text style={{ fontSize: 11 }}>
+                {`${formatNum(travelEmission)} tCO2e`}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.totalCard}>
+            <Text style={styles.totalText}>
+              ปริมาณการปล่อยก๊าซเรือนกระจกรวมทั้งหมด
+            </Text>
+            <Text style={styles.totalText}>
+              {`${formatNum(totalEmission)} tCO2e`}
+            </Text>
+          </View>
+        </View>
+
+        {/* หมวดข้อเสนอแนะ */}
+        {hasAnyRec && (
+          <View style={styles.recSection}>
+            <View style={styles.recHeaderBlock} wrap={false}>
+              <Text style={styles.recHeader}>
+                ข้อเสนอแนะเพื่อการลดการปล่อยก๊าซเรือนกระจก
+              </Text>
+              <Text style={styles.recSubHeader}>
+                แนวทางและเปรียบเทียบทางเลือกในการลดปริมาณการปล่อยคาร์บอนขององค์กร
+              </Text>
+            </View>
+
+            <RecCategoryList
+              title="• หมวดการประชุม อบรม และจัดกิจกรรม"
+              recommendations={meetingRecommendation}
+              labelPrefix="รูปแบบ"
+            />
+
+            <RecCategoryList
+              title="• หมวดการเดินทาง"
+              recommendations={travelRecommendation}
+              labelPrefix="พาหนะ"
+            />
+          </View>
+        )}
+      </Page>
+    </Document>
+  );
+}
+
 // รับข้อมูลผลคำนวณแล้วสร้าง PDF ส่งกลับเป็นไฟล์ดาวน์โหลด
 export async function POST(request: Request) {
   try {
@@ -301,7 +414,6 @@ export async function POST(request: Request) {
 
     const meetingEmission = Number(body.meetingEmission) || 0;
     const travelEmission = Number(body.travelEmission) || 0;
-    const totalEmission = meetingEmission + travelEmission;
 
     const meetingElecKWh = Number(body.meetingRawElectricityKWh) || 0;
     const meetingElecCost = Number(body.meetingElectricityCost) || 0;
@@ -313,95 +425,18 @@ export async function POST(request: Request) {
     const travelRecommendation: GroupedRecommendation[] =
       body.travelRecommendation || [];
 
-    const hasAnyRec =
-      hasValidRecs(meetingRecommendation) ||
-      hasValidRecs(travelRecommendation);
-
-    const PdfDocument = (
-      <Document>
-        <Page size="A4" style={styles.page}>
-          <Text style={styles.header}>
-            สรุปผลการประเมินคาร์บอนฟุตพรินต์องค์กร
-          </Text>
-
-          {/* สรุปผลการคำนวณหลัก */}
-          <View style={styles.summaryContainer} wrap={false}>
-            <View style={styles.card}>
-              <View style={styles.row}>
-                <View>
-                  <Text style={styles.cardTitle}>
-                    หมวดการประชุม อบรม และจัดอีเวนต์
-                  </Text>
-                  {meetingElecKWh > 0 && (
-                    <Text style={styles.subText}>
-                      {`ปริมาณไฟฟ้า: ${formatNum(meetingElecKWh, 2)} kWh | ค่าไฟโดยประมาณ (${ELECTRICITY_PRICE_BAHT_PER_KWH} บาท/kWh): ${formatNum(meetingElecCost, 2)} บาท`}
-                    </Text>
-                  )}
-                </View>
-                <Text style={{ fontSize: 11 }}>
-                  {`${formatNum(meetingEmission)} tCO2e`}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.card}>
-              <View style={styles.row}>
-                <View>
-                  <Text style={styles.cardTitle}>
-                    หมวดการเดินทาง
-                  </Text>
-                  {travelElecKWh > 0 && (
-                    <Text style={styles.subText}>
-                      {`ปริมาณไฟฟ้า: ${formatNum(travelElecKWh, 2)} kWh | ค่าไฟโดยประมาณ (${ELECTRICITY_PRICE_BAHT_PER_KWH} บาท/kWh): ${formatNum(travelElecCost, 2)} บาท`}
-                    </Text>
-                  )}
-                </View>
-                <Text style={{ fontSize: 11 }}>
-                  {`${formatNum(travelEmission)} tCO2e`}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.totalCard}>
-              <Text style={styles.totalText}>
-                ปริมาณการปล่อยก๊าซเรือนกระจกรวมทั้งหมด
-              </Text>
-              <Text style={styles.totalText}>
-                {`${formatNum(totalEmission)} tCO2e`}
-              </Text>
-            </View>
-          </View>
-
-          {/* หมวดข้อเสนอแนะ */}
-          {hasAnyRec && (
-            <View style={styles.recSection}>
-              <View style={styles.recHeaderBlock} wrap={false}>
-                <Text style={styles.recHeader}>
-                  ข้อเสนอแนะเพื่อการลดการปล่อยก๊าซเรือนกระจก
-                </Text>
-                <Text style={styles.recSubHeader}>
-                  แนวทางและเปรียบเทียบทางเลือกในการลดปริมาณการปล่อยคาร์บอนขององค์กร
-                </Text>
-              </View>
-
-              <RecCategoryList
-                title="• หมวดการประชุม อบรม และจัดกิจกรรม"
-                recommendations={meetingRecommendation}
-                labelPrefix="รูปแบบ"
-              />
-
-              <RecCategoryList
-                title="• หมวดการเดินทาง"
-                recommendations={travelRecommendation}
-                labelPrefix="พาหนะ"
-              />
-            </View>
-          )}
-        </Page>
-      </Document>
+    const pdfBuffer = await renderToBuffer(
+      buildReportDocument({
+        meetingEmission,
+        travelEmission,
+        meetingElecKWh,
+        meetingElecCost,
+        travelElecKWh,
+        travelElecCost,
+        meetingRecommendation,
+        travelRecommendation,
+      })
     );
-
-    const pdfBuffer = await renderToBuffer(PdfDocument);
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,
@@ -413,12 +448,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('PDF Generation Server Error:', error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'เกิดข้อผิดพลาดในการสร้างไฟล์ PDF',
-      },
+      { error: 'เกิดข้อผิดพลาดในการสร้างไฟล์ PDF กรุณาลองใหม่อีกครั้ง' },
       { status: 500 }
     );
   }

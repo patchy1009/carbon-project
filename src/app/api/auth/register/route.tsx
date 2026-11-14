@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
 import { getErrorMessage } from "@/lib/errorMessage"; // แปล error ของ Supabase (ภาษาอังกฤษ) เป็นภาษาไทย
-import { validatePasswordStrength } from "@/lib/authRules"; // กติการหัสผ่านกลาง (ยาวอย่างน้อย 15 ตัว)
+import { validatePasswordStrength } from "@/lib/authRules"; // กติการหัสผ่านกลาง (ยาวอย่างน้อย 8 ตัว มีตัวอักษรอังกฤษและตัวเลข)
 
 // Supabase client ฝั่ง server (ใช้ anon key ทำงานตามสิทธิ์ของคนที่ยังไม่ล็อกอิน)
 const supabase = createClient(
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // ตรวจความยาวรหัสผ่านฝั่ง server ด้วย (เดิมตรวจที่หน้าเว็บอย่างเดียว ยิง API ตรงจะข้ามได้)
+    // ตรวจรูปแบบรหัสผ่านฝั่ง server ด้วย (เดิมตรวจที่หน้าเว็บอย่างเดียว ยิง API ตรงจะข้ามได้)
     const passwordProblem = validatePasswordStrength(password);
     if (passwordProblem) {
       return NextResponse.json({ error: passwordProblem }, { status: 400 });

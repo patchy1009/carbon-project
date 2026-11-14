@@ -47,14 +47,6 @@ const BUCKET = 'documents';
 /*  Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
-function formatFileSize(bytes: number) {
-  if (!bytes) return '0 KB';
-  const mb = bytes / (1024 * 1024);
-  if (mb >= 1) return `${mb.toFixed(1)} MB`;
-  const kb = bytes / 1024;
-  return `${Math.max(1, Math.round(kb))} KB`;
-}
-
 // ป้ายชนิดไฟล์ สีเดียวกับหน้าเอกสารฝั่งองค์กร (organization/documents/DocumentsClient.tsx)
 // ใช้ fileExtension กลาง (ไฟล์ไม่มีนามสกุล / ขึ้นต้นด้วยจุด จะได้ค่าว่าง)
 function fileBadge(filePath: string | null): { label: string; color: string } {

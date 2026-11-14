@@ -18,7 +18,7 @@
  *   - ตาราง general_activity_* ต้องเปิด RLS (supabase/rls_general_activity.sql) ไม่งั้นองค์กรเห็นข้อมูลกันเอง
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import MeetingForm, { MeetingData } from "./MeetingForm";
 import TravelForm, { TravelData } from "./TravelForm";
 import CalculationResult from "./CalculationResult";

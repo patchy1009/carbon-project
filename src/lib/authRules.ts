@@ -8,33 +8,33 @@ export const USERNAME_REGEX = /^[a-zA-Z0-9_-]{3,20}$/;
 
 /* =====================================================================
  * กติการหัสผ่าน (ใช้ที่ สมัครสมาชิก / ลืมรหัสผ่าน / เปลี่ยนรหัสผ่าน / API สมัครสมาชิก ที่เดียวกัน)
- *
- * อ้างอิง NIST SP 800-63B-4 (2025) หัวข้อ 3.1.1.2 และ OWASP Authentication Cheat Sheet
- *   - ระบบนี้ล็อกอินด้วยรหัสผ่านอย่างเดียว (ไม่มีปัจจัยที่สอง) -> NIST ให้ยาวอย่างน้อย 15 ตัว
- *     (ถ้ามีการยืนยันตัวตนสองขั้นตอนทุกครั้งที่ล็อกอิน จึงลดเหลือ 8 ได้)
- *   - ไม่บังคับ "ต้องมีตัวอักษร+ตัวเลข+สัญลักษณ์" เพราะ NIST ห้ามกำหนดกฎผสมชนิดตัวอักษร
- *     (ผู้ใช้มักตั้งเป็นแบบเดาง่าย เช่น Password1) ให้เน้นความยาวแทน และแนะนำให้ตั้งเป็นวลียาวๆ
- *   - รองรับยาวได้ถึง 64 ตัว (NIST ให้รองรับอย่างน้อย 64) ส่วน Supabase ใช้ bcrypt ซึ่งรับได้ไม่เกิน 72 ไบต์
- *   - กันรหัสที่ซ้ำตัวเดิมๆ เช่น aaaaaaaaaaaaaaa (ใช้ตัวอักษรต่างกันน้อยกว่า 5 ตัว)
- * ข้อจำกัด: ยังไม่มีรายการรหัสผ่านที่รั่วไหล (blocklist) ตามที่ NIST แนะนำ
+ *   - ยาวอย่างน้อย 8 ตัว
+ *   - ต้องมีตัวอักษรภาษาอังกฤษอย่างน้อย 1 ตัว และตัวเลขอย่างน้อย 1 ตัว (ผสมกัน)
+ *   - ยาวสุด 64 ตัว และไม่เกิน 72 ไบต์ (ข้อจำกัดของ bcrypt ที่ Supabase ใช้เก็บรหัสผ่าน ตัวอักษรไทย 1 ตัว = 3 ไบต์)
+ * ข้อจำกัด: ยังไม่มีรายการรหัสผ่านที่รั่วไหล (blocklist) และกฎนี้อ่อนกว่า NIST SP 800-63B-4 (2025)
+ *           ซึ่งแนะนำให้ยาว 15 ตัวขึ้นไปเมื่อใช้รหัสผ่านอย่างเดียว และไม่แนะนำให้บังคับกฎผสมชนิดตัวอักษร
  * ===================================================================== */
-export const PASSWORD_MIN_LENGTH = 15;
-export const PASSWORD_MAX_LENGTH = 64;
-const PASSWORD_MAX_BYTES = 72; // ข้อจำกัดของ bcrypt ที่ Supabase ใช้เก็บรหัสผ่าน (ตัวอักษรไทย 1 ตัว = 3 ไบต์)
-const PASSWORD_MIN_DISTINCT_CHARS = 5;
+export const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MAX_LENGTH = 64;
+const PASSWORD_MAX_BYTES = 72;
 
-// คืนข้อความภาษาไทยบอกว่าไม่ผ่านเพราะอะไร หรือ "" ถ้าผ่าน (ไม่ตัดช่องว่างหัวท้าย เพราะ NIST ให้ตรวจทั้งรหัสตามที่พิมพ์)
+// ข้อความที่แสดงในช่องกรอกรหัสผ่าน (placeholder) ให้ผู้ใช้เห็นกติกาก่อนพิมพ์
+export const PASSWORD_HINT = `อย่างน้อย ${PASSWORD_MIN_LENGTH} ตัว มีตัวอักษรอังกฤษและตัวเลข`;
+
+const PASSWORD_PATTERN = new RegExp(`^(?=.*[A-Za-z])(?=.*\\d).{${PASSWORD_MIN_LENGTH},}$`);
+
+// คืนข้อความภาษาไทยบอกว่าไม่ผ่านเพราะอะไร หรือ "" ถ้าผ่าน (ไม่ตัดช่องว่างหัวท้าย)
 export function validatePasswordStrength(password: string): string {
-  if (password.length < PASSWORD_MIN_LENGTH) {
-    return `รหัสผ่านต้องมีอย่างน้อย ${PASSWORD_MIN_LENGTH} ตัวอักษร (ตั้งเป็นวลายาวๆ ที่จำง่ายได้)`;
+  if (!PASSWORD_PATTERN.test(password)) {
+    return `รหัสผ่านต้องมีอย่างน้อย ${PASSWORD_MIN_LENGTH} ตัวอักษร และมีตัวอักษรภาษาอังกฤษกับตัวเลขผสมกัน`;
   }
 
-  if (password.length > PASSWORD_MAX_LENGTH || new TextEncoder().encode(password).length > PASSWORD_MAX_BYTES) {
+  const bytes = new TextEncoder().encode(password).length;
+  if (password.length > PASSWORD_MAX_LENGTH) {
     return `รหัสผ่านยาวเกินไป (ไม่เกิน ${PASSWORD_MAX_LENGTH} ตัวอักษร)`;
   }
-
-  if (new Set(password).size < PASSWORD_MIN_DISTINCT_CHARS) {
-    return "รหัสผ่านเดาง่ายเกินไป (ใช้ตัวอักษรซ้ำๆ) กรุณาตั้งใหม่";
+  if (bytes > PASSWORD_MAX_BYTES) {
+    return "รหัสผ่านยาวเกินไป (ตัวอักษรไทยนับเป็น 3 ไบต์ ใช้ได้รวมไม่เกิน 72 ไบต์) กรุณาตั้งให้สั้นลง";
   }
 
   return "";

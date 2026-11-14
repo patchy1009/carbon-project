@@ -23,7 +23,7 @@ import {
 import { supabase } from "@/lib/supabaseClient";
 import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
 import { getErrorMessage } from "@/lib/errorMessage";
-import { PASSWORD_MIN_LENGTH, validatePasswordStrength } from "@/lib/authRules"; // กติการหัสผ่านกลาง (ยาวอย่างน้อย 15 ตัว)
+import { PASSWORD_HINT, PASSWORD_MIN_LENGTH, validatePasswordStrength } from "@/lib/authRules"; // กติการหัสผ่านกลาง (ยาวอย่างน้อย 8 ตัว มีตัวอักษรอังกฤษและตัวเลข)
 
 function formatTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
@@ -340,7 +340,7 @@ export default function ForgotPasswordPage() {
     setErrorMessage("");
     setSuccessMessage("");
 
-    // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อน (รหัสผ่านใช้โหมด lenient) แล้วค่อยตรวจความยาว
+    // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อน (รหัสผ่านใช้โหมด lenient) แล้วค่อยตรวจรูปแบบรหัสผ่าน
     if (containsSqlSyntax(password, { lenient: true })) {
       setErrorMessage("รหัสผ่านมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
       return;
@@ -558,7 +558,7 @@ export default function ForgotPasswordPage() {
                       required
                       minLength={PASSWORD_MIN_LENGTH}
                       autoComplete="new-password"
-                      placeholder={`อย่างน้อย ${PASSWORD_MIN_LENGTH} ตัวอักษร`}
+                      placeholder={PASSWORD_HINT}
                       value={password}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                         setPassword(e.target.value);
