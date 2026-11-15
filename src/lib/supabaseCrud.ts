@@ -1,6 +1,6 @@
 
 import {supabase} from "./supabaseClient";
-import { showConfirm, showError } from "./dialog"; // ใช้กล่องแจ้งเตือนกลางแทน alert/confirm ของเบราว์เซอร์
+import { showAlert, showConfirm, showError } from "./dialog"; // ใช้กล่องแจ้งเตือนกลางแทน alert/confirm ของเบราว์เซอร์
 
 type Values = Record<string, unknown>;
 
@@ -93,6 +93,38 @@ export async function updateRecord<T>(
     }
     // as unknown as T: บอก TypeScript ว่าข้อมูลที่ได้มีรูปแบบตามชนิด T ที่คนเรียกระบุ
     return data as unknown as T;
+}
+
+/* ตรวจก่อนลบแถวแม่: ยังมีแถวลูกในตาราง childTable ที่อ้างถึงอยู่ไหม
+ * มี -> แจ้งให้ไปลบ/ย้ายแถวลูกก่อน แล้วคืน true (= ห้ามลบ) / ไม่มี -> คืน false
+ * นับจากฐานข้อมูลตอนกด (เผื่อหน้าจอยังไม่รีเฟรช) ถ้านับไม่ได้ใช้ fallbackCount จากรายการบนหน้าแทน
+ * ใช้: if (await blockIfInUse('activity', 'scope_id', id, n, 'ขอบเขต "Scope 1"', 'กิจกรรม')) return; */
+export async function blockIfInUse(
+    childTable : string,
+    fkCol : string,
+    idVal : string,
+    fallbackCount : number,
+    parentLabel : string,   // เช่น ประเภท "Electricity"
+    childLabel : string,    // เช่น ค่า EF
+) : Promise<boolean> {
+    const { count, error } = await supabase
+        .from(childTable)
+        .select(fkCol, { count: 'exact', head: true })
+        .eq(fkCol, idVal);
+    const used = error || count == null ? fallbackCount : count;
+    if (used <= 0) return false;
+    await showAlert(
+        `${parentLabel} ยังมี${childLabel}อยู่ ${used} รายการ ` +
+        `กรุณาลบ${childLabel}เหล่านั้นก่อน จึงจะลบได้`,
+        { title: 'ยังลบไม่ได้', tone: 'warning' }
+    );
+    return true;
+}
+
+/* ข้อความยืนยันลบข้อมูลกลางที่ฝั่งองค์กรเห็น: เตือนแอดมินว่าหน้าเว็บขององค์กรจะเปลี่ยนตาม
+ * ใช้: deleteRecord(..., withOrgImpact('ลบกิจกรรม "A"?')) */
+export function withOrgImpact(question : string) : string {
+    return `${question}\nข้อมูลที่แสดงบนเว็บไซต์ฝั่งองค์กรจะเปลี่ยนแปลงไปด้วย`;
 }
 
 /* ลบ 1 แถวตาม id+ถามยืนยันก่อน ลบแล้วคืนค่า true */

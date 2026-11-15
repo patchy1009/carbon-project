@@ -4,7 +4,7 @@
 import Select from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
 import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { dbErrorMessage, deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
+import { dbErrorMessage, deleteRecord, withOrgImpact, insertRecord, updateRecord } from '@/lib/supabaseCrud';
 import { validateForm, extendSchema, notDuplicate, existsIn, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber } from '@/lib/normalization';
 import { showConfirm, showError, showSaved } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert/confirm
@@ -388,8 +388,8 @@ export default function OfficeRecommendationClient({
       'info_id',
       id,
       used
-        ? 'หัวข้อนี้ถูกใช้ในเงื่อนไขของบางแนวทาง ถ้าลบ เงื่อนไขเหล่านั้นจะถูกลบตามด้วย ต้องการลบ?'
-        : 'ลบหัวข้อนี้? (ถ้ามีบริษัทกรอกข้อมูลหัวข้อนี้ไว้แล้ว จะลบไม่ได้)'
+        ? withOrgImpact('หัวข้อนี้ถูกใช้ในเงื่อนไขของบางแนวทาง ถ้าลบ เงื่อนไขเหล่านั้นจะถูกลบตามด้วย ต้องการลบ?')
+        : withOrgImpact('ลบหัวข้อนี้? (ถ้ามีบริษัทกรอกข้อมูลหัวข้อนี้ไว้แล้ว จะลบไม่ได้)')
     );
     if (!ok) return;
     setInfoTypes((prev) => prev.filter((i) => i.info_id !== id));
@@ -648,7 +648,7 @@ export default function OfficeRecommendationClient({
       'carbon_reduction_recommendation',
       'rec_id',
       id,
-      'ลบแนวทางนี้พร้อมเงื่อนไขทั้งหมด?'
+      withOrgImpact('ลบแนวทางนี้พร้อมเงื่อนไขทั้งหมด?')
     );
     if (!ok) return;
     setRecs((prev) => prev.filter((r) => r.rec_id !== id));
