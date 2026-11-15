@@ -25,7 +25,8 @@ export const infoSchema: formSchema<InfoField> = {
 };
 
 /* แนวทางลดคาร์บอน */
-export type RecField = 'recommendation' | 'percent_min' | 'percent_max' | 'scopedetail_id';
+// [ลบ] percent_max (% สูงสุดที่ลดได้) ไม่เก็บแล้ว เหลือ % เดียวคือ percent_min
+export type RecField = 'recommendation' | 'percent_min' | 'scopedetail_id';
 // เปอร์เซ็นต์ที่ลดได้: มากกว่า 0 ไม่เกิน 100 ทศนิยมไม่เกิน 2 หลัก
 const percentRule = (label: string) =>
   isDecimal(label, { allowNegative: false, allowZero: false, max: 100, maxDecimals: 2 });
@@ -36,10 +37,6 @@ export const recSchema: formSchema<RecField> = {
   percent_min: {
     normalize: normalizeNumberString,
     rules: [required('เปอร์เซ็นต์ที่ลดได้'), percentRule('เปอร์เซ็นต์ที่ลดได้')],
-  },
-  percent_max: {
-    normalize: normalizeNumberString,
-    rules: [percentRule('เปอร์เซ็นต์สูงสุด')], // เว้นว่าง = ค่าเดียว
   },
   scopedetail_id: { rules: [] }, // ไม่บังคับ แต่ถ้าเลือกต้องมีอยู่จริง (existsIn ตอน submit)
 };

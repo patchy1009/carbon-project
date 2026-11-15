@@ -101,13 +101,13 @@ export default async function FootprintReportPage({
   // ----- แนวทางที่แอดมินกรอก -----
   const recs: Recommendation[] = ((recRes.data ?? []) as any[])
     .map((r) => {
-      const mid = Number(r.carbon_reduction_amount) || 0;
+      // [แก้ไข] ไม่มี percent_max แล้ว ใช้ % เดียว = percent_min (แถวเก่าที่ไม่มี ใช้ carbon_reduction_amount แทน)
+      //   เดิม percent = carbon_reduction_amount (ค่ากลางของช่วง) + percentMin / percentMax
+      const percent = Number(r.percent_min) || Number(r.carbon_reduction_amount) || 0;
       return {
         rec_id: r.rec_id as string, // [แก้ไข] เดิม rec_uid (schema_cleanup.sql ขั้น 4.2)
         name: String(r.recommendation ?? ''),
-        percent: mid,
-        percentMin: Number(r.percent_min) || mid,
-        percentMax: Number(r.percent_max) || mid,
+        percent,
         scopedetail_id: (r.scopedetail_id as string | null) ?? null,
         calcMethod: String(r.calc_method ?? 'percent'),
         conditions: ((r.recommendation_condition ?? []) as any[]).map((c) => ({
@@ -137,10 +137,7 @@ export default async function FootprintReportPage({
     .map((r) => ({
       name: r.name,
       amount: r.amount,
-      low: r.low,
-      high: r.high,
-      percentMin: r.percentMin,
-      percentMax: r.percentMax,
+      percent: r.percent, // [แก้ไข] เดิมส่ง low / high / percentMin / percentMax (ช่วง)
       basis: r.scopedetail_id ? `การปล่อยจาก "${names[r.scopedetail_id] ?? 'กิจกรรมนี้'}"` : '',
     }))
     .sort((a, b) => (b.amount ?? -1) - (a.amount ?? -1)) // ผลกระทบสูงสุดก่อน แนะนำทั่วไปไว้ท้าย

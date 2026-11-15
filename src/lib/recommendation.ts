@@ -20,9 +20,8 @@ export type Condition = Operand & {
 export type Recommendation = {
   rec_id: string; // [แก้ไข] เดิม rec_uid
   name: string;
-  percent: number;      // % ตัวแทน (ค่ากลาง) 0-100
-  percentMin: number;   // ขอบล่างของช่วง
-  percentMax: number;   // ขอบบนของช่วง
+  percent: number;      // % ที่ลดได้ 0-100 (percent_min)
+  // [ลบ] percentMin / percentMax (ช่วง %) ไม่มี percent_max ในฐานข้อมูลแล้ว แนวทางมี % เดียว
   scopedetail_id: string | null; // กิจกรรมที่ผูก = ฐานของ %
   calcMethod: string;   // percent | ac_replace | refrigerant_leak
   conditions: Condition[];
@@ -37,9 +36,8 @@ export type OrgData = {
 };
 
 export type Applied = Recommendation & {
-  amount: number | null; // tCO2e ที่ลดได้ (ค่ากลาง) null = แนะนำทั่วไป
-  low: number | null;
-  high: number | null;
+  amount: number | null; // tCO2e ที่ลดได้ null = แนะนำทั่วไป
+  // [ลบ] low / high (ช่วงประมาณการ) เพราะไม่มี % สูงสุดแล้ว
 };
 
 // เปรียบเทียบตัวเลข 2 ค่าตามเครื่องหมายที่ระบุ
@@ -92,8 +90,6 @@ export function conditionMet(c: Condition, d: OrgData): boolean {
 function calcPercent(base: number, rec: Recommendation) {
   return {
     amount: (base * rec.percent) / 100,
-    low: (base * rec.percentMin) / 100,
-    high: (base * rec.percentMax) / 100,
   };
 }
 
@@ -117,14 +113,14 @@ export function evaluate(recs: Recommendation[], data: OrgData): Applied[] {
 
   for (const r of applicable) {
     if (!r.scopedetail_id) {
-      out.push({ ...r, amount: null, low: null, high: null }); // แนะนำทั่วไป ไม่มีตัวเลข
+      out.push({ ...r, amount: null }); // แนะนำทั่วไป ไม่มีตัวเลข
       continue;
     }
     const base = remaining[r.scopedetail_id] ?? data.activity[r.scopedetail_id]?.ghg ?? 0;
     if (base <= 0) continue; // องค์กรนี้ไม่มีการปล่อยจากกิจกรรมนี้ → ไม่แนะนำ
-    const { amount, low, high } = calc(base, r);
+    const { amount } = calc(base, r);
     remaining[r.scopedetail_id] = base - amount;
-    out.push({ ...r, amount, low, high });
+    out.push({ ...r, amount });
   }
   return out;
 }
