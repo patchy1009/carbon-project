@@ -3,6 +3,8 @@
 // หน้าประเมินการยกเว้นภาษีนิติบุคคลจากการขายคาร์บอนเครดิต (TOR ข้อ 12.1–12.4) ฝั่ง browser
 //   1) เลือกโครงการ (12.1)  เลือกได้เฉพาะโครงการที่จัดสรรเครดิตแล้ว เครดิตที่นำไปขาย (CreditSold) มาจากผลจัดสรรของหน้าจัดสรร ผู้ใช้ไม่ต้องกรอก
 //   2) กรอกราคาขายต่อหน่วยและค่าใช้จ่ายของโครงการ (12.2)  ค่าใช้จ่ายเลือกจากรายการมาตรฐานที่แอดมินตั้งไว้ (ข้อ 5.5) แล้วแก้จำนวนเงินได้ หรือเพิ่มรายการเอง
+//      รายการมาตรฐาน (ค่าธรรมเนียม อบก. / ค่า VVB) เป็นค่าบังคับของโครงการ T-VER จึงลบไม่ได้ แก้ได้แค่จำนวนเงิน
+//      รายการที่องค์กรเพิ่มเองลบได้
 //   3) คำนวณรายได้ (12.3) และภาษีที่ได้รับยกเว้น (12.4) ด้วยสูตร 7, 8, 9 ในไฟล์นี้  แล้วบันทึกด้วยฟังก์ชัน save_tax_assessment
 //   ใช้เครดิตปีที่ 1 เท่านั้น ตาม TOR ข้อ 11.3 (หน้าที่อ่านข้อมูลจากฐานข้อมูลอยู่ที่ page.tsx ไฟล์นี้รับมาทาง props)
 
@@ -124,9 +126,9 @@ export default function TaxCalculatorClient({ loadError, projects, initialProjec
   }, []);
 
   // แถวค่าใช้จ่ายตั้งต้นของโครงการ:
-  //   เคยบันทึกผลประเมินไว้ -> ใช้ค่าที่บันทึกไว้ เพื่อแก้ไขต่อได้ (ข้อ 12.2)
-  //   ยังไม่เคยบันทึก     -> ดึงรายการต้นทุนมาตรฐานของแอดมิน (ข้อ 5.5) มาใส่ให้ทั้งหมด พร้อมราคาสุทธิ
-  //                         ตามแผนภาพ 5.2.2.11 ที่ข้อมูลต้นทุนโครงการ "ถูกนำเข้ามาประมวลผล" องค์กรแก้จำนวนเงิน/ลบ/เพิ่มเองได้
+  //   เคยบันทึกผลประเมินไว้ -> ใช้ค่าที่บันทึกไว้ เพื่อแก้ไขต่อได้ 
+  //   ยังไม่เคยบันทึก     -> ดึงรายการต้นทุนมาตรฐานของแอดมินมาใส่ให้ทั้งหมด พร้อมราคาสุทธิ
+  //                         ตามแผนภาพ 5.2.2.11 ที่ข้อมูลต้นทุนโครงการ "ถูกนำเข้ามาประมวลผล" องค์กรแก้จำนวนเงินได้ และเพิ่ม/ลบรายการของตัวเองได้
   const initialRows = (p: TaxProject | undefined): CostRow[] =>
     p?.saved
       ? p.saved.costs.map(toRow)
@@ -147,6 +149,7 @@ export default function TaxCalculatorClient({ loadError, projects, initialProjec
   const project = projects.find((p) => p.id === projectId);
   const ready = canAssess(project);
   const hasSaved = !!project?.saved || savedNow;
+  // รายการมาตรฐานที่ยังไม่อยู่ในแถว (เช่น แอดมินเพิ่มรายการใหม่หลังองค์กรบันทึกผลประเมินไว้แล้ว) ให้เลือกเพิ่มได้
   const unusedCatalog = catalog.filter((c) => !rows.some((r) => r.costId === c.cost_id));
 
   // แก้อะไรก็ตาม ผลที่คำนวณไว้ไม่ตรงกับช่องกรอกแล้ว -> ซ่อนผล ต้องกดคำนวณใหม่
@@ -182,8 +185,9 @@ export default function TaxCalculatorClient({ loadError, projects, initialProjec
     touch("rows");
   }
 
+  // ลบได้เฉพาะรายการที่องค์กรเพิ่มเอง (costId = null) รายการมาตรฐานเป็นค่าบังคับของโครงการ ลบไม่ได้
   function removeRow(key: string) {
-    setRows((prev) => prev.filter((r) => r.key !== key));
+    setRows((prev) => prev.filter((r) => r.key !== key || r.costId !== null));
     touch();
   }
 
@@ -367,7 +371,7 @@ export default function TaxCalculatorClient({ loadError, projects, initialProjec
                     </p>
                   ) : (
                     <p className="text-[11px] text-slate-400">
-                      รายการมาตรฐานดึงมาจากผู้ดูแลระบบ แก้จำนวนเงินหรือลบออกได้ และเพิ่มรายการของโครงการเองได้
+                      รายการมาตรฐานดึงมาจากผู้ดูแลระบบ เป็นค่าใช้จ่ายบังคับของโครงการ T-VER (ลบไม่ได้ แก้จำนวนเงินได้) และเพิ่มรายการของโครงการเองได้
                     </p>
                   )}
 
@@ -384,7 +388,7 @@ export default function TaxCalculatorClient({ loadError, projects, initialProjec
                           <input
                             type="text"
                             aria-label="ชื่อรายการค่าใช้จ่าย"
-                            placeholder="ชื่อรายการ เช่น ค่ากล้าไม้"
+                            placeholder="ชื่อรายการ เช่น ค่าแรงปลูกต้นไม้"
                             maxLength={150}
                             value={r.name}
                             onChange={(e) => updateRow(r.key, { name: e.target.value }, nameKey(r.key))}
@@ -402,14 +406,19 @@ export default function TaxCalculatorClient({ loadError, projects, initialProjec
                           onChange={(e) => updateRow(r.key, { amount: e.target.value }, amountKey(r.key))}
                           className={`${inputClass(!!errors[amountKey(r.key)])} text-right`}
                         />
-                        <button
-                          type="button"
-                          aria-label={`ลบ ${r.name || "รายการใหม่"}`}
-                          onClick={() => removeRow(r.key)}
-                          className="rounded p-1 text-slate-400 hover:text-red-500"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {/* ปุ่มลบเฉพาะรายการที่เพิ่มเอง รายการมาตรฐานเว้นช่องว่างไว้ให้แถวตรงกัน */}
+                        {r.costId === null ? (
+                          <button
+                            type="button"
+                            aria-label={`ลบ ${r.name || "รายการใหม่"}`}
+                            onClick={() => removeRow(r.key)}
+                            className="rounded p-1 text-slate-400 hover:text-red-500"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        ) : (
+                          <span aria-hidden="true" />
+                        )}
                       </div>
                       {errors[nameKey(r.key)] && <p className="text-xs text-red-600">{errors[nameKey(r.key)]}</p>}
                       {errors[amountKey(r.key)] && <p className="text-xs text-red-600">{errors[amountKey(r.key)]}</p>}
