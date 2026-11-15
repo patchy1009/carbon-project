@@ -32,28 +32,31 @@ type InfoType = {
 };
 type ActivityOption = { scopedetail_id: string; detail_name: string | null; unit: string | null };
 type Operator = '>' | '>=' | '<' | '<=' | '=';
-type SourceType = 'activity' | 'office_info' | 'scope' | 'total';
+// เงื่อนไขใช้ได้แค่ค่าของกิจกรรม / ข้อมูลสำนักงาน
+// [เลิกใช้] 'scope' (ก๊าซรวมของ Scope) และ 'total' (ก๊าซรวมทั้งหมด) แถวเก่าใน DB อาจยังมีค่านี้ -> LegacySourceType
+type SourceType = 'activity' | 'office_info';
+type LegacySourceType = SourceType | 'scope' | 'total';
 type Metric = 'amount' | 'ghg_emission';
 
 // ค่า 1 ค่าในเงื่อนไข (ใช้ทั้งตัวตั้งและตัวหาร)
 type OperandLike = {
-  source_type: SourceType;
+  source_type: LegacySourceType;
   scopedetail_id: string | null;
   info_id: string | null;
-  scope_number: number | string | null;
+  scope_number?: number | null; // ใช้แสดงเงื่อนไขเก่าแบบ Scope เท่านั้น
   metric: Metric | null;
 };
 
 type CondRow = {
   condition_id: string;
-  source_type: SourceType;
+  source_type: LegacySourceType;
   scopedetail_id: string | null;
   info_id: string | null;
   scope_number: number | null;
   metric: Metric | null;
   operator: Operator;
   value: number;
-  den_source_type: SourceType | null;
+  den_source_type: LegacySourceType | null;
   den_scopedetail_id: string | null;
   den_info_id: string | null;
   den_scope_number: number | null;
@@ -75,7 +78,6 @@ type OperandForm = {
   source_type: SourceType;
   scopedetail_id: string;
   info_id: string;
-  scope_number: string;
   metric: Metric;
 };
 type CondForm = {
@@ -100,7 +102,6 @@ const emptyOperand: OperandForm = {
   source_type: 'activity',
   scopedetail_id: '',
   info_id: '',
-  scope_number: '1',
   metric: 'amount',
 };
 // สร้างเงื่อนไขว่าง 1 แถวสำหรับฟอร์ม
@@ -116,25 +117,27 @@ const newCond = (): CondForm => ({
 // [ลบ] round2 เคยใช้หาค่ากลางของช่วง % (ไม่มี percent_max แล้ว)
 
 // แปลงเงื่อนไขที่บันทึกแล้ว (CondRow) กลับเป็นค่าในฟอร์ม เพื่อใช้ตอนแก้ไขแนวทาง
+// เงื่อนไขเก่าแบบ scope / total ที่เลิกใช้แล้ว -> กลายเป็น "ค่าของกิจกรรม" ที่ยังไม่ได้เลือก ให้แอดมินเลือกใหม่ก่อนบันทึก
 const rowToOperand = (
-  source_type: SourceType,
+  source_type: LegacySourceType,
   scopedetail_id: string | null,
   info_id: string | null,
-  scope_number: number | null,
   metric: Metric | null
-): OperandForm => ({
-  source_type,
-  scopedetail_id: scopedetail_id ?? '',
-  info_id: info_id ?? '',
-  scope_number: String(scope_number ?? 1),
-  metric: metric ?? 'amount',
-});
+): OperandForm =>
+  source_type === 'activity' || source_type === 'office_info'
+    ? {
+        source_type,
+        scopedetail_id: scopedetail_id ?? '',
+        info_id: info_id ?? '',
+        metric: metric ?? 'amount',
+      }
+    : { ...emptyOperand };
 // แปลงเงื่อนไขจากฐานข้อมูลให้อยู่ในรูปแบบของฟอร์ม
 const rowToCond = (c: CondRow): CondForm => ({
   mode: c.den_source_type ? 'ratio' : 'single',
-  num: rowToOperand(c.source_type, c.scopedetail_id, c.info_id, c.scope_number, c.metric),
+  num: rowToOperand(c.source_type, c.scopedetail_id, c.info_id, c.metric),
   den: c.den_source_type
-    ? rowToOperand(c.den_source_type, c.den_scopedetail_id, c.den_info_id, c.den_scope_number, c.den_metric)
+    ? rowToOperand(c.den_source_type, c.den_scopedetail_id, c.den_info_id, c.den_metric)
     : { ...emptyOperand, source_type: 'office_info' },
   operator: c.operator,
   value: String(c.value),
@@ -167,8 +170,7 @@ function OperandPicker({
         options={[
           { value: 'activity', label: 'ค่าของกิจกรรม' },
           { value: 'office_info', label: 'ข้อมูลสำนักงาน' },
-          { value: 'scope', label: 'ก๊าซรวมของ Scope' },
-          { value: 'total', label: 'ก๊าซรวมทั้งหมด' },
+          // [ลบ] ก๊าซรวมของ Scope / ก๊าซรวมทั้งหมด (เลิกใช้แล้ว)
         ]}
       />
 
@@ -207,18 +209,6 @@ function OperandPicker({
         />
       )}
 
-      {v.source_type === 'scope' && (
-        <Select
-          className="rounded border px-2 py-1"
-          value={v.scope_number}
-          onChange={(val) => set({ scope_number: val })}
-          options={[
-            { value: '1', label: 'Scope 1' },
-            { value: '2', label: 'Scope 2' },
-            { value: '3', label: 'Scope 3' },
-          ]}
-        />
-      )}
     </div>
   );
 }
@@ -266,10 +256,11 @@ export default function OfficeRecommendationClient({
         })`;
       case 'office_info':
         return infoName(o.info_id || null);
+      // เงื่อนไขเก่าที่เลิกใช้แล้ว: ยังแสดงให้แอดมินเห็น แต่ไม่มีผลในรายงาน (ถือว่าไม่ผ่าน) ต้องแก้หรือลบ
       case 'scope':
-        return `ก๊าซรวม Scope ${o.scope_number}`;
+        return `ก๊าซรวม Scope ${o.scope_number} (เลิกใช้แล้ว)`;
       case 'total':
-        return 'ก๊าซรวมทั้งหมด';
+        return 'ก๊าซรวมทั้งหมด (เลิกใช้แล้ว)';
     }
   }
 
@@ -430,7 +421,6 @@ export default function OfficeRecommendationClient({
       if (!o.info_id) return 'กรุณาเลือกข้อมูลสำนักงาน';
       if (!infoTypes.some((i) => i.info_id === o.info_id)) return 'หัวข้อที่เลือกไม่มีอยู่ในระบบแล้ว';
     }
-    if (o.source_type === 'scope' && !['1', '2', '3'].includes(o.scope_number)) return 'Scope ไม่ถูกต้อง';
     return null;
   }
 
@@ -502,7 +492,6 @@ export default function OfficeRecommendationClient({
     source_type: o.source_type,
     scopedetail_id: o.source_type === 'activity' ? o.scopedetail_id : null,
     info_id: o.source_type === 'office_info' ? o.info_id : null,
-    scope_number: o.source_type === 'scope' ? Number(o.scope_number) : null,
     metric: o.source_type === 'activity' ? o.metric : null,
   });
   // แปลงค่า B ของเงื่อนไขแบบเทียบ 2 ค่าให้ตรงกับคอลัมน์ในตาราง
@@ -510,7 +499,6 @@ export default function OfficeRecommendationClient({
     den_source_type: o ? o.source_type : null,
     den_scopedetail_id: o && o.source_type === 'activity' ? o.scopedetail_id : null,
     den_info_id: o && o.source_type === 'office_info' ? o.info_id : null,
-    den_scope_number: o && o.source_type === 'scope' ? Number(o.scope_number) : null,
     den_metric: o && o.source_type === 'activity' ? o.metric : null,
   });
 

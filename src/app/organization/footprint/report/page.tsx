@@ -114,7 +114,6 @@ export default async function FootprintReportPage({
           source_type: c.source_type,
           scopedetail_id: c.scopedetail_id ?? null,
           info_id: c.info_id ?? null,
-          scope_number: c.scope_number ?? null,
           metric: c.metric ?? null,
           operator: c.operator,
           value: Number(c.value),
@@ -124,7 +123,6 @@ export default async function FootprintReportPage({
                 source_type: c.den_source_type,
                 scopedetail_id: c.den_scopedetail_id ?? null,
                 info_id: c.den_info_id ?? null,
-                scope_number: c.den_scope_number ?? null,
                 metric: c.den_metric ?? null,
               }
             : null,

@@ -1,12 +1,12 @@
 export type Operator = '>' | '>=' | '<' | '<=' | '=';
-export type SourceType = 'activity' | 'office_info' | 'scope' | 'total';
+// [เลิกใช้] 'scope' / 'total' -> เงื่อนไขเก่าที่ยังเป็นแบบนี้ใน DB ได้ค่า null = ไม่ผ่าน
+export type SourceType = 'activity' | 'office_info';
 
 // ค่า 1 ค่าที่ดึงจากข้อมูลขององค์กร
 export type Operand = {
   source_type: SourceType;
   scopedetail_id: string | null;
   info_id: string | null;
-  scope_number: number | null;
   metric: 'amount' | 'ghg_emission' | null;
 };
 
@@ -61,10 +61,8 @@ function operandValue(o: Operand, d: OrgData): number | null {
     }
     case 'office_info':
       return o.info_id && o.info_id in d.office ? d.office[o.info_id] : null;
-    case 'scope':
-      return o.scope_number ? d.scope[o.scope_number] ?? null : null;
-    case 'total':
-      return d.total;
+    default:
+      return null; // ประเภทที่เลิกใช้แล้ว (scope / total)
   }
 }
 
