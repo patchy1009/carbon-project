@@ -533,11 +533,15 @@ export default function FootprintClient({
         // ไม่มีค่า EF หรือ GWP ให้ใช้ 1 (เดิมไม่มี EF ใช้ 0 ทำให้ผลเป็น 0)
         const ef = detail.emission_factor?.ef_value ?? 1;
         const gwp = detail.global_warming_potential?.gwp_value ?? 1;
+        // [เพิ่ม] ถ้าชื่อรายการมีคำว่า "น้ำประปา" = ปริมาณน้ำประปา (กรอก/อ่านจากบิลเป็นลิตร)
+        //   แปลงเป็นลูกบาศก์เมตร (÷ 1000) ก่อนคำนวณ cf เพราะ EF น้ำประปาคิดต่อ ลบ.ม.
+        const isTapWater = (detail.detail_name ?? '').includes('น้ำประปา');
+        const calcQty = isTapWater ? qty / 1000 : qty;
         rows.push({
           scopedetail_id: detail.scopedetail_id,
-          amount: qty,
+          amount: qty, // เก็บค่าตามที่กรอก
           unit: detail.unit ?? null,
-          ghg_emission: (qty * ef * gwp) / 1000, // kgCO2e -> tCO2e
+          ghg_emission: (calcQty * ef * gwp) / 1000, // kgCO2e -> tCO2e
         });
       }
     }
