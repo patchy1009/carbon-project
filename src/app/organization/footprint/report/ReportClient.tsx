@@ -8,11 +8,9 @@ import { SCOPE_COLORS } from '@/lib/scopeColors';
 
 export type Measure = {
   name: string;
-  amount: number | null; // tCO2e ที่ลดได้ (ค่ากลาง) null = แนะนำทั่วไป
-  low: number | null;
-  high: number | null;
-  percentMin: number;
-  percentMax: number;
+  amount: number | null; // tCO2e ที่ลดได้ null = แนะนำทั่วไป
+  percent: number; // % ที่ลดได้
+  // [ลบ] low / high / percentMin / percentMax (ช่วงประมาณการ) ไม่มี percent_max แล้ว
   basis: string;
 };
 type ReportData = {
@@ -40,9 +38,7 @@ const thaiDate = (s: string) =>
     year: 'numeric',
   }).format(new Date(s));
 
-// สร้างข้อความเปอร์เซ็นต์ เช่น 5% หรือ 5–10%
-const pctText = (m: Measure) =>
-  m.percentMin === m.percentMax ? `${m.percentMin}%` : `${m.percentMin}–${m.percentMax}%`;
+// [ลบ] pctText เคยสร้างข้อความช่วง เช่น 5–10% ตอนนี้ใช้ m.percent ตรงๆ
 
 // เลือกช่วงแกน Y ให้ดูสวย (1, 2, 5 × 10^n) แบ่ง 4 ช่อง
 function niceStep(max: number) {
@@ -83,13 +79,10 @@ export default function ReportClient({
   const hasBreakdown = s1 + s2 + s3 > 0;
 
   // รวมปริมาณที่ลดได้ของทุกแนวทาง (ค่าที่ไม่มีให้นับเป็น 0)
+  // [ลบ] totalLow / totalHigh (ช่วงรวม) ไม่มี percent_max แล้ว
   let totalReduction = 0;
-  let totalLow = 0;
-  let totalHigh = 0;
   for (const m of measures) {
     totalReduction += m.amount ?? 0;
-    totalLow += m.low ?? 0;
-    totalHigh += m.high ?? 0;
   }
 
   const step = niceStep(Math.max(s1, s2, s3));
@@ -315,9 +308,9 @@ export default function ReportClient({
                     <p className="mt-2 text-sm font-bold text-[#16A34A]">
                       -{fmt(m.amount)} <Co2e />/ปี
                     </p>
+                    {/* [แก้ไข] เดิม "ช่วงประมาณการ low–high tCO2e (5–10% ของ...)" ตอนนี้มี % เดียว */}
                     <p className="mt-1 text-xs text-[#64748B]">
-                      ช่วงประมาณการ {fmt(m.low ?? m.amount)}–{fmt(m.high ?? m.amount)} tCO
-                      <sub>2</sub>e ({pctText(m)} ของ{m.basis})
+                      {m.percent}% ของ{m.basis}
                     </p>
                   </>
                 ) : (
@@ -336,11 +329,7 @@ export default function ReportClient({
               <Co2e className="text-lg font-bold text-[#16A34A]" />
               <span className="text-lg font-bold text-[#16A34A]">/ปี</span>
             </div>
-            {totalHigh > 0 && (
-              <p className="mt-1 text-xs text-[#64748B]">
-                ช่วง {fmt(totalLow)}–{fmt(totalHigh)} tCO<sub>2</sub>e/ปี
-              </p>
-            )}
+            {/* [ลบ] บรรทัด "ช่วง totalLow–totalHigh tCO2e/ปี" ไม่มีช่วงแล้ว */}
           </div>
 
           {/* ปุ่มนี้ไม่ถูกรวมใน PDF */}

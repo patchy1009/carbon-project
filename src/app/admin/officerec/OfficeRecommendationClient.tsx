@@ -62,9 +62,9 @@ type CondRow = {
 type RecRow = {
   rec_id: string; // [แก้ไข] เดิม rec_uid (คอลัมน์ซ้ำ) -> ใช้ PK rec_id ตรงๆ (supabase/schema_cleanup.sql ขั้น 4.2)
   recommendation: string | null;
-  carbon_reduction_amount: number | null; // % ตัวแทน (ค่ากลาง)
+  carbon_reduction_amount: number | null; // % ที่ลดได้ (บันทึกเท่ากับ percent_min)
   percent_min: number | null;
-  percent_max: number | null;
+  // [ลบ] percent_max (% สูงสุดที่ลดได้) ไม่เก็บแล้ว แนวทางมี % เดียว -> ลบคอลัมน์ใน DB ได้
   scopedetail_id: string | null;
   calc_method: string | null;
   // [ลบ] status (ร่าง/เผยแพร่) คอลัมน์ถูกลบแล้ว (schema_cleanup.sql ขั้น 4.1)
@@ -88,14 +88,12 @@ type CondForm = {
 type RecForm = {
   recommendation: string;
   percent_min: string;
-  percent_max: string;
   scopedetail_id: string;
 };
 
 const emptyRec: RecForm = {
   recommendation: '',
   percent_min: '',
-  percent_max: '',
   scopedetail_id: '',
 };
 const emptyOperand: OperandForm = {
@@ -115,7 +113,7 @@ const newCond = (): CondForm => ({
 });
 
 // ตัวช่วยตรวจที่เคยอยู่ตรงนี้ย้ายไปใช้ไฟล์กลางแล้ว (ดู schema.ts)
-const round2 = (n: number) => Math.round(n * 100) / 100;
+// [ลบ] round2 เคยใช้หาค่ากลางของช่วง % (ไม่มี percent_max แล้ว)
 
 // แปลงเงื่อนไขที่บันทึกแล้ว (CondRow) กลับเป็นค่าในฟอร์ม เพื่อใช้ตอนแก้ไขแนวทาง
 const rowToOperand = (
@@ -312,13 +310,11 @@ export default function OfficeRecommendationClient({
     return `${operandText(num)} ${c.operator} ${c.value}`;
   }
 
-  // สร้างข้อความเปอร์เซ็นต์ที่ลดได้ เช่น 5% หรือ 5–10%
+  // สร้างข้อความเปอร์เซ็นต์ที่ลดได้ เช่น 5%
+  // [แก้ไข] เดิมแสดงเป็นช่วง 5–10% (percent_min–percent_max) ตอนนี้ไม่มี percent_max แล้ว จึงแสดงค่าเดียว
   const percentText = (r: RecRow) => {
-    const mid = r.carbon_reduction_amount;
-    if (r.percent_min && r.percent_max && r.percent_min !== r.percent_max) {
-      return `${r.percent_min}–${r.percent_max}%`;
-    }
-    return mid === null ? '-' : `${mid}%`;
+    const p = r.percent_min ?? r.carbon_reduction_amount;
+    return p === null ? '-' : `${p}%`;
   };
 
   // ================= หัวข้อข้อมูลสำนักงาน =================
@@ -413,9 +409,7 @@ export default function OfficeRecommendationClient({
         ? {
             recommendation: row.recommendation ?? '',
             percent_min: row.percent_min == null ? '' : String(row.percent_min),
-            // บันทึกค่าเดียวจะเก็บ max = min ไว้ จึงแสดงช่องสูงสุดว่างถ้าเท่ากัน
-            percent_max:
-              row.percent_max == null || row.percent_max === row.percent_min ? '' : String(row.percent_max),
+            // [ลบ] percent_max ไม่มีช่องสูงสุดแล้ว
             scopedetail_id: row.scopedetail_id ?? '',
           }
         : emptyRec
@@ -454,11 +448,7 @@ export default function OfficeRecommendationClient({
     const errs: formError<RecField | 'conds'> = result.ok ? {} : { ...result.errors };
 
     const min = normalizeToArabicNumber(result.clean.percent_min) ?? 0;
-    const max = normalizeToArabicNumber(result.clean.percent_max); // null = กรอกค่าเดียว
-    // ตรวจข้ามช่อง: ค่าสูงสุดต้องไม่น้อยกว่าค่าต่ำสุด (ทำหลังจากทั้ง 2 ช่องผ่านกฎของตัวเองแล้ว)
-    if (!errs.percent_min && !errs.percent_max && max !== null && max < min) {
-      errs.percent_max = 'ต้องไม่น้อยกว่าค่าต่ำสุด';
-    }
+    // [ลบ] ตรวจ "ค่าสูงสุดต้องไม่น้อยกว่าค่าต่ำสุด" เพราะไม่มี percent_max แล้ว
 
     // ---- เงื่อนไข: หยุดที่ข้อแรกที่ผิด ----
     const condValues: number[] = []; // ค่าที่ normalize แล้ว ใช้ตอนบันทึก
@@ -504,7 +494,7 @@ export default function OfficeRecommendationClient({
       if (dup !== -1) errs.conds = `เงื่อนไขข้อ ${dup + 1} ซ้ำกับข้อก่อนหน้า`;
     }
 
-    return { errs, name: result.clean.recommendation, scopedetailId: result.clean.scopedetail_id, min, max, condValues };
+    return { errs, name: result.clean.recommendation, scopedetailId: result.clean.scopedetail_id, min, condValues };
   }
 
   // แปลงค่า 1 ค่าเป็นคอลัมน์ในตาราง
@@ -528,7 +518,7 @@ export default function OfficeRecommendationClient({
   async function handleSaveRec(e: React.FormEvent) {
     e.preventDefault();
 
-    const { errs, name, scopedetailId, min, max, condValues } = validateRec();
+    const { errs, name, scopedetailId, min, condValues } = validateRec();
     setRecErrors(errs);
     if (Object.keys(errs).length > 0) return;
 
@@ -540,15 +530,12 @@ export default function OfficeRecommendationClient({
 
     setSaving(true);
 
-    // ค่าตัวแทน = ค่ากลางของช่วง (ถ้ากรอกค่าเดียว = ค่านั้น)
-    const high = max ?? min;
-    const mid = round2((min + high) / 2);
-
+    // [แก้ไข] เดิม carbon_reduction_amount = ค่ากลางของช่วง (min+max)/2 และบันทึก percent_max ด้วย
+    //   ตอนนี้มี % เดียว จึงบันทึก carbon_reduction_amount = percent_min และไม่ส่ง percent_max (จะลบคอลัมน์ใน DB)
     const recValues = {
       recommendation: name, // ค่าที่ normalize แล้ว
-      carbon_reduction_amount: mid,
+      carbon_reduction_amount: min,
       percent_min: min,
-      percent_max: high,
       scopedetail_id: scopedetailId || null,
       calc_method: 'percent',
     };
@@ -886,9 +873,6 @@ export default function OfficeRecommendationClient({
                 ]}
               />
               <FieldError message={recErrors.scopedetail_id} />
-              <p className="mt-1 text-xs text-[#94A3B8]">
-                % ที่กรอกด้านล่างต้องนิยามเทียบกับกิจกรรมนี้เท่านั้น (เช่น % ของก๊าซจากไฟฟ้า)
-              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -905,24 +889,12 @@ export default function OfficeRecommendationClient({
                 />
                 <FieldError message={recErrors.percent_min} />
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-[#374151]">
-                  ลดได้สูงสุด (%) (เว้นว่าง = ค่าเดียว)
-                </label>
-                <input
-                  className={inputClass(!!recErrors.percent_max)}
-                  inputMode="decimal"
-                  placeholder="เช่น 10"
-                  value={recForm.percent_max}
-                  onChange={(e) => setRecForm({ ...recForm, percent_max: e.target.value })}
-                />
-                <FieldError message={recErrors.percent_max} />
-              </div>
+              {/* [ลบ] ช่อง "ลดได้สูงสุด (%)" (percent_max) ไม่เก็บแล้ว */}
             </div>
 
             {/* เงื่อนไขการแนะนำ */}
             <div className="rounded-xl border border-[#E2E8F0] p-4">
-              <div className="mb-1 flex items-center justify-between">
+              <div className="mb-3 flex items-center justify-between">
                 <p className="text-sm font-semibold text-[#0F172A]">
                   เงื่อนไขการแนะนำ (ต้องผ่านทุกข้อ)
                 </p>
@@ -934,11 +906,6 @@ export default function OfficeRecommendationClient({
                   + เพิ่มเงื่อนไข
                 </button>
               </div>
-              <p className="mb-3 text-xs text-[#94A3B8]">
-                ค่าในเงื่อนไขเทียบกับข้อมูล 1 รายการบันทึกขององค์กร ซึ่งถือเป็นข้อมูล 1 ปี
-                ถ้าข้อมูลที่ใช้เทียบไม่มี หรือค่า B เป็น 0 เงื่อนไขนั้นไม่ผ่าน
-                ถ้าไม่ใส่เงื่อนไขเลย แนวทางนี้จะถูกแนะนำให้ทุกองค์กร
-              </p>
 
               {conds.length === 0 && (
                 <p className="py-2 text-xs text-[#F97316]">ยังไม่มีเงื่อนไข</p>
