@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     }
     if (containsSqlSyntax(email)) {
       return NextResponse.json(
-        { error: "อีเมลมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่" },
+        { error: "อีเมลมีรูปแบบที่ไม่อนุญาต คล้ายคำสั่ง SQL กรุณากรอกใหม่" },
         { status: 400 }
       );
     }

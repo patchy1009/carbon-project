@@ -1,6 +1,6 @@
-// หน้าลงทะเบียนองค์กร: ฝั่ง server
+// หน้าลงทะเบียนองค์กรฝั่ง server
 // - เช็กบน server ว่าล็อกอินอยู่แล้วหรือยัง ถ้าใช่ให้ไปแดชบอร์ดเลย
-// - ถ้ายังไม่ล็อกอิน แสดง RegisterClient ซึ่งเปิด AuthModal (ฟอร์มสมัคร + ยืนยัน OTP) ในโหมดสมัคร
+// - ถ้ายังไม่ล็อกอิน แสดง RegisterClient ซึ่งเปิด AuthModal ที่เป็นฟอร์มสมัคร+ยืนยัน OTP ในโหมดสมัคร
 export const dynamic = 'force-dynamic';
 
 import { redirect } from 'next/navigation';

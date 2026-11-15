@@ -1,7 +1,7 @@
 "use client";
 
 /*
- * กล่อง (Modal) เข้าสู่ระบบ / สมัครสมาชิก / ขอลิงก์รีเซ็ตรหัสผ่าน (TOR ข้อ 1, 2, 3.2)
+ * กล่อง (Modal) เข้าสู่ระบบ/สมัครสมาชิก/ขอลิงก์รีเซ็ตรหัสผ่าน
  * กล่องเดียวทำงานหลาย "ขั้น" (state ชื่อ step):
  *   login    เข้าสู่ระบบ: ส่งไปที่ /api/auth/login (server ตรวจรหัสผ่าน สถานะบัญชี และ role)
  *            ผู้ดูแลระบบไป /admin/ef-gwp  องค์กรไป /organization/dashboard
@@ -84,6 +84,7 @@ export default function AuthModal({
   const [successMessage, setSuccessMessage] = useState("");
   const [resendTimer, setResendTimer] = useState(300);
   const canResend = resendTimer === 0; // ครบเวลานับถอยหลังแล้วจึงขอ OTP ใหม่ได้
+  const [registerCooldown, setRegisterCooldown] = useState(0); // วินาทีที่ต้องรอเมื่อขอสมัครถี่เกินไป
 
   // รีเซ็ตค่าเมื่อเปิด/ปิด Modal
   useEffect(() => {
@@ -112,6 +113,13 @@ export default function AuthModal({
       if (timer) clearInterval(timer);
     };
   }, [step, resendTimer]);
+
+  // นับถอยหลังเวลารอเมื่อขอสมัครถี่เกินไป (เริ่มจากตัวเลขที่ server แจ้งกลับมา)
+  useEffect(() => {
+    if (registerCooldown <= 0) return;
+    const timer = setTimeout(() => setRegisterCooldown((prev) => prev - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [registerCooldown]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -291,7 +299,14 @@ export default function AuthModal({
       setStep("otp");
       setSuccessMessage("ส่งรหัส OTP ไปยังอีเมลของคุณแล้ว กรุณาตรวจสอบอีเมลและกรอกรหัส OTP 6 หลักเพื่อยืนยัน");
     } catch (error: unknown) {
-      setErrorMessage(getErrorMessage(error));
+      const message = getErrorMessage(error);
+      // ถ้าเป็นข้อความให้รอ X วินาที -> เอาตัวเลขไปนับถอยหลังแทนการแสดงข้อความตายตัว
+      const wait = message.match(/รอ\s*(\d+)\s*วินาที/);
+      if (wait) {
+        setRegisterCooldown(Number(wait[1]));
+      } else {
+        setErrorMessage(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -532,10 +547,16 @@ export default function AuthModal({
               <p className="text-xs text-slate-500">สร้างบัญชีองค์กรเพื่อเริ่มบริหารจัดการคาร์บอน</p>
             </div>
 
-            {errorMessage && (
+            {registerCooldown > 0 ? (
               <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl text-center font-medium">
-                {errorMessage}
+                ขอถี่เกินไป กรุณารอ {registerCooldown} วินาทีแล้วลองใหม่อีกครั้ง
               </div>
+            ) : (
+              errorMessage && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl text-center font-medium">
+                  {errorMessage}
+                </div>
+              )
             )}
 
             <div>
@@ -653,11 +674,17 @@ export default function AuthModal({
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || registerCooldown > 0}
               className="w-full py-3.5 bg-[#2C7A59] hover:bg-[#1f5a41] disabled:opacity-60 text-white font-semibold rounded-2xl text-sm transition shadow-md flex items-center justify-center space-x-2 mt-2"
             >
-              <span>{loading ? "กำลังตรวจสอบข้อมูล..." : "ถัดไป: ยืนยันอีเมล"}</span>
-              {!loading && <ArrowRight className="w-4 h-4" />}
+              <span>
+                {loading
+                  ? "กำลังตรวจสอบข้อมูล..."
+                  : registerCooldown > 0
+                    ? `รออีก ${registerCooldown} วินาที`
+                    : "ถัดไป: ยืนยันอีเมล"}
+              </span>
+              {!loading && registerCooldown === 0 && <ArrowRight className="w-4 h-4" />}
             </button>
 
             <p className="mt-3 text-center text-xs text-slate-600">
