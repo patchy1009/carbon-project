@@ -713,13 +713,7 @@ export default function OfficeRecommendationClient({
       {/* ============ ส่วนที่ 2: แนวทางลดคาร์บอน ============ */}
       <section className={T.card}>
         <div className={T.cardHead}>
-          <div>
-            <h2 className={T.h2}>แนวทางลดคาร์บอน</h2>
-            <p className="mt-1 text-xs text-[#6F7974]">
-              เปอร์เซ็นต์ที่ลดได้คิดจากก๊าซของ &quot;กิจกรรมที่ผูก&quot; ขององค์กรนั้น
-              บันทึกแล้วจะแนะนำในรายงานขององค์กรที่เข้าเงื่อนไขทันที
-            </p>
-          </div>
+          <h2 className={T.h2}>แนวทางลดคาร์บอน</h2>
           <button
             onClick={() => openRecModal()}
             className={T.addBtn}
@@ -802,7 +796,7 @@ export default function OfficeRecommendationClient({
             <div>
               <input
                 className={inputClass(!!infoErrors.unit)}
-                placeholder="หน่วย เช่น คน, ตร.ม., kWh/ปี, % (เว้นว่างได้ = ช่องข้อความ)"
+                placeholder="หน่วย เช่น คน, kWh/ปี"
                 maxLength={50}
                 value={infoForm.unit}
                 onChange={(e) => setInfoForm({ ...infoForm, unit: e.target.value })}
@@ -814,7 +808,7 @@ export default function OfficeRecommendationClient({
                 className={inputClass(!!infoErrors.info_detail)}
                 rows={3}
                 maxLength={1000}
-                placeholder="คำอธิบายที่จะแสดงให้บริษัทเห็น (ไม่บังคับ) เช่น ให้กรอกค่าเฉลี่ยของทั้งอาคาร"
+                placeholder="คำอธิบายที่จะแสดงให้บริษัทเห็น"
                 value={infoForm.info_detail}
                 onChange={(e) => setInfoForm({ ...infoForm, info_detail: e.target.value })}
               />
