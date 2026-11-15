@@ -306,7 +306,7 @@ export default function ReportClient({
                 {m.amount !== null ? (
                   <>
                     <p className="mt-2 text-sm font-bold text-[#16A34A]">
-                      -{fmt(m.amount)} <Co2e />/ปี
+                      -{fmt(m.amount)} <Co2e />
                     </p>
                     {/* [แก้ไข] เดิม "ช่วงประมาณการ low–high tCO2e (5–10% ของ...)" ตอนนี้มี % เดียว */}
                     <p className="mt-1 text-xs text-[#64748B]">
@@ -327,7 +327,6 @@ export default function ReportClient({
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-4xl font-bold text-[#16A34A]">-{fmt(totalReduction)}</span>
               <Co2e className="text-lg font-bold text-[#16A34A]" />
-              <span className="text-lg font-bold text-[#16A34A]">/ปี</span>
             </div>
             {/* [ลบ] บรรทัด "ช่วง totalLow–totalHigh tCO2e/ปี" ไม่มีช่วงแล้ว */}
           </div>
