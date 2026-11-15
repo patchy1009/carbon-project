@@ -5,7 +5,7 @@ import Select from '@/components/Select'; // dropdown กลาง (แทน <s
 import { useState } from 'react';
 import type { EfType, EmissionFactor, GwpValue } from '@/types/ef-gwp';
 import { ModalActions, ModalShell } from '@/components/Modal';
-import { deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
+import { blockIfInUse, deleteRecord, withOrgImpact, insertRecord, updateRecord } from '@/lib/supabaseCrud';
 import { showSaved } from '@/lib/dialog'; // popup แจ้งบันทึกสำเร็จ
 import { validateForm, extendSchema, notDuplicate, existsIn, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber } from '@/lib/normalization';
@@ -147,18 +147,20 @@ export default function EfGwpClient({
   }
 
   // ลบประเภท EF สำเร็จแล้วเอาออกจากรายการบนหน้า
+  // ถ้ายังมีค่า EF อยู่ในประเภทนี้ ห้ามลบ ให้ไปลบ/ย้ายค่า EF ก่อน
+  //   (emission_factor.eftype_id เป็น NOT NULL ลบประเภทแล้ว "unlink" ค่า EF ไม่ได้ตามข้อความเดิม)
   async function handleDeleteType(id: string) {
-    const ok = await deleteRecord(
-      'ef_type',
-      'eftype_id',
-      id,
-      'ลบประเภทนี้? (emission_factor ที่ผูกอยู่จะ unlink)'
+    const typeName = efTypes.find((t) => t.eftype_id === id)?.type_name ?? '';
+    const inUse = await blockIfInUse(
+      'emission_factor', 'eftype_id', id,
+      efList.filter((r) => r.eftype_id === id).length,
+      `ประเภท "${typeName}"`, 'ค่า EF'
     );
+    if (inUse) return;
+
+    const ok = await deleteRecord('ef_type', 'eftype_id', id, `ลบประเภท "${typeName}"?`);
     if (!ok) return;
     setEfTypes((prev) => prev.filter((t) => t.eftype_id !== id));
-    setEfList((prev) =>
-      prev.map((r) => (r.eftype_id === id ? { ...r, eftype_id: null, ef_type: null } : r))
-    );
   }
 
   // --- ค่า EF ---
@@ -209,7 +211,11 @@ export default function EfGwpClient({
 
   // ลบค่า EF สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteEf(id: string) {
-    const ok = await deleteRecord('emission_factor', 'ef_id', id, 'ลบค่า EF?');
+    // ยังมีรายละเอียดกิจกรรมใช้ค่า EF นี้อยู่ -> ห้ามลบ (activity_detail.ef_id เป็น NO ACTION ใน DB)
+    const name = efList.find((r) => r.ef_id === id)?.ef_name ?? '';
+    if (await blockIfInUse('activity_detail', 'ef_id', id, 0, `ค่า EF "${name}"`, 'รายละเอียดกิจกรรมที่ใช้ค่านี้')) return;
+    const ok = await deleteRecord('emission_factor', 'ef_id', id,
+      withOrgImpact(`ลบค่า EF "${name}"?`));
     if (!ok) return;
     setEfList((prev) => prev.filter((r) => r.ef_id !== id));
   }
@@ -246,10 +252,24 @@ export default function EfGwpClient({
 
   // ลบค่า GWP สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteGwp(id: string) {
-    const ok = await deleteRecord('global_warming_potential', 'gwp_id', id, 'ลบค่า GWP นี้?');
+    // ยังมีรายละเอียดกิจกรรมใช้ค่า GWP นี้อยู่ -> ห้ามลบ (activity_detail.gwp_id เป็น NO ACTION ใน DB)
+    const name = gwpList.find((r) => r.gwp_id === id)?.gas_name ?? '';
+    if (await blockIfInUse('activity_detail', 'gwp_id', id, 0, `ค่า GWP "${name}"`, 'รายละเอียดกิจกรรมที่ใช้ค่านี้')) return;
+    const ok = await deleteRecord('global_warming_potential', 'gwp_id', id,
+      withOrgImpact(`ลบค่า GWP "${name}"?`));
     if (!ok) return;
     setGwpList((prev) => prev.filter((r) => r.gwp_id !== id));
   }
+
+  // ตารางค่า EF: เรียงตามประเภท (ลำดับเดียวกับป้ายประเภทด้านบน) ให้ประเภทเดียวกันอยู่ติดกัน
+  //   ภายในประเภทเดียวกันคงลำดับเดิม (sort ของ JS เป็น stable) ค่า EF ที่ไม่มีประเภทอยู่ท้ายสุด
+  const typeOrder = new Map(efTypes.map((t, i) => [t.eftype_id, i] as const));
+  const sortedEfList = efList
+    .slice()
+    .sort(
+      (a, b) =>
+        (typeOrder.get(a.eftype_id ?? '') ?? Infinity) - (typeOrder.get(b.eftype_id ?? '') ?? Infinity)
+    );
 
   return (
     <div className={T.page}>
@@ -317,7 +337,7 @@ export default function EfGwpClient({
               </tr>
             </thead>
             <tbody>
-              {efList.map((row) => {
+              {sortedEfList.map((row) => {
                 const c = row.eftype_id ? colorFor(row.eftype_id, efTypes) : palette[0];
                 return (
                   <tr key={row.ef_id} className={T.row}>

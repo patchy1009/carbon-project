@@ -8,7 +8,7 @@ import { useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import type { AlloTaxDoc } from '@/types/allotaxdoc';
 import { ModalActions, ModalShell } from '@/components/Modal';
-import { dbErrorMessage, deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
+import { dbErrorMessage, deleteRecord, withOrgImpact, insertRecord, updateRecord } from '@/lib/supabaseCrud';
 import { validateForm, extendSchema, notDuplicate, validateFile, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber, safeStorageName, fileBaseName, fileExtension } from '@/lib/normalization';
 import FieldError from '@/components/FieldError';
@@ -226,7 +226,7 @@ export default function AlloTaxDocClient({
       return;
     }
 
-    const ok = await deleteRecord('project_target_rule', 'target_id', t.target_id, `ลบเป้าหมาย "${t.target_name}"?`);
+    const ok = await deleteRecord('project_target_rule', 'target_id', t.target_id, withOrgImpact(`ลบเป้าหมาย "${t.target_name}"?`));
     if (!ok) return;
     setTargets((prev) => prev.filter((x) => x.target_id !== t.target_id));
   }
@@ -287,7 +287,7 @@ export default function AlloTaxDocClient({
   async function handleDeleteCost(c: CostRow) {
     const ok = await deleteRecord(
       'project_cost_type', 'cost_id', c.cost_id,
-      `ลบรายการ "${c.cost_name}"? (ผลประเมินที่องค์กรบันทึกไว้แล้วจะยังเก็บชื่อและยอดเดิมไว้)`
+      withOrgImpact(`ลบรายการ "${c.cost_name}"? (ผลประเมินที่องค์กรบันทึกไว้แล้วจะยังเก็บชื่อและยอดเดิมไว้)`)
     );
     if (!ok) return;
     setCosts((prev) => prev.filter((x) => x.cost_id !== c.cost_id));
@@ -468,7 +468,7 @@ export default function AlloTaxDocClient({
       'documents',
       'document_id',
       doc.document_id,
-      `ลบเอกสาร "${doc.document_name ?? 'ไม่มีชื่อ'}"?`
+      withOrgImpact(`ลบเอกสาร "${doc.document_name ?? 'ไม่มีชื่อ'}"?`)
     );
     if (!ok) return;
 

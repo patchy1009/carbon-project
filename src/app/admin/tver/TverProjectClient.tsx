@@ -5,7 +5,7 @@ import Select from '@/components/Select'; // dropdown กลาง (แทน <s
 import { useState } from 'react';
 import type { TreeListItem, TverProjectDetail } from '@/types/tver-project';
 import { ModalActions, ModalShell } from '@/components/Modal';
-import { deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
+import { deleteRecord, withOrgImpact, insertRecord, updateRecord } from '@/lib/supabaseCrud';
 import { showSaved } from '@/lib/dialog'; // popup แจ้งบันทึกสำเร็จ
 import { validateForm, extendSchema, notDuplicate, requiredWith, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber, formatCondition, CONDITION_OPERATORS } from '@/lib/normalization';
@@ -111,7 +111,8 @@ export default function TverProjectClient({
 
   // ลบต้นไม้ สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteTree(id: string) {
-    const ok = await deleteRecord('tree_list', 'tree_id', id, 'ลบต้นไม้นี้?');
+    const ok = await deleteRecord('tree_list', 'tree_id', id,
+      withOrgImpact(`ลบต้นไม้ "${trees.find((t) => t.tree_id === id)?.tree_name ?? ''}"?`));
     if (!ok) return;
     setTrees((prev) => prev.filter((t) => t.tree_id !== id));
   }
@@ -160,7 +161,8 @@ export default function TverProjectClient({
 
   // ลบเงื่อนไข สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteDetail(id: string) {
-    const ok = await deleteRecord('tver_project_detail', 'tverdetail_id', id, 'ลบเงื่อนไขนี้?');
+    const ok = await deleteRecord('tver_project_detail', 'tverdetail_id', id,
+      withOrgImpact(`ลบเงื่อนไข "${details.find((d) => d.tverdetail_id === id)?.detail_name ?? ''}"?`));
     if (!ok) return;
     setDetails((prev) => prev.filter((d) => d.tverdetail_id !== id));
   }

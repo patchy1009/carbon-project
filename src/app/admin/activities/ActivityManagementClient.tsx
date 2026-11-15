@@ -1,4 +1,3 @@
-// หน้าจัดการกิจกรรมของแอดมิน: เพิ่ม แก้ไข ลบ ขอบเขต (Scope) กิจกรรม และรายการย่อยของกิจกรรม
 'use client';
 
 import Select from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
@@ -7,7 +6,7 @@ import type { CarbonScope, Activity, ActivityDetail } from '@/types/activity-man
 import type { EmissionFactor, GwpValue } from '@/types/ef-gwp';
 import { scopeSchema, activitySchema, detailSchema, type ScopeField, type ActivityField, type DetailField } from './schema';
 import { ModalActions, ModalShell } from '@/components/Modal';
-import { deleteRecord, insertRecord, updateRecord } from '@/lib/supabaseCrud';
+import { blockIfInUse, deleteRecord, withOrgImpact, insertRecord, updateRecord } from '@/lib/supabaseCrud';
 import { showSaved } from '@/lib/dialog'; // popup แจ้งบันทึกสำเร็จ
 import { validateForm, extendSchema, notDuplicate, existsIn, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber } from '@/lib/normalization';
@@ -178,17 +177,24 @@ export default function ActivityManagementClient({
 
   // ลบขอบเขตในฐานข้อมูล สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteScope( id : string ){
+    // ยังมีกิจกรรมอยู่ในขอบเขตนี้ -> ห้ามลบ ให้ลบ/ย้ายกิจกรรมก่อน
+    const scope = scopes.find((s) => s.scope_id === id);
+    const inUse = await blockIfInUse(
+      'activity', 'scope_id', id,
+      activities.filter((a) => a.scope_id === id).length,
+      `ขอบเขต "Scope ${scope?.scope_number ?? ''}"`,
+      'กิจกรรม'
+    );
+    if (inUse) return;
+
     const ok = await deleteRecord(
       'carbon_scope',  // ชื่อตาราง
       'scope_id',
       id,
-      'ลบขอบเขตนี้?'
+      withOrgImpact(`ลบขอบเขต "Scope ${scope?.scope_number ?? ''}"?`)
     );
     if (!ok) return;
     setScopes((prev) => prev.filter((t) => t.scope_id !== id));
-    setActivities((prev) =>
-      prev.map((r) => (r.scope_id === id ? { ...r, scope_id: null } : r))
-    );
   }
 
   // ---------- กิจกรรมแต่ละขอบเขต ----------
@@ -245,17 +251,23 @@ export default function ActivityManagementClient({
 
   // ลบกิจกรรมในฐานข้อมูล สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteActivity( id : string ){
+    // ยังมีรายละเอียดกิจกรรมผูกอยู่ -> ห้ามลบ ให้ลบ/ย้ายรายละเอียดก่อน
+    const name = activities.find((a) => a.activity_id === id)?.activity_name ?? '';
+    const inUse = await blockIfInUse(
+      'activity_detail', 'activity_id', id,
+      details.filter((d) => d.activity_id === id).length,
+      `กิจกรรม "${name}"`, 'รายละเอียดกิจกรรม'
+    );
+    if (inUse) return;
+
     const ok = await deleteRecord(
       'activity',  // ชื่อตาราง
       'activity_id',
       id,
-      'ลบกิจกรรมนี้?'
+      withOrgImpact(`ลบกิจกรรม "${name}"?`)
     );
     if (!ok) return;
     setActivities((prev) => prev.filter((t) => t.activity_id !== id));
-    setDetails((prev) =>
-      prev.map((r) => (r.activity_id === id ? { ...r, activity_id: null } : r))
-    );
   }
 
   // ---------- รายละเอียดในแต่ละกิจกรรม ----------
@@ -313,11 +325,21 @@ export default function ActivityManagementClient({
 
   // ลบรายการย่อยในฐานข้อมูล สำเร็จแล้วเอาออกจากรายการบนหน้า
   async function handleDeleteDetail( id : string ){
+    // ห้ามลบถ้ายังถูกใช้อยู่ (กฎ FK ใน DB):
+    //   org_activity_detail = ข้อมูลที่องค์กรบันทึกไว้ (NO ACTION -> DB ไม่ให้ลบอยู่แล้ว แต่แจ้งให้ชัดก่อน)
+    //   carbon_reduction_recommendation (SET NULL) / recommendation_condition (CASCADE)
+    //     -> ลบแล้วแนวทางจะเสียเงื่อนไขไปเงียบๆ และอาจถูกแนะนำให้ทุกองค์กร จึงห้ามลบเช่นกัน
+    const label = `รายการ "${details.find((d) => d.scopedetail_id === id)?.detail_name ?? ''}"`;
+    if (await blockIfInUse('org_activity_detail', 'scopedetail_id', id, 0, label, 'ข้อมูลที่องค์กรบันทึกไว้')) return;
+    if (await blockIfInUse('carbon_reduction_recommendation', 'scopedetail_id', id, 0, label, 'แนวทางลดคาร์บอนที่ผูก')) return;
+    if (await blockIfInUse('recommendation_condition', 'scopedetail_id', id, 0, label, 'เงื่อนไขของแนวทางลดคาร์บอน')) return;
+    if (await blockIfInUse('recommendation_condition', 'den_scopedetail_id', id, 0, label, 'เงื่อนไขของแนวทางลดคาร์บอน (ตัวหาร)')) return;
+
     const ok = await deleteRecord(
       'activity_detail',  // ชื่อตาราง
       'scopedetail_id',
       id,
-      'ลบรายการนี้?'
+      withOrgImpact(`ลบ${label}?`)
     );
     if (!ok) return;
     setDetails((prev) => prev.filter((t) => t.scopedetail_id !== id));
@@ -330,6 +352,20 @@ export default function ActivityManagementClient({
       scope,
       items: activities.filter((a) => a.scope_id === scope.scope_id),
     }));
+
+  // ตารางรายละเอียด: เรียงตาม scope ก่อน แล้วตามกิจกรรม (ลำดับเดียวกับการ์ดกิจกรรมด้านบน)
+  //   รายละเอียดของกิจกรรมเดียวกันจึงอยู่ติดกัน ภายในกิจกรรมเดียวกันคงลำดับเดิม (sort ของ JS เป็น stable)
+  //   ใช้ลำดับจาก state ไม่ใช้ข้อมูล join ในแถว เพื่อให้ถูกต้องทันทีหลังแก้ scope ของกิจกรรม
+  const activityOrder = new Map(
+    activitiesByScope.flatMap(({ items }) => items).map((a, i) => [a.activity_id, i] as const)
+  );
+  const sortedDetails = details
+    .slice()
+    .sort(
+      (a, b) =>
+        (activityOrder.get(a.activity_id ?? '') ?? Infinity) -
+        (activityOrder.get(b.activity_id ?? '') ?? Infinity)
+    );
 
   return (
     <div className={T.page}>
@@ -469,13 +505,13 @@ export default function ActivityManagementClient({
                 <th className={`${T.th} text-left`}>ชื่อรายละเอียดที่บันทึก</th>
                 <th className={`${T.th} text-center`}>หน่วย</th>
                 <th className={`${T.th} text-center`}>ค่า EF</th>
-                <th className={`${T.th} text-left`}>ค่า GWP</th>
+                <th className={`${T.th} text-center`}>ค่า GWP</th>
                 <th className={`${T.th} text-left`}>รายละเอียด</th>
                 <th className={`${T.th} text-right`}>จัดการ</th>
               </tr>
             </thead>
             <tbody>
-              {details.map((d) => {
+              {sortedDetails.map((d) => {
                 const scopeNum = d.activity?.carbon_scope?.scope_number ?? 1;
                 return (
                   <tr key={d.scopedetail_id} className={T.row}>
@@ -503,11 +539,16 @@ export default function ActivityManagementClient({
                         {d.unit}
                       </span>
                     </td>
-                    <td className={`${T.td} text-center font-mono text-[#266955]`}>
-                      {d.emission_factor?.ef_value ?? '-'}
+                    {/* ตัวเลข EF / GWP ใช้รูปแบบเดียวกับตารางในหน้า EF & GWP (ตัวหนา สีเขียว) ค่าว่างแสดง - สีเทา */}
+                    <td className={`${T.td} text-center`}>
+                      {d.emission_factor?.ef_value != null
+                        ? <span className="font-semibold text-[#047857]">{d.emission_factor.ef_value}</span>
+                        : <span className="text-[#94A3B8]">-</span>}
                     </td>
-                    <td className={T.td}>
-                      {d.global_warming_potential?.gwp_value ?? '-'}
+                    <td className={`${T.td} text-center`}>
+                      {d.global_warming_potential?.gwp_value != null
+                        ? <span className="font-semibold text-[#047857]">{d.global_warming_potential.gwp_value}</span>
+                        : <span className="text-[#94A3B8]">-</span>}
                     </td>
                     <td className={`${T.td} max-w-[320px] whitespace-pre-line`}>{d.description}</td>
                     <td className={T.tdActions}>
