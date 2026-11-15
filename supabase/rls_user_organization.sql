@@ -37,21 +37,9 @@ grant update (username) on public."user" to authenticated;
 
 -- ห้ามลบแถว user ผ่าน API (ไม่มี policy delete = ลบไม่ได้)
 
--- เช็ก username ซ้ำตอนสมัคร (เรียกจาก src/app/api/auth/register/route.tsx)
--- คนที่ยังไม่ล็อกอินอ่านตาราง user ไม่ได้ จึงใช้ security definer อ่านแทน
--- ตอบแค่ true (ซ้ำ) / false (ไม่ซ้ำ) ไม่คืนข้อมูลอื่นของผู้ใช้
-create or replace function public.is_username_taken(p_username text)
-returns boolean
-language sql stable security definer set search_path = ''
-as $$
-  select exists (
-    select 1 from public."user"
-    where username = trim(p_username)
-  );
-$$;
-
-revoke all on function public.is_username_taken(text) from public;
-grant execute on function public.is_username_taken(text) to anon, authenticated;
+-- Username ซ้ำกับบัญชีอื่นได้ (บัญชีระบุด้วยอีเมล ซึ่งมี UNIQUE user_email_key อยู่แล้ว)
+-- จึงเลิกใช้ฟังก์ชันเช็ก username ซ้ำ และลบออก เพื่อไม่ให้คนที่ยังไม่ล็อกอินถามได้ว่ามี username นี้ในระบบไหม
+drop function if exists public.is_username_taken(text);
 
 
 -- ===== ตาราง organization =====
