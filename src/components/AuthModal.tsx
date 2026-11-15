@@ -9,6 +9,7 @@
  *   otp      กรอกรหัส OTP 6 หลักที่ส่งไปทางอีเมล (ส่งซ้ำได้เมื่อครบเวลา) ยืนยันแล้วบันทึกตาราง user และ organization
  *   success  สมัครสำเร็จ
  *   forgot   กรอกอีเมลเพื่อรับลิงก์ตั้งรหัสผ่านใหม่ ลิงก์พาไปหน้า /organization/forgot_password
+ * ทุกฟอร์มปิดการตรวจของเบราว์เซอร์ (noValidate) แล้วตรวจเองทั้งหมด แจ้งเตือนเป็นภาษาไทยบนหน้า: ช่องที่ผิดขึ้นกรอบแดงพร้อมข้อความใต้ช่อง
  * ฟอร์มสมัครสมาชิกมีที่นี่ที่เดียว เปิดได้ 2 ทาง: ปุ่มเมนูด้านบน (organization/layout.tsx)
  * และหน้า /organization/register ซึ่งเปิดกล่องนี้ในโหมด register (register/RegisterClient.tsx)
  */
@@ -57,11 +58,13 @@ export default function AuthModal({
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginErrorMessage, setLoginErrorMessage] = useState("");
+  const [loginFieldErrors, setLoginFieldErrors] = useState({ email: "", password: "" });
 
   // State ฝั่ง Forgot Password
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotMessage, setForgotMessage] = useState("");
   const [forgotError, setForgotError] = useState("");
+  const [forgotEmailError, setForgotEmailError] = useState(""); // ข้อความใต้ช่องอีเมล (รูปแบบผิด/ว่าง)
 
   // State ฝั่ง Register
   const [username, setUsername] = useState("");
@@ -92,11 +95,13 @@ export default function AuthModal({
       // eslint-disable-next-line react-hooks/set-state-in-effect -- ล้างค่าเก่าในฟอร์มทุกครั้งที่เปิด Modal
       setStep(initialMode);
       setLoginErrorMessage("");
+      setLoginFieldErrors({ email: "", password: "" });
       setErrorMessage("");
       setSuccessMessage("");
       setForgotEmail("");
       setForgotMessage("");
       setForgotError("");
+      setForgotEmailError("");
       setFieldErrors({ username: "", email: "", password: "", companyName: "" });
     }
   }, [isOpen, initialMode]);
@@ -131,13 +136,27 @@ export default function AuthModal({
   const handleLoginSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoginErrorMessage("");
-    if (!loginEmail.trim() || !loginPassword) {
-      setLoginErrorMessage("กรุณากรอกอีเมลและรหัสผ่านให้ครบถ้วน");
-      return;
+
+    // ตรวจทุกช่องพร้อมกัน ช่องที่ผิดขึ้นกรอบแดงพร้อมข้อความใต้ช่อง (แบบเดียวกับหน้าลงทะเบียน)
+    const cleanLoginEmail = loginEmail.trim().toLowerCase();
+    const errors = { email: "", password: "" };
+    if (!cleanLoginEmail) {
+      errors.email = "กรุณากรอกอีเมล";
+    } else if (!EMAIL_REGEX.test(cleanLoginEmail)) {
+      errors.email = "รูปแบบอีเมลไม่ถูกต้อง เช่น name@company.co.th";
+    } else if (containsSqlSyntax(cleanLoginEmail)) {
+      // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งไปล็อกอิน (TOR 2.2)
+      errors.email = "อีเมลมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่";
     }
-    // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งไปล็อกอิน (TOR 2.2) รหัสผ่านใช้โหมด lenient
-    if (containsSqlSyntax(loginEmail.trim()) || containsSqlSyntax(loginPassword, { lenient: true })) {
-      setLoginErrorMessage("ข้อมูลที่กรอกมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
+    if (!loginPassword) {
+      errors.password = "กรุณากรอกรหัสผ่าน";
+    } else if (containsSqlSyntax(loginPassword, { lenient: true })) {
+      // รหัสผ่านใช้โหมด lenient เพราะรหัสผ่านที่ดีมีสัญลักษณ์ได้
+      errors.password = "รหัสผ่านมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่";
+    }
+    setLoginFieldErrors(errors);
+    if (errors.email || errors.password) {
+      setLoginErrorMessage("กรุณาตรวจสอบข้อมูลช่องที่มีกรอบสีแดงให้ถูกต้องครบถ้วน");
       return;
     }
     setLoading(true);
@@ -148,7 +167,7 @@ export default function AuthModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: loginEmail.trim().toLowerCase(),
+          email: cleanLoginEmail,
           password: loginPassword,
         }),
       });
@@ -174,15 +193,21 @@ export default function AuthModal({
     e.preventDefault();
     setForgotError("");
     setForgotMessage("");
+    setForgotEmailError("");
 
+    // ช่องอีเมลผิด -> กรอบแดงพร้อมข้อความใต้ช่อง (แบบเดียวกับหน้าลงทะเบียน)
     const cleanEmail = forgotEmail.trim().toLowerCase();
-    if (!cleanEmail || !EMAIL_REGEX.test(cleanEmail)) {
-      setForgotError("กรุณากรอกรูปแบบอีเมลให้ถูกต้อง");
+    if (!cleanEmail) {
+      setForgotEmailError("กรุณากรอกอีเมล");
+      return;
+    }
+    if (!EMAIL_REGEX.test(cleanEmail)) {
+      setForgotEmailError("รูปแบบอีเมลไม่ถูกต้อง เช่น name@company.co.th");
       return;
     }
     // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งอีเมลไปขอลิงก์ (TOR 3.4)
     if (containsSqlSyntax(cleanEmail)) {
-      setForgotError("อีเมลมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
+      setForgotEmailError("อีเมลมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
       return;
     }
 
@@ -419,20 +444,25 @@ export default function AuthModal({
               </div>
             )}
 
-            <form onSubmit={handleLoginSubmit} className="space-y-4">
+            <form onSubmit={handleLoginSubmit} className="space-y-4" noValidate>
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-600">อีเมล</label>
                 <div className="relative">
                   <input
                     type="email"
                     value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    className="w-full px-4 py-3 pl-10 rounded-2xl border text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800 placeholder:text-slate-400 border-slate-200"
+                    onChange={(e) => {
+                      setLoginEmail(e.target.value);
+                      if (loginFieldErrors.email) setLoginFieldErrors({ ...loginFieldErrors, email: "" });
+                    }}
+                    className={getInputClass(!!loginFieldErrors.email)}
                     placeholder="name@company.com"
-                    required
                   />
                   <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
                 </div>
+                {loginFieldErrors.email && (
+                  <p className="mt-1 text-xs text-red-500 font-medium">{loginFieldErrors.email}</p>
+                )}
               </div>
 
               <div>
@@ -441,13 +471,18 @@ export default function AuthModal({
                   <input
                     type="password"
                     value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    className="w-full px-4 py-3 pl-10 rounded-2xl border text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800 placeholder:text-slate-400 border-slate-200"
+                    onChange={(e) => {
+                      setLoginPassword(e.target.value);
+                      if (loginFieldErrors.password) setLoginFieldErrors({ ...loginFieldErrors, password: "" });
+                    }}
+                    className={getInputClass(!!loginFieldErrors.password)}
                     placeholder="••••••••"
-                    required
                   />
                   <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
                 </div>
+                {loginFieldErrors.password && (
+                  <p className="mt-1 text-xs text-red-500 font-medium">{loginFieldErrors.password}</p>
+                )}
                 {/* เปลี่ยนมาใช้การเปลี่ยนสเตปใน Modal เป็น "forgot" */}
                 <div className="mt-1.5 text-right">
                   <button
@@ -501,20 +536,25 @@ export default function AuthModal({
               </div>
             )}
 
-            <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
+            <form onSubmit={handleForgotPasswordSubmit} className="space-y-4" noValidate>
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-600">อีเมลองค์กร</label>
                 <div className="relative">
                   <input
                     type="email"
                     value={forgotEmail}
-                    onChange={(e) => setForgotEmail(e.target.value)}
-                    className="w-full px-4 py-3 pl-10 rounded-2xl border text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800 placeholder:text-slate-400 border-slate-200"
+                    onChange={(e) => {
+                      setForgotEmail(e.target.value);
+                      if (forgotEmailError) setForgotEmailError("");
+                    }}
+                    className={getInputClass(!!forgotEmailError)}
                     placeholder="name@company.com"
-                    required
                   />
                   <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
                 </div>
+                {forgotEmailError && (
+                  <p className="mt-1 text-xs text-red-500 font-medium">{forgotEmailError}</p>
+                )}
               </div>
 
               <button
@@ -702,7 +742,7 @@ export default function AuthModal({
 
         {/* ================= STEP 3: OTP ================= */}
         {step === "otp" && (
-          <form onSubmit={handleVerifyOtp} className="space-y-5 text-center">
+          <form onSubmit={handleVerifyOtp} className="space-y-5 text-center" noValidate>
             <div className="w-14 h-14 bg-emerald-50 text-emerald-700 rounded-2xl mx-auto flex items-center justify-center">
               <ShieldCheck className="w-7 h-7" />
             </div>
@@ -730,7 +770,6 @@ export default function AuthModal({
                 type="text"
                 inputMode="numeric"
                 maxLength={6}
-                required
                 placeholder="000000"
                 value={otpInput}
                 onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ""))}
