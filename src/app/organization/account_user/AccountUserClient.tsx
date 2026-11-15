@@ -1,7 +1,9 @@
 "use client";
 /*
  * หน้าจอบัญชีผู้ใช้ขององค์กร (TOR ข้อ 3.1, 4.1–4.3) มี 3 ส่วน
- *   1) ข้อมูลบัญชี: แสดงอีเมล (แก้ไม่ได้) และแก้ Username, ชื่อองค์กร, ประเภทธุรกิจ ได้ (ตรวจ Syntax ก่อนบันทึก)
+ *   1) ข้อมูลบัญชี: แสดงอีเมล (แก้ไม่ได้) และแก้ Username, ชื่อองค์กร, ประเภทธุรกิจ ได้
+ *      ใช้กฎตรวจและรูปแบบแจ้งเตือนเดียวกับหน้าลงทะเบียน (AuthModal): Username 3-20 ตัว อังกฤษ/ตัวเลข/_/-
+ *      ชื่อองค์กรห้ามว่างและตรวจ Syntax คล้าย SQL ช่องที่ผิดขึ้นกรอบแดงพร้อมข้อความใต้ช่อง
  *   2) เปลี่ยนรหัสผ่าน: ต้องกรอกรหัสผ่านเดิมยืนยันก่อน (ตรวจกับ Supabase Auth) รหัสใหม่ต้องไม่ซ้ำรหัสเดิม
  *   3) ลบบัญชีและข้อมูลองค์กร: กดยืนยันใน popup แล้วเรียก DELETE /api/account
  * หน้า server (page.tsx) ดึงข้อมูลตั้งต้นมาส่งให้ทาง props ไฟล์นี้ทำงานฝั่ง browser
@@ -15,7 +17,7 @@ import { CheckCircle2, ChevronDown, Trash2 } from "lucide-react";
 import { industries } from "@/types/industries";
 import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
 import { getErrorMessage } from "@/lib/errorMessage";
-import { PASSWORD_HINT, validatePasswordStrength } from "@/lib/authRules"; // กติการหัสผ่านกลาง (ยาวอย่างน้อย 8 ตัว มีตัวอักษรอังกฤษและตัวเลข)
+import { PASSWORD_HINT, USERNAME_REGEX, validatePasswordStrength } from "@/lib/authRules"; // กติการหัสผ่านกลาง (ยาวอย่างน้อย 8 ตัว มีตัวอักษรอังกฤษและตัวเลข)
 
 type Message = {
   type: "success" | "error";
@@ -50,6 +52,16 @@ export default function AccountUserClient({
   const [orgMessage, setOrgMessage] = useState<Message | null>(
     loadError ? { type: "error", text: loadError } : null
   );
+  // ข้อความแจ้งเตือนแยกแต่ละช่อง (แบบเดียวกับหน้าลงทะเบียน)
+  const [orgFieldErrors, setOrgFieldErrors] = useState({ username: "", companyName: "" });
+
+  // class ของช่องกรอกรายละเอียดองค์กร: มีกรอบแดงเมื่อช่องนั้นมีข้อผิดพลาด
+  const orgInputClass = (hasError: boolean) =>
+    `w-full px-4 py-3 rounded-2xl border text-xs text-slate-800 focus:outline-none focus:ring-2 font-medium ${
+      hasError
+        ? "border-red-500 focus:ring-red-500 bg-red-50/20"
+        : "border-slate-200 focus:ring-emerald-700 bg-slate-50/50"
+    }`;
 
   // ตั้งค่าความปลอดภัย
   const [currentPassword, setCurrentPassword] = useState("");
@@ -161,38 +173,32 @@ export default function AccountUserClient({
     e.preventDefault();
     setOrgMessage(null);
 
-    if (!username.trim()) {
-      setOrgMessage({
-        type: "error",
-        text: "กรุณากรอกชื่อผู้ใช้งาน (Username)",
-      });
+    const cleanUsername = username.trim();
+    const cleanCompanyName = companyName.trim();
 
-      return;
+    // ตรวจทุกช่องพร้อมกัน (กฎเดียวกับหน้าลงทะเบียน) ช่องที่ผิดจะขึ้นกรอบแดงพร้อมข้อความใต้ช่อง
+    const errors = { username: "", companyName: "" };
+
+    if (!cleanUsername) {
+      errors.username = "กรุณากรอกชื่อผู้ใช้งาน";
+    } else if (!USERNAME_REGEX.test(cleanUsername)) {
+      // รูปแบบนี้อนุญาตแค่อังกฤษ ตัวเลข _ - จึงกันสัญลักษณ์ที่ใช้เขียนคำสั่ง SQL ไปด้วย (TOR 4.3)
+      errors.username = "Username ต้องมีความยาว 3-20 ตัวอักษรภาษาอังกฤษ, ตัวเลข, _ , -";
     }
 
-    if (!companyName.trim()) {
-      setOrgMessage({
-        type: "error",
-        text: "กรุณากรอกชื่อองค์กร / บริษัท",
-      });
-
-      return;
+    if (!cleanCompanyName) {
+      errors.companyName = "กรุณากรอกชื่อองค์กรหรือบริษัท";
+    } else if (containsSqlSyntax(cleanCompanyName)) {
+      // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งข้อมูลไปบันทึก (TOR 4.3)
+      errors.companyName = "ชื่อองค์กรมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่";
     }
 
-    // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งข้อมูลไปบันทึก (TOR 4.3)
-    if (containsSqlSyntax(username.trim())) {
+    setOrgFieldErrors(errors);
+
+    if (errors.username || errors.companyName) {
       setOrgMessage({
         type: "error",
-        text: "ชื่อผู้ใช้งาน (Username) มีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่",
-      });
-
-      return;
-    }
-
-    if (containsSqlSyntax(companyName.trim())) {
-      setOrgMessage({
-        type: "error",
-        text: "ชื่อองค์กร / บริษัท มีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่",
+        text: "กรุณาตรวจสอบข้อมูลช่องที่มีกรอบสีแดงให้ถูกต้องครบถ้วน",
       });
 
       return;
@@ -202,12 +208,12 @@ export default function AccountUserClient({
 
     try {
       // บันทึกชื่อองค์กรและประเภทอุตสาหกรรม
-      await saveOrganizationDetails(companyName.trim(), industry);
+      await saveOrganizationDetails(cleanCompanyName, industry);
 
       // บันทึก Username ลงในตาราง user
       const { error: userTableError } = await supabase
         .from("user")
-        .update({ username: username.trim() })
+        .update({ username: cleanUsername })
         .eq("acc_id", userId);
 
       if (userTableError) throw userTableError;
@@ -215,9 +221,9 @@ export default function AccountUserClient({
       // อัปเดต Metadata ของ Auth
       const { error: metadataError } = await supabase.auth.updateUser({
         data: {
-          username: username.trim(),
-          company_name: companyName.trim(),
-          org_name: companyName.trim(),
+          username: cleanUsername,
+          company_name: cleanCompanyName,
+          org_name: cleanCompanyName,
         },
       });
 
@@ -389,7 +395,7 @@ export default function AccountUserClient({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* รายละเอียดองค์กร */}
         <div className="bg-white rounded-[2.5rem] p-6 md:p-8 border border-slate-200/80 shadow-md flex flex-col justify-between space-y-6">
-          <form onSubmit={handleUpdateOrganization} className="space-y-5">
+          <form onSubmit={handleUpdateOrganization} className="space-y-5" noValidate>
             <h3 className="text-lg font-bold text-[#11221C] text-center">
               รายละเอียดองค์กร
             </h3>
@@ -434,14 +440,21 @@ export default function AccountUserClient({
 
               <input
                 type="text"
-                required
                 value={username}
+                aria-invalid={Boolean(orgFieldErrors.username)}
                 onChange={(e) => {
                   setUsername(e.target.value);
                   setOrgMessage(null);
+                  if (orgFieldErrors.username) setOrgFieldErrors({ ...orgFieldErrors, username: "" });
                 }}
-                className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 font-medium"
+                className={orgInputClass(!!orgFieldErrors.username)}
               />
+
+              {orgFieldErrors.username ? (
+                <p className="text-xs text-red-500 font-medium">{orgFieldErrors.username}</p>
+              ) : (
+                <p className="text-[11px] text-slate-400">ความยาว 3-20 ตัวอักษร โดยเป็นภาษาอังกฤษ, ตัวเลข, _ , - ได้</p>
+              )}
             </div>
 
             {/* ชื่อองค์กร */}
@@ -452,14 +465,19 @@ export default function AccountUserClient({
 
               <input
                 type="text"
-                required
                 value={companyName}
+                aria-invalid={Boolean(orgFieldErrors.companyName)}
                 onChange={(e) => {
                   setCompanyName(e.target.value);
                   setOrgMessage(null);
+                  if (orgFieldErrors.companyName) setOrgFieldErrors({ ...orgFieldErrors, companyName: "" });
                 }}
-                className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 font-medium"
+                className={orgInputClass(!!orgFieldErrors.companyName)}
               />
+
+              {orgFieldErrors.companyName && (
+                <p className="text-xs text-red-500 font-medium">{orgFieldErrors.companyName}</p>
+              )}
             </div>
 
             {/* ประเภทอุตสาหกรรม */}

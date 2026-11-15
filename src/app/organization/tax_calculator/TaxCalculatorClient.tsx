@@ -126,8 +126,8 @@ export default function TaxCalculatorClient({ loadError, projects, initialProjec
   }, []);
 
   // แถวค่าใช้จ่ายตั้งต้นของโครงการ:
-  //   เคยบันทึกผลประเมินไว้ -> ใช้ค่าที่บันทึกไว้ เพื่อแก้ไขต่อได้ (ข้อ 12.2)
-  //   ยังไม่เคยบันทึก     -> ดึงรายการต้นทุนมาตรฐานของแอดมิน (ข้อ 5.5) มาใส่ให้ทั้งหมด พร้อมราคาสุทธิ
+  //   เคยบันทึกผลประเมินไว้ -> ใช้ค่าที่บันทึกไว้ เพื่อแก้ไขต่อได้ 
+  //   ยังไม่เคยบันทึก     -> ดึงรายการต้นทุนมาตรฐานของแอดมินมาใส่ให้ทั้งหมด พร้อมราคาสุทธิ
   //                         ตามแผนภาพ 5.2.2.11 ที่ข้อมูลต้นทุนโครงการ "ถูกนำเข้ามาประมวลผล" องค์กรแก้จำนวนเงินได้ และเพิ่ม/ลบรายการของตัวเองได้
   const initialRows = (p: TaxProject | undefined): CostRow[] =>
     p?.saved
@@ -388,7 +388,7 @@ export default function TaxCalculatorClient({ loadError, projects, initialProjec
                           <input
                             type="text"
                             aria-label="ชื่อรายการค่าใช้จ่าย"
-                            placeholder="ชื่อรายการ เช่น ค่ากล้าไม้"
+                            placeholder="ชื่อรายการ เช่น ค่าแรงปลูกต้นไม้"
                             maxLength={150}
                             value={r.name}
                             onChange={(e) => updateRow(r.key, { name: e.target.value }, nameKey(r.key))}
