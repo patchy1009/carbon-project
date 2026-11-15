@@ -1,28 +1,15 @@
 "use client";
-/* [MERGE aom + cyn2 รอบ 2] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (เดิมอยู่ที่ activity_based/components/CalculationResult.tsx cyn2 ย้ายมา general_activity)
- * แสดงผลคำนวณ + คำแนะนำลดคาร์บอน + ปุ่มดาวน์โหลด PDF (ส่งข้อมูลไป ./pdf/route.tsx) */
+/*
+ * แสดงผลของหน้ากิจกรรมทั่วไป (TOR ข้อ 9.2, 9.3)
+ *   1) สรุปปริมาณก๊าซเรือนกระจกของการประชุมและการเดินทาง + ยอดรวม (tCO2e) พร้อมไฟฟ้าที่ใช้และค่าไฟโดยประมาณ
+ *   2) ข้อเสนอแนะลดคาร์บอน (ตัวเลือกที่ปล่อยน้อยกว่าที่ใช้อยู่)
+ *   3) ปุ่มดาวน์โหลด PDF: ส่งตัวเลขที่แสดงอยู่ไปให้ ./pdf/route.tsx สร้างไฟล์ (ไม่อ่านฐานข้อมูลซ้ำ)
+ */
 
 import React, { useState } from "react";
+import { ELECTRICITY_PRICE_BAHT_PER_KWH, vehicleLabel, GroupedVehicleRecommendation } from "./calculation";
 
-type FuelOptionItem = {
-  option: {
-    category_type: string;
-    fuelType: string;
-    name: string;
-  };
-  emissionTon: number;
-  reductionTon: number;
-  electricityReductionKWh?: number;
-  electricityCostSaved?: number;
-  isCurrent: boolean;
-};
-
-type GroupedVehicleRecommendation = {
-  category_type: string;
-  bestEmissionTon: number;
-  fuels: FuelOptionItem[];
-};
-
+// emission เป็นหน่วยตัน (tCO2e)  ค่าไฟเป็นบาท  ไฟฟ้าเป็น kWh
 type CalculationResultProps = {
   meetingEmission: number;
   travelEmission: number;
@@ -48,6 +35,7 @@ export default function CalculationResult({
 
   const totalEmission = meetingEmission + travelEmission;
 
+  // กดดาวน์โหลด: ส่งข้อมูลที่แสดงอยู่ไป POST ที่ /pdf แล้วรับไฟล์ PDF กลับมาเป็นไฟล์ดาวน์โหลด
   const handleDownloadPdf = async () => {
     setIsDownloading(true);
     try {
@@ -76,7 +64,9 @@ export default function CalculationResult({
         try {
           const errData = await response.json();
           if (errData.error) errorMsg = errData.error;
-        } catch (_) {}
+        } catch {
+          // ตอบกลับไม่ใช่ JSON ก็ใช้ข้อความมาตรฐานด้านบน
+        }
         alert(errorMsg);
         return;
       }
@@ -114,11 +104,7 @@ export default function CalculationResult({
     });
   };
 
-  const cleanName = (name: string) => {
-    if (!name) return "";
-    return name.replace(/^เปลี่ยนมาใช้\s*/i, "").trim();
-  };
-
+  // มีข้อเสนอแนะอย่างน้อย 1 ตัวเลือกที่ไม่ใช่แบบที่ใช้อยู่ -> แสดงส่วนข้อเสนอแนะ
   const hasMeetingRecs =
     meetingRecommendation &&
     meetingRecommendation.some((group) =>
@@ -132,7 +118,6 @@ export default function CalculationResult({
   const hasAnyValidRec = hasMeetingRecs || hasTravelRecs;
 
   return (
-    // [MERGE-FIX] เอา font-['Be_Vietnam_Pro'] ออก (เว็บไม่ได้โหลดฟอนต์นี้) ใช้ฟอนต์หลักของเว็บ
     <div className="space-y-6 text-gray-800">
       {/* ส่วนสรุปผลการประเมิน */}
       <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
@@ -182,7 +167,7 @@ export default function CalculationResult({
                     </strong>
                   </span>
                   <span>
-                    ค่าใช้จ่ายไฟฟ้า :{" "}
+                    ค่าไฟโดยประมาณ ({ELECTRICITY_PRICE_BAHT_PER_KWH} บาท/kWh) :{" "}
                     <strong className="text-gray-700">
                       {formatNumber(meetingElectricityCost, 2)} บาท
                     </strong>
@@ -214,7 +199,7 @@ export default function CalculationResult({
                     </strong>
                   </span>
                   <span>
-                    ค่าใช้จ่ายไฟฟ้า :{" "}
+                    ค่าไฟโดยประมาณ ({ELECTRICITY_PRICE_BAHT_PER_KWH} บาท/kWh) :{" "}
                     <strong className="text-gray-700">
                       {formatNumber(travelElectricityCost, 2)} บาท
                     </strong>
@@ -286,7 +271,7 @@ export default function CalculationResult({
                       >
                         <div className="flex items-center justify-between border-b border-gray-200 pb-2">
                           <span className="text-sm font-bold text-gray-800 uppercase tracking-wide">
-                            รูปแบบ: {group.category_type}
+                            รูปแบบ: {vehicleLabel(group.category_type)}
                           </span>
                           <span className="text-xs text-gray-500">
                             ปล่อยน้อยที่สุดในกลุ่ม:{" "}
@@ -305,7 +290,7 @@ export default function CalculationResult({
                               <div className="space-y-1">
                                 <div className="flex items-center gap-2">
                                   <span className="font-semibold text-gray-900 text-sm">
-                                    {cleanName(fuelItem.option.name)}
+                                    {fuelItem.option.name}
                                   </span>
                                   {fuelIdx === 0 && (
                                     <span className="text-[10px] bg-[#32885F] text-white font-bold px-2 py-0.5 rounded-full">
@@ -330,7 +315,7 @@ export default function CalculationResult({
                                     {fuelItem.electricityCostSaved !== undefined &&
                                       fuelItem.electricityCostSaved !== 0 && (
                                         <span className="text-emerald-700 font-medium">
-                                          ประหยัดค่าไฟ:{" "}
+                                          ประหยัดค่าไฟโดยประมาณ:{" "}
                                           {formatNumber(
                                             fuelItem.electricityCostSaved,
                                             2
@@ -391,7 +376,7 @@ export default function CalculationResult({
                       >
                         <div className="flex items-center justify-between border-b border-gray-200 pb-2">
                           <span className="text-sm font-bold text-gray-800 uppercase tracking-wide">
-                            พาหนะ: {group.category_type}
+                            พาหนะ: {vehicleLabel(group.category_type)}
                           </span>
                           <span className="text-xs text-gray-500">
                             ปล่อยน้อยที่สุดในกลุ่ม:{" "}
@@ -410,7 +395,7 @@ export default function CalculationResult({
                               <div className="space-y-1">
                                 <div className="flex items-center gap-2">
                                   <span className="font-semibold text-gray-900 text-sm">
-                                    {cleanName(fuelItem.option.name)}
+                                    {fuelItem.option.name}
                                   </span>
                                   {fuelIdx === 0 && (
                                     <span className="text-[10px] bg-[#32885F] text-white font-bold px-2 py-0.5 rounded-full">
@@ -435,7 +420,7 @@ export default function CalculationResult({
                                     {fuelItem.electricityCostSaved !== undefined &&
                                       fuelItem.electricityCostSaved !== 0 && (
                                         <span className="text-emerald-700 font-medium">
-                                          ประหยัดค่าไฟ:{" "}
+                                          ประหยัดค่าไฟโดยประมาณ:{" "}
                                           {formatNumber(
                                             fuelItem.electricityCostSaved,
                                             2

@@ -1,6 +1,7 @@
-// [MERGE aom + cyn2 รอบ 3] cyn2 เพิ่ม targetSchema, MAX_COST_PRICE, checkCostPrice (ต้นทุน/เป้าหมายบันทึกลง DB) — รับตาม cyn2
+// กฎตรวจข้อมูลของหน้า "เป้าหมาย / ต้นทุน / เอกสาร" ของผู้ดูแลระบบ: เอกสาร (docSchema), ต้นทุน (costSchema, ข้อ 5.5), เป้าหมาย (targetSchema, ข้อ 5.4)
 import { required, notNumericOnly, isDecimal, maxLength, type formSchema } from '@/lib/validation';
 import { normalizeNumberString } from '@/lib/normalization';
+import { noSqlSyntax } from '@/lib/sqlSyntax'; // ตรวจ Syntax ป้องกัน SQL Injection (TOR 5.6)
 
 /* schema ของหน้า Allocation & TAX & Doc */
 
@@ -8,7 +9,7 @@ import { normalizeNumberString } from '@/lib/normalization';
 export type DocField = 'document_name';
 export const docSchema: formSchema<DocField> = {
   document_name: {
-    rules: [required('ชื่อเอกสาร'), notNumericOnly('ชื่อเอกสาร'), maxLength('ชื่อเอกสาร', 255)],
+    rules: [required('ชื่อเอกสาร'), notNumericOnly('ชื่อเอกสาร'), maxLength('ชื่อเอกสาร', 255), noSqlSyntax('ชื่อเอกสาร')],
   },
 };
 
@@ -25,7 +26,7 @@ export const DOC_FILE_RULE = {
 export type CostField = 'name' | 'price';
 export const costSchema: formSchema<CostField> = {
   name: {
-    rules: [required('ชื่อรายการต้นทุน'), notNumericOnly('ชื่อรายการต้นทุน'), maxLength('ชื่อรายการต้นทุน', 150)],
+    rules: [required('ชื่อรายการต้นทุน'), notNumericOnly('ชื่อรายการต้นทุน'), maxLength('ชื่อรายการต้นทุน', 150), noSqlSyntax('ชื่อรายการต้นทุน')],
   },
   price: {
     normalize: normalizeNumberString,
@@ -49,6 +50,6 @@ export function checkCostPrice(cleanPrice: string): string | undefined {
 export type TargetField = 'target_name';
 export const targetSchema: formSchema<TargetField> = {
   target_name: {
-    rules: [required('ชื่อเป้าหมาย'), notNumericOnly('ชื่อเป้าหมาย'), maxLength('ชื่อเป้าหมาย', 100)],
+    rules: [required('ชื่อเป้าหมาย'), notNumericOnly('ชื่อเป้าหมาย'), maxLength('ชื่อเป้าหมาย', 100), noSqlSyntax('ชื่อเป้าหมาย')],
   },
 };

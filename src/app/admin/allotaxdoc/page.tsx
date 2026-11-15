@@ -1,4 +1,3 @@
-// [MERGE aom + cyn2 รอบ 3] cyn2 เพิ่มการโหลดเป้าหมาย (project_target_rule) และต้นทุน (project_cost_type) ส่งให้ allotaxdocClient — รับตาม cyn2
 // ส่วนที่ทำงานฝั่ง server ของหน้าเอกสาร: ตรวจสิทธิ์แอดมินแล้วดึงรายการเอกสาร เป้าหมายโครงการ และต้นทุนโครงการ
 export const dynamic = 'force-dynamic';
 

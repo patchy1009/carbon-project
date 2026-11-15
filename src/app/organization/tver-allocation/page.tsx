@@ -1,5 +1,5 @@
-// [MERGE aom + cyn2 รอบ 3] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ ไม่ได้แก้โค้ด — ฝั่ง server ของหน้าจัดสรร ใช้ requireOrgId + org_id แบบ aom ทางเข้า: ปุ่ม "ไปจัดสรรคาร์บอนเครดิต" ในหน้า tver-simulation ของ aom
-// ส่วนที่ทำงานฝั่ง server ของหน้าจัดสรรคาร์บอนเครดิต (TOR ข้อ 10.2–10.4)
+// ส่วนที่ทำงานฝั่ง server ของหน้าจัดสรรคาร์บอนเครดิต (TOR ข้อ 11.2–11.4)
+// ทางเข้า: ปุ่ม "ไปจัดสรรคาร์บอนเครดิต" ในหน้าจำลองโครงการ (tver-simulation) ซึ่งส่งโครงการมาทาง ?project=
 // ใช้ client ฝั่ง server + org_id จาก session จริง (แบบเดียวกับหน้า tver-simulation)
 //   เดิมใช้ supabase ของ browser บน server -> มองไม่เห็นผู้ใช้ที่ล็อกอิน จึงอ่านโครงการ/กิจกรรม/เป้าหมายไม่ได้
 // โครงการเลือกมาตั้งแต่หน้าจำลองโครงการแล้ว (ปุ่ม "ไปจัดสรรคาร์บอนเครดิต" ส่งมาทาง ?project=)
@@ -15,6 +15,9 @@ import AllocationClient, {
   type ProjectOption,
   type SavedAllocation,
 } from "./allocation";
+
+// ?project= ต้องหน้าตาเป็น uuid เท่านั้น (ค่าอื่นไม่ถูกส่งไปค้นฐานข้อมูล)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type ProjectRow = { orgtreeproject_id: string; project_name: string | null; credit_year_1: number | string | null };
 type ActivityRow = {
@@ -37,6 +40,7 @@ export default async function TverAllocationPage({
 
   // ยังไม่ได้เลือกโครงการ -> ไปเลือก/สร้างที่หน้าจำลองโครงการก่อน
   if (!requestedProject) redirect("/organization/tver-simulation");
+  if (typeof requestedProject !== "string" || !UUID_RE.test(requestedProject)) notFound();
 
   // โครงการต้องเป็นขององค์กรนี้เท่านั้น
   const projectRes = await supabase
@@ -68,7 +72,7 @@ export default async function TverAllocationPage({
       .eq("org_id", orgId)
       .order("period_date", { ascending: true })
       .order("created_at", { ascending: true }),
-    // ผลการจัดสรรที่เคยบันทึกไว้ (ใช้โหลดมาให้แก้ไข ข้อ 10.2)
+    // ผลการจัดสรรที่เคยบันทึกไว้ (ใช้โหลดมาให้แก้ไข ข้อ 11.2)
     supabase
       .from("org_credit_allocation")
       .select("orgallocate_id, target_id, year1_credit")

@@ -1,14 +1,21 @@
 "use client";
-/* [MERGE aom + cyn2 รอบ 2] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (เดิมอยู่ที่ activity_based/components/TravelForm.tsx cyn2 ย้ายมา general_activity)
- * ฟอร์มการเดินทาง/ขนส่ง เลือกการเดินทางเก่ามาแก้หรือลบได้ */
+/*
+ * ฟอร์มกรอกข้อมูล "การเดินทาง" ของหน้ากิจกรรมทั่วไป (TOR ข้อ 9.1)
+ *   - เลือกชนิดรถและเชื้อเพลิง กรอกระยะทางและจำนวนเที่ยว (รถ EV กรอกอัตราสิ้นเปลืองไฟฟ้า kWh ต่อ 100 กม. เพิ่ม)
+ *   - พิมพ์ชื่อการเดินทางเดิมหรือเลือกจากประวัติ เพื่อดึงข้อมูลเก่ามาแก้ไขหรือลบ (อ่านจากตาราง general_activity_traveling)
+ * ฟอร์มนี้ไม่คำนวณเอง ทุกครั้งที่ผู้ใช้แก้ช่องใด จะส่งข้อมูลทั้งชุดขึ้นไปให้หน้า page.tsx ผ่าน onDataChange
+ */
 
 import React, { useState, useEffect, useRef } from "react";
 import { Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { getErrorMessage } from "@/lib/errorMessage";
+import { evKwhPerKmToPer100, evPer100ToKwhPerKm, VEHICLE_OPTIONS, FUEL_OPTIONS_MAP } from "./calculation";
 
+// ข้อมูลที่ฟอร์มส่งขึ้นไปให้หน้า page.tsx
+//   electricityKwh = kWh ต่อ กม. มีเฉพาะรถ EV
 export type TravelData = {
   travel_name: string;
-  category_type: string;
   vehicleType: string;
   fuelType?: string;
   distanceKm: number;
@@ -21,62 +28,32 @@ export type TravelFormProps = {
   orgId: string;
   initialData?: TravelData | null;
   onDataChange: (data: TravelData | null) => void;
-  fetchElectricityEF: () => { id: string | null; value: number };
   getEFDetail: (fuelKey: string) => { id: string | null; value: number };
 };
 
-const VEHICLE_OPTIONS = [
-  { id: "car", label: "รถยนต์" },
-  { id: "motorcycle", label: "รถจักรยานยนต์" },
-  { id: "van", label: "รถตู้โดยสาร" },
-  { id: "bus", label: "รถโดยสารประจำทาง" },
-  { id: "ev", label: "รถไฟฟ้า (EV)" },
-];
-
-const FUEL_OPTIONS_MAP: Record<string, { id: string; label: string }[]> = {
-  car: [
-    { id: "gasohol_e10", label: "Gasohol E10" },
-    { id: "gasohol_e20", label: "Gasohol E20" },
-    { id: "gasohol_e85", label: "Gasohol E85" },
-    { id: "diesel_b7", label: "Diesel B7" },
-    { id: "diesel_b20", label: "Diesel B20" },
-    { id: "cng", label: "CNG" },
-    { id: "lpg", label: "LPG" },
-  ],
-  motorcycle: [
-    { id: "gasohol_e10", label: "Gasohol E10" },
-    { id: "gasohol_e20", label: "Gasohol E20" },
-    { id: "gasohol_e85", label: "Gasohol E85" },
-  ],
-  van: [
-    { id: "diesel_b7", label: "Diesel B7" },
-    { id: "diesel_b20", label: "Diesel B20" },
-    { id: "cng", label: "CNG" },
-    { id: "lpg", label: "LPG" },
-  ],
-  bus: [
-    { id: "diesel_b7", label: "Diesel B7" },
-    { id: "diesel_b20", label: "Diesel B20" },
-    { id: "cng", label: "CNG" },
-    { id: "lpg", label: "LPG" },
-  ],
-  ev: [
-    { id: "electricity", label: "กระแสไฟฟ้า (kWh/km)" },
-  ],
+// 1 แถวของตาราง general_activity_traveling (ประวัติ) เฉพาะคอลัมน์ที่ฟอร์มนี้อ่าน
+type PastTravelRow = {
+  activity_name: string | null;
+  vehicle_type: string | null;
+  fuel_type: string | null;
+  distance: number | string | null;
+  trips: number | string | null;
+  electricity_kwh: number | string | null;
 };
 
-export default function TravelForm({ orgId, initialData, onDataChange, fetchElectricityEF, getEFDetail }: TravelFormProps) {
+export default function TravelForm({ orgId, initialData, onDataChange, getEFDetail }: TravelFormProps) {
   const [travelName, setTravelName] = useState("");
   const [vehicleType, setVehicleType] = useState("car");
   const [fuelType, setFuelType] = useState(FUEL_OPTIONS_MAP["car"][0].id);
   const [distanceKm, setDistanceKm] = useState("20");
   const [trips, setTrips] = useState("1");
-  const [evElectricityKwh, setEvElectricityKwh] = useState("0.16");
-  const [pastTravelsData, setPastTravelsData] = useState<any[]>([]);
+  const [evElectricityKwh, setEvElectricityKwh] = useState("0.165"); // เก็บเป็น kWh ต่อ กม. (หน่วยที่ใช้คำนวณ/บันทึก)
+  const [evPer100Text, setEvPer100Text] = useState("16.5"); // ข้อความในช่องกรอก = kWh ต่อ 100 กม.
+  const [pastTravelsData, setPastTravelsData] = useState<PastTravelRow[]>([]);
   const [isOpenDropdown, setIsOpenDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // ดึงประวัติจากตาราง general_activity_traveling
+  // โหลดประวัติการเดินทางของ "องค์กรนี้" จากตาราง general_activity_traveling (ใหม่สุดก่อน) ไว้แสดงใน dropdown
   useEffect(() => {
     async function fetchPastData() {
       if (!orgId) return;
@@ -93,6 +70,7 @@ export default function TravelForm({ orgId, initialData, onDataChange, fetchElec
     fetchPastData();
   }, [orgId]);
 
+  // คลิกนอกกล่อง dropdown ประวัติ -> ปิดกล่อง
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -103,6 +81,8 @@ export default function TravelForm({ orgId, initialData, onDataChange, fetchElec
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // รวมค่าที่กรอกทั้งหมดเป็น TravelData ส่งขึ้นไปให้หน้า page.tsx (ยังไม่ตั้งชื่อการเดินทาง = ส่ง null)
+  // รถ EV ใช้เชื้อเพลิง 'electricity' (ค่า EF ของไฟฟ้า)
   const emitChange = (name: string, vType: string, fType: string, dist: string, tripCount: string, evKwh: string) => {
     if (!name.trim()) {
       onDataChange(null);
@@ -115,7 +95,6 @@ export default function TravelForm({ orgId, initialData, onDataChange, fetchElec
 
     const payload: TravelData = {
       travel_name: name.trim(),
-      category_type: vType,
       vehicleType: vType,
       fuelType: rawFuel,
       distanceKm: Number(dist) || 0,
@@ -124,12 +103,13 @@ export default function TravelForm({ orgId, initialData, onDataChange, fetchElec
     };
 
     if (isEv) {
-      payload.electricityKwh = Number(evKwh) || 0.16;
+      payload.electricityKwh = Number(evKwh) || 0.165;
     }
 
     onDataChange(payload);
   };
 
+  // ถ้าหน้าแม่ส่ง initialData มา ให้เติมค่าลงฟอร์ม
   useEffect(() => {
     if (initialData) {
       setTravelName(initialData.travel_name || "");
@@ -139,10 +119,12 @@ export default function TravelForm({ orgId, initialData, onDataChange, fetchElec
       setTrips(String(initialData.trips || 1));
       if (initialData.electricityKwh) {
         setEvElectricityKwh(String(initialData.electricityKwh));
+        setEvPer100Text(evKwhPerKmToPer100(initialData.electricityKwh));
       }
     }
   }, [initialData]);
 
+  // พิมพ์ชื่อ หรือเลือกชื่อจากประวัติ: ถ้าชื่อตรงกับการเดินทางเก่า ให้ดึงข้อมูลเก่ามาใส่ฟอร์ม
   const handleNameChange = (val: string) => {
     setTravelName(val);
 
@@ -152,7 +134,7 @@ export default function TravelForm({ orgId, initialData, onDataChange, fetchElec
       const fType = foundRecord.fuel_type || "gasohol_e10";
       const dist = String(foundRecord.distance || 20);
       const tripCount = String(foundRecord.trips || 1);
-      const evKwhVal = String(foundRecord.electricity_kwh || "0.16");
+      const evKwhVal = String(foundRecord.electricity_kwh || "0.165");
 
       setVehicleType(vType);
       setFuelType(fType);
@@ -160,6 +142,7 @@ export default function TravelForm({ orgId, initialData, onDataChange, fetchElec
       setTrips(tripCount);
       if (vType === "ev") {
         setEvElectricityKwh(evKwhVal);
+        setEvPer100Text(evKwhPerKmToPer100(evKwhVal));
       }
 
       emitChange(val, vType, fType, dist, tripCount, evKwhVal);
@@ -168,7 +151,7 @@ export default function TravelForm({ orgId, initialData, onDataChange, fetchElec
     }
   };
 
-  // ฟังก์ชันลบการเดินทางออกจากฐานข้อมูล Supabase ทันที
+  // ลบการเดินทางนี้ออกจากฐานข้อมูลทันที หลังผู้ใช้กดยืนยัน
   const handleDeleteTravel = async () => {
     if (!travelName.trim()) return;
     if (!confirm(`คุณต้องการลบการเดินทาง "${travelName}" ออกจากระบบใช่หรือไม่?`)) return;
@@ -186,12 +169,13 @@ export default function TravelForm({ orgId, initialData, onDataChange, fetchElec
       setPastTravelsData(prev => prev.filter(item => item.activity_name !== travelName.trim()));
       setTravelName("");
       onDataChange(null);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Delete error:", err);
-      alert(`เกิดข้อผิดพลาดในการลบ: ${err.message || err}`);
+      alert(`เกิดข้อผิดพลาดในการลบ: ${getErrorMessage(err)}`);
     }
   };
 
+  // เปลี่ยนชนิดรถ: เปลี่ยนเชื้อเพลิงเป็นตัวแรกของรถชนิดนั้นด้วย (เชื้อเพลิงเดิมอาจใช้กับรถชนิดใหม่ไม่ได้)
   const handleVehicleChange = (newVehicle: string) => {
     setVehicleType(newVehicle);
     const fuels = FUEL_OPTIONS_MAP[newVehicle] || [];
@@ -202,7 +186,7 @@ export default function TravelForm({ orgId, initialData, onDataChange, fetchElec
 
   const currentFuels = FUEL_OPTIONS_MAP[vehicleType] || [];
   const isEvSelected = vehicleType === "ev";
-  const uniqueTravelNames = Array.from(new Set(pastTravelsData.map(item => item.activity_name).filter(Boolean)));
+  const uniqueTravelNames = Array.from(new Set(pastTravelsData.map(item => item.activity_name).filter((n): n is string => Boolean(n))));
   const isExistingTravel = uniqueTravelNames.includes(travelName.trim());
 
   return (
@@ -311,15 +295,18 @@ export default function TravelForm({ orgId, initialData, onDataChange, fetchElec
 
         {isEvSelected && (
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">ปริมาณกระแสไฟฟ้า (kWh) *</label>
+            <label className="mb-1 block text-xs font-medium text-gray-700">อัตราสิ้นเปลืองไฟฟ้า (kWh ต่อ 100 กม.) *</label>
+            <p className="mb-1 text-[11px] text-gray-500">ไม่ทราบใช้ค่าเริ่มต้นได้ ถ้าทราบดูจากคู่มือหรือสเปกรถ ซึ่งเขียนเป็น kWh/100 กม. (รถ EV ทั่วไปประมาณ 15 – 22)</p>
             <input
               type="number"
-              min="0.01"
-              step="0.01"
-              value={evElectricityKwh}
+              min="1"
+              step="0.1"
+              value={evPer100Text}
               onChange={(e) => {
-                setEvElectricityKwh(e.target.value);
-                emitChange(travelName, vehicleType, fuelType, distanceKm, trips, e.target.value);
+                setEvPer100Text(e.target.value);
+                const perKm = evPer100ToKwhPerKm(e.target.value);
+                setEvElectricityKwh(perKm);
+                emitChange(travelName, vehicleType, fuelType, distanceKm, trips, perKm);
               }}
               className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
             />

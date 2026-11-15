@@ -1,11 +1,19 @@
 "use client";
-/* [MERGE aom + cyn2 รอบ 2] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (เดิมอยู่ที่ activity_based/components/MeetingForm.tsx cyn2 ย้ายมา general_activity)
- * ฟอร์มการประชุม/อบรม/อีเวนต์ (online / onsite + อุปกรณ์หลายเซต) เลือกกิจกรรมเก่ามาแก้หรือลบได้ */
+/*
+ * ฟอร์มกรอกข้อมูล "การประชุม / อบรม / อีเวนต์" ของหน้ากิจกรรมทั่วไป (TOR ข้อ 9.1)
+ *   - เลือกรูปแบบ ออนไลน์ หรือ ออนไซต์ (ออนไซต์จะมีส่วนการเดินทางเพิ่ม)
+ *   - ใส่อุปกรณ์ไฟฟ้าได้หลายชุด (ชื่อ จำนวนเครื่อง ชั่วโมงใช้งาน กำลังไฟเป็นวัตต์)
+ *   - พิมพ์ชื่อกิจกรรมเดิมหรือเลือกจากประวัติ เพื่อดึงข้อมูลเก่ามาแก้ไขหรือลบ (อ่านจากตาราง general_activity_meeting)
+ * ฟอร์มนี้ไม่คำนวณเอง ทุกครั้งที่ผู้ใช้แก้ช่องใด จะส่งข้อมูลทั้งชุดขึ้นไปให้หน้า page.tsx ผ่าน onDataChange
+ */
 
 import React, { useState, useEffect, useRef } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { getErrorMessage } from "@/lib/errorMessage";
+import { evKwhPerKmToPer100, evPer100ToKwhPerKm, VEHICLE_OPTIONS, FUEL_OPTIONS_MAP } from "./calculation";
 
+// อุปกรณ์ 1 ชุด (electricityKwh = kWh ต่อชั่วโมง ต่อ 1 เครื่อง)
 export type EquipmentSetInput = {
   equipmentName: string;
   devices: number;
@@ -13,6 +21,9 @@ export type EquipmentSetInput = {
   electricityKwh: number;
 };
 
+// ข้อมูลที่ฟอร์มส่งขึ้นไปให้หน้า page.tsx
+//   vehicleType / fuelType / distanceKm / trips มีเฉพาะประชุมออนไซต์
+//   electricityKwh = kWh ต่อ กม. ของรถ EV (มีเฉพาะออนไซต์ที่ไปด้วย EV)
 export type MeetingData = {
   meetingName: string;
   category_type: string;
@@ -24,6 +35,24 @@ export type MeetingData = {
   trips?: number;
   electricityKwh?: number;
   ef_id?: string | null;
+};
+
+// อุปกรณ์ 1 ชุดในฟอร์ม (มี id ไว้ใช้เป็น key และอ้างอิงตอนแก้/ลบ)
+type EquipmentRow = EquipmentSetInput & { id: string };
+
+// 1 แถวของตาราง general_activity_meeting (ประวัติ) เฉพาะคอลัมน์ที่ฟอร์มนี้อ่าน
+// 1 แถว = อุปกรณ์ 1 ชุด กิจกรรมเดียวกันจึงมีหลายแถวที่ activity_name เหมือนกัน
+type PastMeetingRow = {
+  activity_name: string | null;
+  category_type: string | null;
+  equipment_name: string | null;
+  devices: number | string | null;
+  hours: number | string | null;
+  electricity_kwh: number | string | null;
+  vehicle_type: string | null;
+  fuel_type: string | null;
+  distance: number | string | null;
+  trips: number | string | null;
 };
 
 export type MeetingFormProps = {
@@ -39,65 +68,30 @@ const MEETING_TYPES = [
   { id: "onsite", label: "ประชุมออนไซต์ อบรม และจัดกิจกรรม (Onsite)" },
 ];
 
-const VEHICLE_OPTIONS = [
-  { id: "car", label: "รถยนต์" },
-  { id: "motorcycle", label: "รถจักรยานยนต์" },
-  { id: "van", label: "รถตู้โดยสาร" },
-  { id: "bus", label: "รถโดยสารประจำทาง" },
-  { id: "ev", label: "รถไฟฟ้า (EV)" },
-];
-
-const FUEL_OPTIONS_MAP: Record<string, { id: string; label: string }[]> = {
-  car: [
-    { id: "gasohol_e10", label: "Gasohol E10" },
-    { id: "gasohol_e20", label: "Gasohol E20" },
-    { id: "gasohol_e85", label: "Gasohol E85" },
-    { id: "diesel_b7", label: "Diesel B7" },
-    { id: "diesel_b20", label: "Diesel B20" },
-    { id: "cng", label: "CNG" },
-    { id: "lpg", label: "LPG" },
-  ],
-  motorcycle: [
-    { id: "gasohol_e10", label: "Gasohol E10" },
-    { id: "gasohol_e20", label: "Gasohol E20" },
-    { id: "gasohol_e85", label: "Gasohol E85" },
-  ],
-  van: [
-    { id: "diesel_b7", label: "Diesel B7" },
-    { id: "diesel_b20", label: "Diesel B20" },
-    { id: "cng", label: "CNG" },
-    { id: "lpg", label: "LPG" },
-  ],
-  bus: [
-    { id: "diesel_b7", label: "Diesel B7" },
-    { id: "diesel_b20", label: "Diesel B20" },
-    { id: "cng", label: "CNG" },
-    { id: "lpg", label: "LPG" },
-  ],
-  ev: [
-    { id: "electricity", label: "กระแสไฟฟ้า (kWh/km)" },
-  ],
-};
+// ในโค้ดเก็บกำลังไฟเป็น kWh ต่อชั่วโมง (ตรงกับคอลัมน์ electricity_kwh ในฐานข้อมูล) แต่ช่องกรอกแสดงเป็นวัตต์ (W) ตามป้ายบนอุปกรณ์
+const toWatt = (kwhPerHour: number) => Math.round(kwhPerHour * 1000 * 1000) / 1000;
 
 export default function MeetingForm({ orgId, initialData, onDataChange, fetchElectricityEF, getEFDetail }: MeetingFormProps) {
   const [meetingName, setMeetingName] = useState("");
   const [category_type, setCategoryType] = useState("online");
-  const [pastMeetingsData, setPastMeetingsData] = useState<any[]>([]);
+  const [pastMeetingsData, setPastMeetingsData] = useState<PastMeetingRow[]>([]);
   const [isOpenDropdown, setIsOpenDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const defaultEquipmentSets = [
-    { id: "1", equipmentName: "คอมพิวเตอร์ / อุปกรณ์สำนักงาน", devices: 1, durationHours: 2, electricityKwh: 0.1 }
+  // ค่าเริ่มต้น: คอมพิวเตอร์ 1 เครื่อง 2 ชั่วโมง 60 วัตต์ (0.06 kWh ต่อชั่วโมง)
+  const defaultEquipmentSets: EquipmentRow[] = [
+    { id: "1", equipmentName: "คอมพิวเตอร์ / อุปกรณ์สำนักงาน", devices: 1, durationHours: 2, electricityKwh: 0.06 }
   ];
 
-  const [equipmentSets, setEquipmentSets] = useState(defaultEquipmentSets);
+  const [equipmentSets, setEquipmentSets] = useState<EquipmentRow[]>(defaultEquipmentSets);
   const [vehicleType, setVehicleType] = useState("car");
   const [fuelType, setFuelType] = useState(FUEL_OPTIONS_MAP["car"][0].id);
   const [distanceKm, setDistanceKm] = useState("10");
   const [trips, setTrips] = useState("1");
-  const [evElectricityKwh, setEvElectricityKwh] = useState("0.16");
+  const [evElectricityKwh, setEvElectricityKwh] = useState("0.165"); // เก็บเป็น kWh ต่อ กม. (หน่วยที่ใช้คำนวณ/บันทึก)
+  const [evPer100Text, setEvPer100Text] = useState("16.5"); // ข้อความในช่องกรอก = kWh ต่อ 100 กม.
 
-  // ดึงประวัติจากตาราง general_activity_meeting
+  // โหลดประวัติกิจกรรมของ "องค์กรนี้" จากตาราง general_activity_meeting (ใหม่สุดก่อน) ไว้แสดงใน dropdown
   useEffect(() => {
     async function fetchPastData() {
       if (!orgId) return;
@@ -114,6 +108,7 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
     fetchPastData();
   }, [orgId]);
 
+  // คลิกนอกกล่อง dropdown ประวัติ -> ปิดกล่อง
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -124,10 +119,12 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // รวมค่าที่กรอกทั้งหมดเป็น MeetingData ส่งขึ้นไปให้หน้า page.tsx (ยังไม่ตั้งชื่อกิจกรรม = ส่ง null)
+  // ประชุมออนไลน์และประชุมออนไซต์ที่ไปด้วย EV ใช้เชื้อเพลิง 'electricity' (ค่า EF ของไฟฟ้า)
   const emitChange = (
     name: string,
     catType: string,
-    sets: typeof equipmentSets,
+    sets: EquipmentRow[],
     vType: string,
     fType: string,
     dist: string,
@@ -143,7 +140,7 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
       equipmentName: item.equipmentName.trim() || "อุปกรณ์",
       devices: Number(item.devices) || 1,
       durationHours: Number(item.durationHours) || 1,
-      electricityKwh: Number(item.electricityKwh) || 0.1,
+      electricityKwh: Number(item.electricityKwh) || 0.06,
     }));
 
     const rawFuel = catType === 'online' ? 'electricity' : (vType === 'ev' ? 'electricity' : fType);
@@ -163,13 +160,14 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
       payload.distanceKm = Number(dist) || 0;
       payload.trips = Number(tripCount) || 1;
       if (vType === "ev") {
-        payload.electricityKwh = Number(evKwh) || 0.16;
+        payload.electricityKwh = Number(evKwh) || 0.165;
       }
     }
 
     onDataChange(payload);
   };
 
+  // ถ้าหน้าแม่ส่ง initialData มา ให้เติมค่าลงฟอร์ม
   useEffect(() => {
     if (initialData) {
       setMeetingName(initialData.meetingName || "");
@@ -192,11 +190,13 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
         setTrips(String(initialData.trips || 1));
         if (initialData.electricityKwh) {
           setEvElectricityKwh(String(initialData.electricityKwh));
+          setEvPer100Text(evKwhPerKmToPer100(initialData.electricityKwh));
         }
       }
     }
   }, [initialData]);
 
+  // พิมพ์ชื่อ หรือเลือกชื่อจากประวัติ: ถ้าชื่อตรงกับกิจกรรมเก่า ให้ดึงข้อมูลเก่ามาใส่ฟอร์ม (1 แถวในประวัติ = อุปกรณ์ 1 ชุด)
   const handleNameChange = (val: string) => {
     setMeetingName(val);
 
@@ -207,12 +207,12 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
       const cType = firstRecord.category_type || "online";
       setCategoryType(cType);
 
-      const loadedEquipmentSets = matchedRecords.map((record, index) => ({
+      const loadedEquipmentSets: EquipmentRow[] = matchedRecords.map((record, index) => ({
         id: String(index + 1),
         equipmentName: record.equipment_name || "อุปกรณ์",
         devices: Number(record.devices || 1),
         durationHours: Number(record.hours || 2),
-        electricityKwh: Number(record.electricity_kwh || 0.1),
+        electricityKwh: Number(record.electricity_kwh || 0.06),
       }));
 
       setEquipmentSets(loadedEquipmentSets);
@@ -238,7 +238,7 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
     }
   };
 
-  // ฟังก์ชันลบกิจกรรมออกจากฐานข้อมูล Supabase ทันที
+  // ลบกิจกรรมนี้ (ทุกแถวที่ชื่อเดียวกัน) ออกจากฐานข้อมูลทันที หลังผู้ใช้กดยืนยัน
   const handleDeleteActivity = async () => {
     if (!meetingName.trim()) return;
     if (!confirm(`คุณต้องการลบกิจกรรม "${meetingName}" ออกจากระบบใช่หรือไม่?`)) return;
@@ -256,9 +256,9 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
       setPastMeetingsData(prev => prev.filter(item => item.activity_name !== meetingName.trim()));
       setMeetingName("");
       onDataChange(null);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Delete error:", err);
-      alert(`เกิดข้อผิดพลาดในการลบ: ${err.message || err}`);
+      alert(`เกิดข้อผิดพลาดในการลบ: ${getErrorMessage(err)}`);
     }
   };
 
@@ -275,21 +275,24 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
     emitChange(meetingName, category_type, equipmentSets, newVehicle, newFuel, distanceKm, trips, evElectricityKwh);
   };
 
-  const handleEquipmentChange = (id: string, field: string, value: any) => {
+  // แก้ช่องใดช่องหนึ่งของอุปกรณ์ชุดที่ระบุ
+  const handleEquipmentChange = (id: string, field: keyof EquipmentSetInput, value: string | number) => {
     const updated = equipmentSets.map(item => (item.id === id ? { ...item, [field]: value } : item));
     setEquipmentSets(updated);
     emitChange(meetingName, category_type, updated, vehicleType, fuelType, distanceKm, trips, evElectricityKwh);
   };
 
+  // เพิ่มอุปกรณ์ชุดใหม่ (ค่าเริ่มต้น: 1 เครื่อง 1 ชั่วโมง 60 วัตต์)
   const handleAddEquipmentSet = () => {
     const updated = [
       ...equipmentSets,
-      { id: Date.now().toString(), equipmentName: "", devices: 1, durationHours: 1, electricityKwh: 0.1 }
+      { id: Date.now().toString(), equipmentName: "", devices: 1, durationHours: 1, electricityKwh: 0.06 }
     ];
     setEquipmentSets(updated);
     emitChange(meetingName, category_type, updated, vehicleType, fuelType, distanceKm, trips, evElectricityKwh);
   };
 
+  // ลบอุปกรณ์ชุดที่ระบุ (ต้องเหลืออย่างน้อย 1 ชุด)
   const handleRemoveEquipmentSet = (id: string) => {
     if (equipmentSets.length === 1) {
       alert("ต้องมีรายการอุปกรณ์ไฟฟ้าอย่างน้อย 1 เซต");
@@ -302,7 +305,7 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
 
   const currentFuels = FUEL_OPTIONS_MAP[vehicleType] || [];
   const isEvSelected = vehicleType === "ev";
-  const uniqueMeetingNames = Array.from(new Set(pastMeetingsData.map(item => item.activity_name).filter(Boolean)));
+  const uniqueMeetingNames = Array.from(new Set(pastMeetingsData.map(item => item.activity_name).filter((n): n is string => Boolean(n))));
   const isExistingActivity = uniqueMeetingNames.includes(meetingName.trim());
 
   return (
@@ -439,13 +442,13 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
                 />
               </div>
               <div className="sm:col-span-3">
-                <label className="mb-1 block text-[11px] font-medium text-gray-600">kWh/ชม.</label>
+                <label className="mb-1 block text-[11px] font-medium text-gray-600" title="ดูได้จากป้ายที่อะแดปเตอร์หรือตัวเครื่อง เช่น โน้ตบุ๊กทั่วไปประมาณ 60 วัตต์">กำลังไฟ (วัตต์)</label>
                 <input
                   type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={set.electricityKwh}
-                  onChange={(e) => handleEquipmentChange(set.id, "electricityKwh", Number(e.target.value))}
+                  min="1"
+                  step="1"
+                  value={toWatt(set.electricityKwh)}
+                  onChange={(e) => handleEquipmentChange(set.id, "electricityKwh", Number(e.target.value) / 1000)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs outline-none focus:border-[#32885F]"
                 />
               </div>
@@ -499,15 +502,18 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
 
             {isEvSelected && (
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">ปริมาณกระแสไฟฟ้า (kWh) *</label>
+                <label className="mb-1 block text-xs font-medium text-gray-700">อัตราสิ้นเปลืองไฟฟ้า (kWh ต่อ 100 กม.) *</label>
+                <p className="mb-1 text-[11px] text-gray-500">ไม่ทราบใช้ค่าเริ่มต้นได้ ถ้าทราบดูจากคู่มือหรือสเปกรถ ซึ่งเขียนเป็น kWh/100 กม. (รถ EV ทั่วไปประมาณ 15 – 22)</p>
                 <input
                   type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={evElectricityKwh}
+                  min="1"
+                  step="0.1"
+                  value={evPer100Text}
                   onChange={(e) => {
-                    setEvElectricityKwh(e.target.value);
-                    emitChange(meetingName, category_type, equipmentSets, vehicleType, fuelType, distanceKm, trips, e.target.value);
+                    setEvPer100Text(e.target.value);
+                    const perKm = evPer100ToKwhPerKm(e.target.value);
+                    setEvElectricityKwh(perKm);
+                    emitChange(meetingName, category_type, equipmentSets, vehicleType, fuelType, distanceKm, trips, perKm);
                   }}
                   className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#32885F]"
                 />

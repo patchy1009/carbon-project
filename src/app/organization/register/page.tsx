@@ -1,7 +1,6 @@
-// [MERGE aom + cyn2 รอบ 3] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ ไม่ได้แก้โค้ด — แยกเป็น page.tsx (server) + RegisterClient.tsx
 // หน้าลงทะเบียนองค์กร: ฝั่ง server
 // - เช็กบน server ว่าล็อกอินอยู่แล้วหรือยัง ถ้าใช่ให้ไปแดชบอร์ดเลย
-// - ถ้ายังไม่ล็อกอิน แสดง RegisterClient (ฟอร์มสมัคร + ยืนยัน OTP ฝั่ง browser)
+// - ถ้ายังไม่ล็อกอิน แสดง RegisterClient ซึ่งเปิด AuthModal (ฟอร์มสมัคร + ยืนยัน OTP) ในโหมดสมัคร
 export const dynamic = 'force-dynamic';
 
 import { redirect } from 'next/navigation';

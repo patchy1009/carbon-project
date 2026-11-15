@@ -1,11 +1,19 @@
+/*
+ * API เข้าสู่ระบบ (TOR ข้อ 2.1, 2.2)  POST /api/auth/login
+ * ทุกบทบาท (ผู้ดูแลระบบและองค์กร) ล็อกอินผ่าน API เดียวกันนี้ แล้วระบบแยกหน้าให้ตาม role ในตาราง user
+ * ขั้นตอน: ตรวจข้อมูล (ไม่ว่าง/ไม่มี Syntax คล้าย SQL) -> ตรวจรหัสผ่านกับ Supabase Auth
+ *          -> ต้องมีแถวในตาราง user -> status ต้องเป็น active -> role ต้องเป็น admin หรือ organization
+ * ข้อใดไม่ผ่านหลังตรวจรหัสผ่านแล้ว จะออกจากระบบทันที (signOut) แล้วแจ้งเหตุผล
+ */
 import { NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
 
 // รับอีเมลและรหัสผ่านจากหน้าเว็บ ล็อกอินกับ Supabase ตรวจ role และสถานะ แล้วบอกหน้าเว็บว่าต้องไปหน้าไหน
 export async function POST(request: Request) {
   try {
-    // client ตัวนี้ผูกกับ cookie: signInWithPassword สำเร็จแล้ว session จะถูกเขียนลง cookie หน้าอื่นๆเลยรู้ว่าใครล็อกอกอินอยู่
-    const supabase = await createSupabaseServer();  
+    // client ตัวนี้ผูกกับ cookie: signInWithPassword สำเร็จแล้ว session จะถูกเขียนลง cookie หน้าอื่นๆเลยรู้ว่าใครล็อกอินอยู่
+    const supabase = await createSupabaseServer();
 
     // รับข้อมูลจากหน้า Login
     const body = await request.json();
@@ -17,6 +25,15 @@ export async function POST(request: Request) {
     if (!email || !password) {
       return NextResponse.json(
         { error: "กรุณากรอกอีเมลและรหัสผ่าน" }, 
+        { status: 400 }
+      );
+    }
+
+    // ตรวจ Syntax คล้ายคำสั่ง SQL ฝั่ง server (TOR 2.2) กันการยิง API ตรงโดยไม่ผ่านหน้าเว็บ
+    // ตรวจก่อนส่งให้ Supabase เสมอ รหัสผ่านใช้โหมด lenient
+    if (containsSqlSyntax(email) || containsSqlSyntax(password, { lenient: true })) {
+      return NextResponse.json(
+        { error: "ข้อมูลที่กรอกมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL)" },
         { status: 400 }
       );
     }
@@ -91,7 +108,7 @@ export async function POST(request: Request) {
       redirectTo,
     });
   } catch (error) {
-    console.error("Login API error:", error);     
+    console.error("Login API error:", error);
 
     return NextResponse.json(
       { error: "เกิดข้อผิดพลาดภายในระบบ" },
@@ -99,4 +116,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

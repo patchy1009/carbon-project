@@ -1,7 +1,13 @@
 "use client";
-// [MERGE aom + cyn2 รอบ 3] cyn2 แก้การตั้งรหัสผ่านใหม่ (โค้ด cyn2 ไม่ได้แก้)
-/* [MERGE aom + cyn2] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (ฟีเจอร์ที่ aom ไม่มี) — ไม่ได้แก้โค้ด
- * หน้าลืมรหัสผ่าน / ตั้งรหัสผ่านใหม่ (ลิงก์ในอีเมลรีเซ็ตชี้มาที่นี่) */
+
+/*
+ * หน้ารีเซ็ตรหัสผ่าน (TOR ข้อ 3.2–3.4) แบ่งเป็น 3 ขั้น (state ชื่อ step)
+ *   request  กรอกอีเมลเพื่อขอลิงก์ตั้งรหัสผ่านใหม่ (Supabase ส่งลิงก์ไปที่อีเมลที่ลงทะเบียน)
+ *   reset    เปิดจากลิงก์ในอีเมล: แลกลิงก์เป็น session แล้วกรอกรหัสผ่านใหม่ + ยืนยัน
+ *            ลิงก์มีอายุ 10 นาที (หน้านี้นับถอยหลังให้ดู และ Supabase ตั้ง Email OTP expiration = 600 วินาที)
+ *   success  เปลี่ยนรหัสผ่านสำเร็จ
+ * ลิงก์ในอีเมลมี 2 แบบ ที่หน้านี้รองรับทั้งคู่: ?token_hash=... (แบบที่ Supabase แนะนำสำหรับ Next.js) และ ?code=... (แบบ PKCE)
+ */
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
@@ -15,27 +21,13 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
+import { getErrorMessage } from "@/lib/errorMessage";
+import { PASSWORD_REGEX } from "@/lib/authRules";
 
+// รหัสผ่านใหม่ต้องยาวอย่างน้อย 8 ตัว และมีทั้งตัวอักษรอังกฤษกับตัวเลข
 function validatePassword(password: string): boolean {
-  return (
-    password.length >= 8 &&
-    /[A-Za-z]/.test(password) &&
-    /[0-9]/.test(password)
-  );
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-
-  if (typeof error === "object" && error !== null && "message" in error) {
-    const message = (error as { message?: unknown }).message;
-
-    if (typeof message === "string" && message.trim()) {
-      return message;
-    }
-  }
-
-  return "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ กรุณาลองใหม่อีกครั้ง";
+  return PASSWORD_REGEX.test(password);
 }
 
 function formatTime(seconds: number): string {
@@ -48,14 +40,14 @@ const STORAGE_KEY = "pw_reset_expiry_time";
 const FLOW_KEY = "is_in_reset_flow";
 const TEN_MINUTES_MS = 10 * 60 * 1000; // 10 นาที (600 วินาที)
 
-// [แก้ไขรอบ 2] จดไว้ตั้งแต่โมดูลโหลดว่า URL มี ?code= (ลิงก์รีเซ็ตรหัสผ่าน) หรือไม่
+// จดไว้ตั้งแต่โมดูลโหลดว่า URL มี ?code= (ลิงก์รีเซ็ตรหัสผ่านแบบ PKCE) หรือไม่
 // เพราะ Supabase client จะแลก code เป็น session เองแล้วลบ ?code= ออกจาก URL
 // ถ้าไปเช็กใน useEffect อาจช้าเกินไป (URL ถูกลบไปแล้ว)
 const URL_HAD_RECOVERY_CODE =
   typeof window !== "undefined" &&
   new URLSearchParams(window.location.search).has("code");
 
-// [แก้ไขรอบ 3] เก็บ promise การยืนยัน token_hash ไว้ระดับโมดูล
+// เก็บ promise การยืนยัน token_hash ไว้ระดับโมดูล
 // เพื่อกันการยืนยันซ้ำ (token ใช้ได้ครั้งเดียว) เมื่อ React Strict Mode รัน useEffect สองรอบ
 let recoveryVerifyPromise: Promise<{ error: Error | null }> | null = null;
 
@@ -130,7 +122,7 @@ export default function ForgotPasswordPage() {
     const checkRecoveryUrl = async () => {
       try {
         // ============================================================
-        // [แก้ไขรอบ 3] รองรับลิงก์แบบ token_hash (วิธีที่แนะนำของ Supabase สำหรับ Next.js)
+        // ลิงก์แบบ token_hash (วิธีที่แนะนำของ Supabase สำหรับ Next.js)
         // ลิงก์ในอีเมลเป็น: /organization/forgot_password?token_hash=xxxx&type=recovery
         // ใช้ verifyOtp แลกเป็น session ได้เลย ไม่ต้องพึ่ง code verifier ในเบราว์เซอร์
         // (จึงใช้ได้แม้เปิดลิงก์คนละเบราว์เซอร์/อุปกรณ์กับที่กดขอ)
@@ -173,10 +165,9 @@ export default function ForgotPasswordPage() {
 
           throw verifyError ?? new Error("ลิงก์ไม่ถูกต้องหรือถูกใช้ไปแล้ว");
         }
-        // ===================== จบส่วนที่แก้ไขรอบ 3 =====================
 
         // ============================================================
-        // [แก้ไขรอบ 2] รองรับลิงก์แบบ PKCE: /organization/forgot_password?code=xxxx
+        // ลิงก์แบบ PKCE: /organization/forgot_password?code=xxxx
         // Supabase client (createBrowserClient ใน lib/supabaseClient.ts) แลก code เป็น session ให้เอง
         // อัตโนมัติอยู่แล้ว และ code ใช้ได้ครั้งเดียว จึง "ห้าม" เรียก exchangeCodeForSession ซ้ำ
         // (เคยทำให้เกิด error AuthPKCECodeVerifierMissingError) แค่รอให้ client แลกเสร็จด้วย getSession()
@@ -208,7 +199,6 @@ export default function ForgotPasswordPage() {
           // ไม่มี session = ลิงก์หมดอายุ / ถูกใช้ไปแล้ว -> ไปแสดง error ใน catch
           throw sessionError ?? new Error("ลิงก์ไม่ถูกต้องหรือถูกใช้ไปแล้ว");
         }
-        // ===================== จบส่วนที่แก้ไข =====================
 
         const hash = window.location.hash;
 
@@ -316,6 +306,12 @@ export default function ForgotPasswordPage() {
       return;
     }
 
+    // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งอีเมลไปขอลิงก์
+    if (containsSqlSyntax(normalizedEmail)) {
+      setErrorMessage("อีเมลมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -353,6 +349,12 @@ export default function ForgotPasswordPage() {
       setErrorMessage(
         "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร และมีทั้งตัวอักษรภาษาอังกฤษกับตัวเลข"
       );
+      return;
+    }
+
+    // ตรวจ Syntax คล้ายคำสั่ง SQL (รหัสผ่านใช้โหมด lenient)
+    if (containsSqlSyntax(password, { lenient: true })) {
+      setErrorMessage("รหัสผ่านมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
       return;
     }
 

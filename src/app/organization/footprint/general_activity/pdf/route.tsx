@@ -1,7 +1,11 @@
-/* [MERGE aom + cyn2 รอบ 2] ไฟล์นี้ = โค้ด cyn2 ทั้งไฟล์ (ใหม่) — ไม่ได้แก้โค้ด
- * API สร้าง PDF ผลคำนวณกิจกรรมพิเศษ: รับข้อมูลที่คำนวณแล้วจาก CalculationResult.tsx (POST) แล้วคืนไฟล์ PDF
- * ไม่อ่าน/เขียนฐานข้อมูล ใช้ไลบรารี @react-pdf/renderer (ต้อง npm install) และโหลดฟอนต์ Sarabun จาก CDN */
+/*
+ * API สร้าง PDF สรุปผลกิจกรรมทั่วไป (TOR ข้อ 9.3)
+ *   - รับตัวเลขที่คำนวณและแสดงอยู่แล้วจาก CalculationResult.tsx (POST แบบ JSON) แล้วคืนไฟล์ PDF
+ *   - ไม่อ่าน/เขียนฐานข้อมูล จึงไม่คำนวณใหม่ (ตัวเลขใน PDF = ตัวเลขที่ผู้ใช้เห็นบนหน้าจอ)
+ *   - ใช้ไลบรารี @react-pdf/renderer และโหลดฟอนต์ Sarabun (ภาษาไทย) จาก CDN
+ */
 import { NextResponse } from 'next/server';
+import { ELECTRICITY_PRICE_BAHT_PER_KWH, vehicleLabel } from '../calculation';
 import React from 'react';
 import {
   renderToBuffer,
@@ -20,6 +24,7 @@ Font.register({
   src: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/sarabun/Sarabun-Regular.ttf',
 });
 
+// รูปแบบข้อมูลที่รับเข้ามา (ทุกช่องเป็น optional เพราะมาจาก JSON ที่ไม่ได้ผ่านการตรวจชนิดข้อมูล)
 interface FuelOptionItem {
   option?: { name?: string };
   emissionTon?: number;
@@ -35,6 +40,7 @@ interface GroupedRecommendation {
   fuels?: FuelOptionItem[];
 }
 
+// แสดงตัวเลขแบบไทย ทศนิยมคงที่ (ค่าที่ไม่ใช่ตัวเลขหรือติดลบถือเป็น 0)
 const formatNum = (num: number = 0, decimals = 4): string => {
   const safeNum = typeof num === 'number' && !isNaN(num) ? Math.max(0, num) : 0;
   return safeNum.toLocaleString('th-TH', {
@@ -43,9 +49,7 @@ const formatNum = (num: number = 0, decimals = 4): string => {
   });
 };
 
-const cleanName = (name?: string): string =>
-  name ? name.replace(/^เปลี่ยนมาใช้\s*/i, '').trim() : '';
-
+// มีข้อเสนอแนะอย่างน้อย 1 ตัวเลือกที่ไม่ใช่แบบที่ใช้อยู่หรือไม่ (ถ้าไม่มีจะไม่พิมพ์ส่วนข้อเสนอแนะ)
 const hasValidRecs = (recs?: GroupedRecommendation[]): boolean =>
   Array.isArray(recs) &&
   recs.some((g) => Array.isArray(g.fuels) && g.fuels.some((f) => !f.isCurrent));
@@ -236,7 +240,7 @@ const RecCategoryList = ({
           <View key={gIdx} style={styles.groupCard} wrap={false}>
             <View style={styles.groupHeaderRow}>
               <Text style={styles.groupTitle}>
-                {`${labelPrefix}: ${group.category_type || '-'}`}
+                {`${labelPrefix}: ${vehicleLabel(group.category_type)}`}
               </Text>
               <Text style={styles.bestEmissionText}>
                 {`ปล่อยน้อยที่สุดในกลุ่ม: ${formatNum(group.bestEmissionTon)} tCO2e`}
@@ -253,7 +257,7 @@ const RecCategoryList = ({
                   <View style={styles.fuelInfoLeft}>
                     <View style={styles.fuelTitleRow}>
                       <Text style={styles.fuelName}>
-                        {cleanName(fuel.option?.name)}
+                        {fuel.option?.name ?? ''}
                       </Text>
                       {fIdx === 0 && (
                         <View style={styles.badge}>
@@ -265,7 +269,7 @@ const RecCategoryList = ({
                     </View>
                     {hasElecSaved && (
                       <Text style={styles.elecSubText}>
-                        {`ไฟฟ้าลดลง: ${formatNum(fuel.electricityReductionKWh, 2)} kWh | ประหยัดค่าไฟ: ${formatNum(fuel.electricityCostSaved, 2)} บาท`}
+                        {`ไฟฟ้าลดลง: ${formatNum(fuel.electricityReductionKWh, 2)} kWh | ประหยัดค่าไฟโดยประมาณ: ${formatNum(fuel.electricityCostSaved, 2)} บาท`}
                       </Text>
                     )}
                   </View>
@@ -290,6 +294,7 @@ const RecCategoryList = ({
   );
 };
 
+// รับข้อมูลผลคำนวณแล้วสร้าง PDF ส่งกลับเป็นไฟล์ดาวน์โหลด
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -329,7 +334,7 @@ export async function POST(request: Request) {
                   </Text>
                   {meetingElecKWh > 0 && (
                     <Text style={styles.subText}>
-                      {`ปริมาณไฟฟ้า: ${formatNum(meetingElecKWh, 2)} kWh | ค่าไฟ: ${formatNum(meetingElecCost, 2)} บาท`}
+                      {`ปริมาณไฟฟ้า: ${formatNum(meetingElecKWh, 2)} kWh | ค่าไฟโดยประมาณ (${ELECTRICITY_PRICE_BAHT_PER_KWH} บาท/kWh): ${formatNum(meetingElecCost, 2)} บาท`}
                     </Text>
                   )}
                 </View>
@@ -347,7 +352,7 @@ export async function POST(request: Request) {
                   </Text>
                   {travelElecKWh > 0 && (
                     <Text style={styles.subText}>
-                      {`ปริมาณไฟฟ้า: ${formatNum(travelElecKWh, 2)} kWh | ค่าไฟ: ${formatNum(travelElecCost, 2)} บาท`}
+                      {`ปริมาณไฟฟ้า: ${formatNum(travelElecKWh, 2)} kWh | ค่าไฟโดยประมาณ (${ELECTRICITY_PRICE_BAHT_PER_KWH} บาท/kWh): ${formatNum(travelElecCost, 2)} บาท`}
                     </Text>
                   )}
                 </View>
