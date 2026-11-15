@@ -6,6 +6,8 @@
  *   reset    เปิดจากลิงก์ในอีเมล: แลกลิงก์เป็น session แล้วกรอกรหัสผ่านใหม่ + ยืนยัน
  *            ลิงก์มีอายุ 10 นาที (หน้านี้นับถอยหลังให้ดู และ Supabase ตั้ง Email OTP expiration = 600 วินาที)
  *   success  เปลี่ยนรหัสผ่านสำเร็จ
+ * ทั้งสองฟอร์มปิดการตรวจของเบราว์เซอร์ (noValidate) แล้วตรวจเอง แจ้งเตือนภาษาไทยบนหน้าแบบเดียวกับหน้าลงทะเบียน:
+ *   ช่องที่ผิดขึ้นกรอบแดงพร้อมข้อความใต้ช่อง ส่วนข้อผิดพลาดจากเซิร์ฟเวอร์แสดงกล่องแดงด้านบน
  * ลิงก์ในอีเมลมี 2 แบบ ที่หน้านี้รองรับทั้งคู่: ?token_hash=... (แบบที่ Supabase แนะนำสำหรับ Next.js) และ ?code=... (แบบ PKCE)
  */
 
@@ -24,7 +26,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
 import { getErrorMessage } from "@/lib/errorMessage";
 import { checkEmailBeforeReset } from "@/lib/checkEmail"; // เช็กว่ามีบัญชีที่ใช้อีเมลนี้ก่อนส่งลิงก์รีเซ็ต
-import { PASSWORD_HINT, PASSWORD_MIN_LENGTH, validatePasswordStrength } from "@/lib/authRules"; // กติการหัสผ่านกลาง (ยาวอย่างน้อย 8 ตัว มีตัวอักษรอังกฤษและตัวเลข)
+import { EMAIL_REGEX, PASSWORD_HINT, validatePasswordStrength } from "@/lib/authRules"; // กติการหัสผ่านกลาง (ยาวอย่างน้อย 8 ตัว มีตัวอักษรอังกฤษและตัวเลข)
 
 function formatTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
@@ -84,8 +86,20 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  // ข้อความแจ้งเตือนใต้ช่อง (แบบเดียวกับหน้าลงทะเบียน)
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [confirmPasswordError, setConfirmPasswordError] = useState("");
 
   const [timeLeft, setTimeLeft] = useState(600);
+
+  // class ของช่องกรอก: มีกรอบแดงเมื่อช่องนั้นมีข้อผิดพลาด
+  const inputClass = (hasError: boolean) =>
+    `w-full px-4 py-3 pl-10 rounded-2xl border text-sm focus:outline-none focus:ring-2 text-slate-800 ${
+      hasError
+        ? "border-red-500 focus:ring-red-500 bg-red-50/20"
+        : "border-slate-200 focus:ring-emerald-700 bg-slate-50/50"
+    }`;
 
   // ระบบนับถอยหลัง 10 นาที (อิงจากเวลาจริง และจำค่าไว้แม้รีเฟรชหน้าเว็บ)
   useEffect(() => {
@@ -325,15 +339,22 @@ export default function ForgotPasswordPage() {
     sessionStorage.removeItem(FLOW_KEY);
 
     const normalizedEmail = email.trim().toLowerCase();
+    setEmailError("");
 
+    // ช่องอีเมลผิด -> กรอบแดงพร้อมข้อความใต้ช่อง
     if (!normalizedEmail) {
-      setErrorMessage("กรุณากรอกอีเมล");
+      setEmailError("กรุณากรอกอีเมล");
       return;
     }
 
-    // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งอีเมลไปขอลิงก์
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
+      setEmailError("รูปแบบอีเมลไม่ถูกต้อง เช่น name@company.co.th");
+      return;
+    }
+
+    // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งอีเมลไปขอลิงก์ (TOR 3.4)
     if (containsSqlSyntax(normalizedEmail)) {
-      setErrorMessage("อีเมลมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
+      setEmailError("อีเมลมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
       return;
     }
 
@@ -377,20 +398,30 @@ export default function ForgotPasswordPage() {
     setErrorMessage("");
     setSuccessMessage("");
 
-    // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อน (รหัสผ่านใช้โหมด lenient) แล้วค่อยตรวจรูปแบบรหัสผ่าน
-    if (containsSqlSyntax(password, { lenient: true })) {
-      setErrorMessage("รหัสผ่านมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
-      return;
+    // ตรวจทั้งสองช่องพร้อมกัน ช่องที่ผิดขึ้นกรอบแดงพร้อมข้อความใต้ช่อง (ข้อความเดียวกับหน้าบัญชีผู้ใช้)
+    let newPasswordError = "";
+    let newConfirmError = "";
+
+    if (!password) {
+      newPasswordError = "กรุณากรอกรหัสผ่านใหม่";
+    } else if (containsSqlSyntax(password, { lenient: true })) {
+      // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อน (รหัสผ่านใช้โหมด lenient) แล้วค่อยตรวจรูปแบบรหัสผ่าน (TOR 3.4)
+      newPasswordError = "รหัสผ่านมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่";
+    } else {
+      newPasswordError = validatePasswordStrength(password) || "";
     }
 
-    const passwordProblem = validatePasswordStrength(password);
-    if (passwordProblem) {
-      setErrorMessage(passwordProblem);
-      return;
+    if (!confirmPassword) {
+      newConfirmError = "กรุณายืนยันรหัสผ่านใหม่";
+    } else if (password !== confirmPassword) {
+      newConfirmError = "รหัสผ่านใหม่และการยืนยันรหัสผ่านไม่ตรงกัน";
     }
 
-    if (password !== confirmPassword) {
-      setErrorMessage("รหัสผ่านและการยืนยันรหัสผ่านไม่ตรงกัน");
+    setPasswordError(newPasswordError);
+    setConfirmPasswordError(newConfirmError);
+
+    if (newPasswordError || newConfirmError) {
+      setErrorMessage("กรุณาตรวจสอบข้อมูลช่องที่มีกรอบสีแดงให้ถูกต้องครบถ้วน");
       return;
     }
 
@@ -446,7 +477,7 @@ export default function ForgotPasswordPage() {
     <div className="bg-white w-full max-w-lg rounded-3xl p-8 lg:p-10 shadow-xl border border-slate-200/85 mx-auto my-10">
       {/* STEP 1: ขอส่งลิงก์เปลี่ยนรหัสผ่าน */}
       {step === "request" && (
-        <form onSubmit={handleRequestReset} className="space-y-6">
+        <form onSubmit={handleRequestReset} className="space-y-6" noValidate>
           <div className="text-center space-y-1.5">
             <h1 className="text-2xl lg:text-3xl font-extrabold text-[#11221C]">
               ลืมรหัสผ่าน
@@ -480,19 +511,21 @@ export default function ForgotPasswordPage() {
               <input
                 id="reset-email"
                 type="email"
-                required
                 autoComplete="email"
                 placeholder="name@company.co.th"
                 value={email}
+                aria-invalid={Boolean(emailError)}
                 onChange={(e) => {
                   setEmail(e.target.value);
+                  setEmailError("");
                   setErrorMessage("");
                   setSuccessMessage("");
                 }}
-                className="w-full px-4 py-3 pl-10 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800"
+                className={inputClass(!!emailError)}
               />
               <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
             </div>
+            {emailError && <p className="text-xs text-red-500 font-medium">{emailError}</p>}
           </div>
 
           <button
@@ -520,7 +553,7 @@ export default function ForgotPasswordPage() {
 
       {/* STEP 2: ตั้งรหัสผ่านใหม่ */}
       {step === "reset" && (
-        <form onSubmit={handleUpdatePassword} className="space-y-6">
+        <form onSubmit={handleUpdatePassword} className="space-y-6" noValidate>
           <div className="text-center space-y-1.5">
             <div className="w-12 h-12 bg-emerald-50 text-emerald-700 rounded-2xl mx-auto flex items-center justify-center mb-2">
               <ShieldCheck className="w-6 h-6" />
@@ -570,6 +603,8 @@ export default function ForgotPasswordPage() {
                   await supabase.auth.signOut();
                   setPassword("");
                   setConfirmPassword("");
+                  setPasswordError("");
+                  setConfirmPasswordError("");
                   setErrorMessage("");
                   setSuccessMessage("");
                   setStep("request");
@@ -594,19 +629,20 @@ export default function ForgotPasswordPage() {
                     <input
                       id="new-password"
                       type="password"
-                      required
-                      minLength={PASSWORD_MIN_LENGTH}
                       autoComplete="new-password"
                       placeholder={PASSWORD_HINT}
                       value={password}
+                      aria-invalid={Boolean(passwordError)}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                         setPassword(e.target.value);
+                        setPasswordError("");
                         setErrorMessage("");
                       }}
-                      className="w-full px-4 py-3 pl-10 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800"
+                      className={inputClass(!!passwordError)}
                     />
                     <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
                   </div>
+                  {passwordError && <p className="text-xs text-red-500 font-medium">{passwordError}</p>}
                 </div>
 
                 <div className="space-y-1.5">
@@ -621,19 +657,20 @@ export default function ForgotPasswordPage() {
                     <input
                       id="confirm-password"
                       type="password"
-                      required
-                      minLength={PASSWORD_MIN_LENGTH}
                       autoComplete="new-password"
                       placeholder="กรอกรหัสผ่านใหม่อีกครั้ง"
                       value={confirmPassword}
+                      aria-invalid={Boolean(confirmPasswordError)}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                         setConfirmPassword(e.target.value);
+                        setConfirmPasswordError("");
                         setErrorMessage("");
                       }}
-                      className="w-full px-4 py-3 pl-10 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 bg-slate-50/50 text-slate-800"
+                      className={inputClass(!!confirmPasswordError)}
                     />
                     <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
                   </div>
+                  {confirmPasswordError && <p className="text-xs text-red-500 font-medium">{confirmPasswordError}</p>}
                 </div>
               </div>
 
