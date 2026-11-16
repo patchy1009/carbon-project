@@ -1,4 +1,4 @@
-// หน้าบัญชีผู้ใช้ (TOR ข้อ 4) ฝั่ง server: เช็กล็อกอินและดึงข้อมูลผู้ใช้/องค์กรส่งให้ AccountUserClient.tsx
+// หน้าบัญชีผู้ใช้ฝั่ง server: เช็กล็อกอินและดึงข้อมูลผู้ใช้/องค์กรส่งให้ AccountUserClient.tsx
 export const dynamic = 'force-dynamic';
 
 import { redirect } from 'next/navigation';
@@ -16,7 +16,7 @@ export default async function AccountUserPage() {
   // ไม่ได้ล็อกอิน -> กลับหน้าแรก (พฤติกรรมเดิม)
   if (!user) redirect('/organization/homepage');
 
-  // หน้านี้สำหรับองค์กรเท่านั้น (TOR ข้อ 3-4 "โดยองค์กร")
+  // หน้านี้สำหรับองค์กรเท่านั้น
   //   ผู้ดูแลระบบล็อกอินอยู่แล้ว จึงพาไปหน้าของแอดมินแทน (ไม่ต้องเด้งไปหน้า login)
   const current = await getCurrentUser();
   if (current?.role === 'admin') redirect('/admin/ef-gwp');

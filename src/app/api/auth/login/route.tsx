@@ -1,5 +1,5 @@
 /*
- * API เข้าสู่ระบบ (TOR ข้อ 2.1, 2.2)  POST /api/auth/login
+ * API เข้าสู่ระบบ POST /api/auth/login
  * ทุกบทบาท (ผู้ดูแลระบบและองค์กร) ล็อกอินผ่าน API เดียวกันนี้ แล้วระบบแยกหน้าให้ตาม role ในตาราง user
  * ขั้นตอน: ตรวจข้อมูล (ไม่ว่าง/ไม่มี Syntax คล้าย SQL) -> ตรวจรหัสผ่านกับ Supabase Auth
  *          -> ต้องมีแถวในตาราง user -> status ต้องเป็น active -> role ต้องเป็น admin หรือ organization
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // ตรวจ Syntax คล้ายคำสั่ง SQL ฝั่ง server (TOR 2.2) กันการยิง API ตรงโดยไม่ผ่านหน้าเว็บ
+    // ตรวจ Syntax คล้ายคำสั่ง SQL ฝั่ง server กันการยิง API ตรงโดยไม่ผ่านหน้าเว็บ
     // ตรวจก่อนส่งให้ Supabase เสมอ รหัสผ่านใช้โหมด lenient
     if (containsSqlSyntax(email) || containsSqlSyntax(password, { lenient: true })) {
       return NextResponse.json(

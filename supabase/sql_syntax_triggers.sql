@@ -1,4 +1,4 @@
--- ตรวจ Syntax ป้องกัน SQL Injection ในฐานข้อมูล (ชั้นที่ตรวจฝั่ง server ของทุกหน้า) สำหรับตารางของฟีเจอร์ TOR ข้อ 1, 4, 5.4, 5.5, 9, 12
+-- ตรวจ Syntax ป้องกัน SQL Injection ในฐานข้อมูลนที่ตรวจฝั่ง server ของทุกหน้า สำหรับตารางของฟีเจอร์
 -- กฎตรงกับ src/lib/sqlSyntax.ts ทุกข้อ (STRONG / WEAK / โหมด lenient) ถ้าแก้ไฟล์นั้น ต้องแก้ที่นี่ให้ตรงกันด้วย
 -- ทำงานเป็น trigger: ทุกครั้งที่เพิ่มหรือแก้ข้อมูล ถ้าข้อความคล้ายคำสั่ง SQL ฐานข้อมูลจะปฏิเสธ ไม่ว่าข้อมูลจะมาจากหน้าเว็บ API หรือยิงตรงเข้า Supabase
 -- วิธีใช้: Supabase > SQL Editor > วางทั้งไฟล์ > Run (รันซ้ำได้)
@@ -15,7 +15,7 @@ as $fn$
 declare
   s text;
   re text;
-  -- รูปแบบที่เป็นคำสั่ง SQL ชัดเจน (ใช้ทั้งโหมดปกติและ lenient) = STRONG ใน sqlSyntax.ts
+  -- รูปแบบที่เป็นคำสั่ง SQL ชัดเจน = STRONG ใน sqlSyntax.ts
   strong text[] := array[
     $p$(?<![a-z0-9_])union(?![a-z0-9_])(\s+all)?\s+select(?![a-z0-9_])$p$,
     $p$(?<![a-z0-9_])select(?![a-z0-9_])[^;]{0,200}?(?<![a-z0-9_])from(?![a-z0-9_])\s+[a-z0-9_.\"]+$p$,
@@ -33,7 +33,7 @@ declare
     $p$['\"`]\s*(or|and)\s*['\"`(0-9]$p$,
     $p$['\"`]\s*(;|--|/\*)$p$
   ];
-  -- อักขระ/โทเคนเดี่ยวที่ใช้ตัดต่อคำสั่ง (โหมดปกติเท่านั้น) = WEAK ใน sqlSyntax.ts
+  -- อักขระ/โทเคนเดี่ยวที่ใช้ตัดต่อคำสั่งในโหมดปกติเท่านั้น = WEAK ใน sqlSyntax.ts
   weak text[] := array[
     $p$--$p$,
     $p$/\*$p$,
@@ -46,7 +46,7 @@ begin
   end if;
 
   -- เตรียมข้อความแบบเดียวกับ prepare() ใน sqlSyntax.ts:
-  --   แปลงอักขระเต็มความกว้างเป็นปกติ (NFKC), ตัดตัวอักษรล่องหน, ยุบช่องว่าง, ตัวพิมพ์เล็ก
+  --   แปลงอักขระเต็มความกว้างเป็นปกติ ตัดตัวอักษรล่องหน ยุบช่องว่าง และตัวพิมพ์เล็ก
   s := normalize(p_value, NFKC);
   s := regexp_replace(s, '[' || chr(8203) || '-' || chr(8205) || chr(8288) || chr(65279) || chr(173) || ']', '', 'g');
   s := lower(regexp_replace(s, '\s+', ' ', 'g'));
@@ -75,7 +75,7 @@ begin
 end;
 $fn$;
 
--- trigger กลาง: ตรวจคอลัมน์ที่ระบุใน argument ของ trigger (ชื่อคอลัมน์ข้อความ) ถ้าคล้ายคำสั่ง SQL -> ปฏิเสธการบันทึก
+-- trigger กลาง: ตรวจคอลัมน์ที่ระบุใน argument ของ trigger ถ้าคล้ายคำสั่ง SQL -> ปฏิเสธการบันทึก
 create or replace function public.reject_sql_syntax()
 returns trigger
 language plpgsql
@@ -94,9 +94,9 @@ begin
 end;
 $fn$;
 
--- ===== ติดตั้ง trigger เฉพาะตารางของฟีเจอร์เรา (ไม่แตะตารางของเพื่อน) =====
+-- ===== ติดตั้ง trigger =====
 
--- TOR 1, 4: ชื่อผู้ใช้ และชื่อองค์กร
+-- ชื่อผู้ใช้ และชื่อองค์กร
 drop trigger if exists trg_user_no_sql on public."user";
 create trigger trg_user_no_sql
   before insert or update of username on public."user"
@@ -107,7 +107,7 @@ create trigger trg_organization_no_sql
   before insert or update of org_name on public.organization
   for each row execute function public.reject_sql_syntax('org_name');
 
--- TOR 9: กิจกรรมทั่วไป (ประชุม / เดินทาง)
+-- กิจกรรมทั่วไป ประชุม เดินทาง
 drop trigger if exists trg_meeting_no_sql on public.general_activity_meeting;
 create trigger trg_meeting_no_sql
   before insert or update of activity_name, equipment_name on public.general_activity_meeting
@@ -118,7 +118,7 @@ create trigger trg_traveling_no_sql
   before insert or update of activity_name on public.general_activity_traveling
   for each row execute function public.reject_sql_syntax('activity_name');
 
--- TOR 5.4, 5.5: เป้าหมายโครงการ และรายการต้นทุนมาตรฐานของแอดมิน
+-- เป้าหมายโครงการ และรายการต้นทุนมาตรฐานของแอดมิน
 drop trigger if exists trg_target_no_sql on public.project_target_rule;
 create trigger trg_target_no_sql
   before insert or update of target_name on public.project_target_rule
@@ -129,7 +129,7 @@ create trigger trg_cost_type_no_sql
   before insert or update of cost_name on public.project_cost_type
   for each row execute function public.reject_sql_syntax('cost_name');
 
--- TOR 12: ชื่อค่าใช้จ่ายในผลประเมินภาษี (รวมรายการที่องค์กรเพิ่มเอง)
+-- ชื่อค่าใช้จ่ายในผลประเมินภาษี
 drop trigger if exists trg_tax_detail_no_sql on public.org_tax_assessment_detail;
 create trigger trg_tax_detail_no_sql
   before insert or update of cost_name on public.org_tax_assessment_detail
