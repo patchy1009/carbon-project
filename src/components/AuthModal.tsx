@@ -258,6 +258,10 @@ export default function AuthModal({
     } else if (!USERNAME_REGEX.test(cleanUsername)) {
       errors.username = "Username ต้องมีความยาว 3-20 ตัวอักษรภาษาอังกฤษ, ตัวเลข, _ , -";
       hasError = true;
+    } else if (containsSqlSyntax(cleanUsername)) {
+      // ตรวจ Syntax คล้ายคำสั่ง SQL (TOR 1.5) เช่น -- ที่รูปแบบ Username ยอมให้ผ่าน (ตรงกับ server และ trigger ในฐานข้อมูล)
+      errors.username = "ชื่อผู้ใช้งานมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่";
+      hasError = true;
     }
 
     if (!cleanEmail) {

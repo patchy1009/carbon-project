@@ -182,8 +182,10 @@ export default function AccountUserClient({
     if (!cleanUsername) {
       errors.username = "กรุณากรอกชื่อผู้ใช้งาน";
     } else if (!USERNAME_REGEX.test(cleanUsername)) {
-      // รูปแบบนี้อนุญาตแค่อังกฤษ ตัวเลข _ - จึงกันสัญลักษณ์ที่ใช้เขียนคำสั่ง SQL ไปด้วย (TOR 4.3)
       errors.username = "Username ต้องมีความยาว 3-20 ตัวอักษรภาษาอังกฤษ, ตัวเลข, _ , -";
+    } else if (containsSqlSyntax(cleanUsername)) {
+      // ตรวจ Syntax คล้ายคำสั่ง SQL (TOR 4.3) เช่น -- ที่รูปแบบ Username ยอมให้ผ่าน (ตรงกับ server และ trigger ในฐานข้อมูล)
+      errors.username = "ชื่อผู้ใช้งานมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่";
     }
 
     if (!cleanCompanyName) {
