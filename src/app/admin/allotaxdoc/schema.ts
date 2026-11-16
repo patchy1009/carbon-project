@@ -1,7 +1,7 @@
-// กฎตรวจข้อมูลของหน้า "เป้าหมาย / ต้นทุน / เอกสาร" ของผู้ดูแลระบบ: เอกสาร (docSchema), ต้นทุน (costSchema, ข้อ 5.5), เป้าหมาย (targetSchema, ข้อ 5.4)
+// กฎตรวจข้อมูลของหน้า "เป้าหมาย / ต้นทุน / เอกสาร" ของผู้ดูแลระบบ: เอกสาร , ต้นทุน , เป้าหมาย 
 import { required, notNumericOnly, isDecimal, maxLength, type formSchema } from '@/lib/validation';
 import { normalizeNumberString } from '@/lib/normalization';
-import { noSqlSyntax } from '@/lib/sqlSyntax'; // ตรวจ Syntax ป้องกัน SQL Injection (TOR 5.6)
+import { noSqlSyntax } from '@/lib/sqlSyntax'; // ตรวจ Syntax ป้องกัน SQL Injection
 
 /* schema ของหน้า Allocation & TAX & Doc */
 
@@ -20,7 +20,7 @@ export const DOC_FILE_RULE = {
   extensions: ['pdf', 'docx', 'xlsx'],
 };
 
-/* รายการต้นทุนมาตรฐาน (บันทึกลงตาราง project_cost_type) ข้อ 5.5
+/* รายการต้นทุนมาตรฐาน (บันทึกลงตาราง project_cost_type)
  * ชื่อห้ามว่าง / ตัวเลขล้วน / ยาวเกิน 150 ห้ามซ้ำ (ใส่เพิ่มตอน submit ด้วย extendSchema และมี unique ที่ DB อีกชั้น)
  * ราคาไม่ติดลบ ทศนิยมไม่เกิน 2 หลัก ส่วนเพดานราคาตรวจแยกใน checkCostPrice */
 export type CostField = 'name' | 'price';
@@ -44,7 +44,7 @@ export function checkCostPrice(cleanPrice: string): string | undefined {
   return Number.isFinite(n) && n >= MAX_COST_PRICE ? 'ราคาสูงเกินไป' : undefined;
 }
 
-/* เป้าหมายโครงการ (บันทึกลงตาราง project_target_rule) ข้อ 5.4
+/* เป้าหมายโครงการ (บันทึกลงตาราง project_target_rule)
  * ชื่อห้ามว่าง / ตัวเลขล้วน / ยาวเกิน 100 (ตรงกับ varchar(100)) ห้ามซ้ำ ใส่เพิ่มตอน submit ด้วย extendSchema
  * สัดส่วนชดเชย (จำนวนเต็ม 0-100) ตรวจแยกในหน้าจอ เพราะช่อง "ขาย" คำนวณเองจาก 100 - ชดเชย */
 export type TargetField = 'target_name';
