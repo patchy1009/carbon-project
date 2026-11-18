@@ -25,7 +25,7 @@ export const FUEL_CONSUMPTION_RATES: Record<string, Record<string, number>> = {
     gasohol_e10: 14.763,  // รถยนต์เฉลี่ยทุกขนาด (เบนซิน)
     gasohol_e20: 14.763,
     gasohol_e85: 14.763,
-    diesel_b7: 11.111,    // รถกระบะส่วนบุคคลขนาด 1 ตัน (ตารางไม่มีแถว "รถยนต์นั่งดีเซล" แถวนี้ใกล้เคียงที่สุด)
+    diesel_b7: 11.111,    // รถกระบะส่วนบุคคลขนาด 1 ตัน
     diesel_b20: 11.111,
     cng: 11.905,          // รถ NGV (หน่วย กม./กก.)
     lpg: 8.929,           // รถ LPG
