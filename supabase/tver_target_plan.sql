@@ -1,6 +1,6 @@
 -- =====================================================================
 -- ตารางของโหมดใหม่ "จำลองโครงการ T-VER จากเป้าหมายการกักเก็บคาร์บอน"
---   องค์กรกรอก: ชื่อโครงการ, เป้าหมาย (tCO2e), ปีที่ t, พันธุ์ไม้ + ระยะปลูก + แปลงที่มี
+--   องค์กรกรอก: ชื่อโครงการ, เป้าหมาย (tCO2e), ปีที่ t, ชื่อพันธุ์ไม้ (พิมพ์เอง) + ระยะปลูก + แปลงที่มี
 --   ระบบคำนวณ: ต้องปลูกกี่ต้น ที่ดินพอไหม ถ้าไม่พอต้องเพิ่มกี่ไร่ (สูตรอยู่ที่ src/lib/tverTargetPlan.ts)
 --
 -- เก็บเฉพาะข้อมูลที่องค์กรกรอก ผลลัพธ์คำนวณใหม่ทุกครั้งจากสูตรเดียวกัน (ไม่เก็บซ้ำ จึงไม่มีทางไม่ตรงกัน)
@@ -37,12 +37,12 @@ create table if not exists public.org_tree_target_plan (
 create table if not exists public.org_tree_target_species (
   targetspecies_id uuid primary key default gen_random_uuid(),
   targetplan_id    uuid not null references public.org_tree_target_plan (targetplan_id) on delete cascade,
-  -- ลบพันธุ์ไม้ที่องค์กรใช้อยู่ไม่ได้ (แบบเดียวกับ fk_restrict_delete.sql) กันแผนเสียแบบเงียบๆ
-  tree_id          uuid not null references public.tree_list (tree_id) on update cascade on delete restrict,
+  -- องค์กรพิมพ์ชื่อพันธุ์เอง: T-VER ไม่มีรายชื่อพันธุ์ที่อนุญาต (ไม้ยืนต้นใดก็ได้ ยกเว้นไผ่ ต้นจาก)
+  tree_name        varchar(100) not null,
   spacing_tree_m   numeric(5,2) not null check (spacing_tree_m >= 1),         -- ระยะห่างระหว่างต้น (ม.)
   spacing_row_m    numeric(5,2) not null check (spacing_row_m >= 1),          -- ระยะห่างระหว่างแถว (ม.)
   sort_order       int not null default 0,                                    -- ลำดับที่องค์กรกรอก (เปิดแผนแล้วเรียงเหมือนเดิม)
-  constraint org_tree_target_species_unique_tree unique (targetplan_id, tree_id)
+  constraint org_tree_target_species_unique_name unique (targetplan_id, tree_name)
 );
 
 -- กลุ่มแปลงของแต่ละพันธุ์ เช่น 30 ไร่ × 2 แปลง
@@ -54,9 +54,30 @@ create table if not exists public.org_tree_target_plot (
   sort_order       int not null default 0                                     -- ลำดับที่องค์กรกรอก
 );
 
--- เผื่อรันไฟล์รุ่นก่อนหน้าไปแล้ว (ยังไม่มีคอลัมน์ลำดับ)
+-- เผื่อรันไฟล์รุ่นก่อนหน้าไปแล้ว
 alter table public.org_tree_target_species add column if not exists sort_order int not null default 0;
 alter table public.org_tree_target_plot add column if not exists sort_order int not null default 0;
+
+-- รุ่นก่อนเก็บรหัสพันธุ์ (tree_id อ้าง tree_list) -> เปลี่ยนเป็นชื่อพันธุ์ที่องค์กรพิมพ์เอง
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'org_tree_target_species' and column_name = 'tree_id'
+  ) then
+    alter table public.org_tree_target_species add column if not exists tree_name varchar(100);
+    update public.org_tree_target_species s
+      set tree_name = coalesce(t.tree_name, 'ไม่ทราบชื่อพันธุ์')
+      from public.tree_list t
+      where t.tree_id = s.tree_id and s.tree_name is null;
+    update public.org_tree_target_species set tree_name = 'ไม่ทราบชื่อพันธุ์' where tree_name is null;
+    alter table public.org_tree_target_species alter column tree_name set not null;
+    alter table public.org_tree_target_species drop constraint if exists org_tree_target_species_unique_tree;
+    alter table public.org_tree_target_species drop column tree_id;
+    alter table public.org_tree_target_species
+      add constraint org_tree_target_species_unique_name unique (targetplan_id, tree_name);
+  end if;
+end $$;
 
 create index if not exists org_tree_target_plan_org_id_idx on public.org_tree_target_plan (org_id);
 create index if not exists org_tree_target_species_plan_idx on public.org_tree_target_species (targetplan_id);
@@ -136,12 +157,17 @@ using (public.is_admin());
 
 
 -- ---------------------------------------------------------------------
--- 3) ตรวจ Syntax ป้องกัน SQL Injection ที่ชื่อโครงการ (ใช้ trigger กลางจาก sql_syntax_triggers.sql)
+-- 3) ตรวจ Syntax ป้องกัน SQL Injection ที่ชื่อโครงการและชื่อพันธุ์ไม้ (ใช้ trigger กลางจาก sql_syntax_triggers.sql)
 -- ---------------------------------------------------------------------
 drop trigger if exists trg_target_plan_no_sql on public.org_tree_target_plan;
 create trigger trg_target_plan_no_sql
   before insert or update of project_name on public.org_tree_target_plan
   for each row execute function public.reject_sql_syntax('project_name');
+
+drop trigger if exists trg_target_species_no_sql on public.org_tree_target_species;
+create trigger trg_target_species_no_sql
+  before insert or update of tree_name on public.org_tree_target_species
+  for each row execute function public.reject_sql_syntax('tree_name');
 
 
 -- ---------------------------------------------------------------------
@@ -149,3 +175,6 @@ create trigger trg_target_plan_no_sql
 -- ---------------------------------------------------------------------
 -- select tablename, rowsecurity from pg_tables where schemaname = 'public' and tablename like 'org_tree_target%';
 -- select tablename, policyname, cmd from pg_policies where schemaname = 'public' and tablename like 'org_tree_target%' order by 1, 2;
+
+-- ให้ Supabase API โหลดโครงสร้างตารางใหม่ทันที
+notify pgrst, 'reload schema';

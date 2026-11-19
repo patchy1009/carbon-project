@@ -44,7 +44,7 @@ export type AreaLimit = { operator: ConditionOperator; value: number };
 export type PlotInput = { sizeRai: number; count: number };
 
 export type SpeciesInput = {
-  key: string; // tree_id
+  key: string; // ชื่อพันธุ์ (ไม่ซ้ำในแผนเดียวกัน)
   name: string;
   spacingTreeM: number; // ระยะห่างระหว่างต้น (ม.)
   spacingRowM: number; // ระยะห่างระหว่างแถว (ม.)

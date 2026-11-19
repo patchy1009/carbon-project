@@ -1,4 +1,4 @@
-// หน้าจำลองโครงการ T-VER จากเป้าหมายการกักเก็บคาร์บอน (แบบใหม่)
+// หน้าจำลองโครงการ T-VER จากการกักเก็บก๊าซเรือนกระจก (แบบใหม่)
 //   องค์กรกรอก: ชื่อโครงการ เป้าหมาย (tCO2e) ปีที่ต้องการให้ถึงเป้า พันธุ์ไม้ ระยะปลูก และแปลงที่มี
 //   ระบบแสดง: ต้องปลูกกี่ต้น ที่ดินที่มีพอไหม ถ้าไม่พอต้องเพิ่มพื้นที่อีกกี่ไร่ (แยกทีละพันธุ์ ให้เลือกปลูกเพิ่มพันธุ์ใดพันธุ์หนึ่ง)
 //   สูตรทั้งหมดอยู่ที่ src/lib/tverTargetPlan.ts / ไม่แตะหน้า tver-simulation (แบบเดิม)
@@ -6,14 +6,15 @@
 // normalize / validate (ใช้กฎกลางของระบบใน lib/validation.ts)
 //   1) ชื่อโครงการ: ห้ามว่าง / ตัวเลขล้วน / เกิน 150 ตัวอักษร / คล้ายคำสั่ง SQL
 //   2) เป้าหมาย: ตัวเลข > 0 ทศนิยมไม่เกิน 2 หลัก / ปี: 1-10
-//   3) พันธุ์ไม้: ต้องเลือก ต้องมีอยู่จริงใน tree_list และห้ามซ้ำในแผนเดียวกัน
+//   3) พันธุ์ไม้: พิมพ์ชื่อเอง ห้ามว่าง / ตัวเลขล้วน / เกิน 100 ตัวอักษร /
+//      คล้ายคำสั่ง SQL / เป็นไผ่หรือต้นจาก (T-VER-S-TOOL-01-01) และห้ามซ้ำในแผนเดียวกัน
 //   4) ระยะปลูก: ไม่น้อยกว่า 1 ม. / ขนาดแปลง: > 0 และตามเงื่อนไขแปลงย่อยของแอดมิน (ค่าเริ่มต้น <= 30 ไร่) / จำนวนแปลง: จำนวนเต็ม > 0
 //   5) พื้นที่รวมทุกพันธุ์ตามเงื่อนไขพื้นที่โครงการของแอดมิน (ค่าเริ่มต้น <= 1,000 ไร่)
 'use client';
 
 import { useState } from 'react';
 import Link from 'next/link';
-import Select from '@/components/Select';
+import Select, { ChevronDown } from '@/components/Select';
 import FieldError from '@/components/FieldError';
 import { supabase } from '@/lib/supabaseClient';
 import {
@@ -21,12 +22,14 @@ import {
   meetsCondition, type formSchema, type fieldRule,
 } from '@/lib/validation';
 import { noSqlSyntax } from '@/lib/sqlSyntax';
-import { normalizeNumberString, normalizeToArabicNumber, formatCondition } from '@/lib/normalization';
+import {
+  normalizeText, normalizeNumberString, normalizeToArabicNumber, normalizeForCompare, formatCondition,
+} from '@/lib/normalization';
 import { dbErrorMessage } from '@/lib/supabaseCrud';
 import { showConfirm, showError } from '@/lib/dialog';
-import { TVER_AREA_NAME, type TreeListItem, type TverProjectDetail } from '@/types/tver-project';
+import { TVER_AREA_NAME, type TverProjectDetail } from '@/types/tver-project';
 import {
-  TVER_SUBPLOT_NAME, type OrgTreeTargetPlan, type OrgTreeTargetSpecies, type SavedTargetPlanOption,
+  TVER_SUBPLOT_NAME, TVER_EXCLUDED_SPECIES_WORDS, TVER_EXCLUDED_SPECIES_NAMES, type OrgTreeTargetPlan, type OrgTreeTargetSpecies, type SavedTargetPlanOption,
 } from '@/types/tver-target';
 import {
   calculateTargetPlan, upperLimitFrom, TVER_DEFAULT_MAX_PLOT_RAI, TVER_DEFAULT_MAX_PROJECT_RAI,
@@ -42,7 +45,7 @@ const MAX_PLOT_SIZE = 9999.99;
 const YEAR_OPTIONS = Array.from({ length: TARGET_YEAR_MAX - TARGET_YEAR_MIN + 1 }, (_, i) => TARGET_YEAR_MIN + i);
 
 type PlotRow = { uid: string; size: string; count: string };
-type SpeciesRow = { uid: string; treeId: string; spacingTree: string; spacingRow: string; plots: PlotRow[] };
+type SpeciesRow = { uid: string; treeName: string; spacingTree: string; spacingRow: string; plots: PlotRow[] };
 type TopField = 'projectName' | 'target' | 'year';
 // ผลที่แสดงอยู่ + ค่าที่ใช้คำนวณ (ผลไม่เปลี่ยนตามฟอร์มจนกว่าจะกดคำนวณใหม่)
 type Shown = { plan: PlanResult; input: PlanInput };
@@ -53,7 +56,7 @@ const newUid = () => `row-${++uidSeq}`;
 const emptyPlot = (): PlotRow => ({ uid: newUid(), size: '', count: '' });
 const emptySpecies = (): SpeciesRow => ({
   uid: newUid(),
-  treeId: '',
+  treeName: '',
   spacingTree: String(DEFAULT_SPACING_M),
   spacingRow: String(DEFAULT_SPACING_M),
   plots: [emptyPlot()],
@@ -68,7 +71,7 @@ function rowsFromSaved(list: OrgTreeTargetSpecies[]): SpeciesRow[] {
       const plots = [...(s.org_tree_target_plot ?? [])].sort((a, b) => a.sort_order - b.sort_order);
       return {
         uid: newUid(),
-        treeId: s.tree_id,
+        treeName: s.tree_name,
         spacingTree: String(Number(s.spacing_tree_m)),
         spacingRow: String(Number(s.spacing_row_m)),
         plots: plots.length
@@ -103,6 +106,16 @@ const withinLimit = (label: string, limit: AreaLimit, unit: string): fieldRule =
     : { ok: false, message: `${label}ต้อง ${formatCondition(limit.operator, limit.value, unit)} ตามเงื่อนไขโครงการ T-VER` };
 };
 
+// กฎ: พันธุ์ต้องเป็นไม้ยืนต้นตาม T-VER-S-TOOL-01-01 (ไม่ใช่ไผ่ หรือต้นจาก)
+const notExcludedSpecies: fieldRule = (value) => {
+  const v = normalizeForCompare(value);
+  const banned =
+    TVER_EXCLUDED_SPECIES_WORDS.some((w) => v.includes(w)) || TVER_EXCLUDED_SPECIES_NAMES.includes(v);
+  return banned
+    ? { ok: false, message: 'ไผ่และต้นจากเข้าร่วมโครงการป่าไม้ T-VER ไม่ได้ กรุณากรอกไม้ยืนต้นชนิดอื่น' }
+    : { ok: true };
+};
+
 // ตรวจค่าเดียวตามลำดับกฎ คืนข้อความ error ข้อแรก ('' = ผ่าน)
 function firstError(value: string, rules: fieldRule[]): string {
   for (const rule of rules) {
@@ -118,14 +131,12 @@ const fmtNum = (n: number) => n.toLocaleString('th-TH', { maximumFractionDigits:
 
 export default function TverTargetClient({
   orgId,
-  trees,
   criteria,
   savedPlans = [],
   existingPlan = null,
   existingSpecies = [],
 }: {
   orgId: string; // auth.uid() ของบัญชีที่ล็อกอิน
-  trees: TreeListItem[];
   criteria: TverProjectDetail[];
   savedPlans?: SavedTargetPlanOption[];
   existingPlan?: OrgTreeTargetPlan | null; // มีค่า = เปิดแผนที่บันทึกไว้
@@ -134,8 +145,6 @@ export default function TverTargetClient({
   // เพดานจากเงื่อนไขที่แอดมินตั้ง (ไม่มี -> ค่าตามเกณฑ์ T-VER)
   const plotLimit = upperLimitFrom(criteria, TVER_SUBPLOT_NAME, TVER_DEFAULT_MAX_PLOT_RAI);
   const projectLimit = upperLimitFrom(criteria, TVER_AREA_NAME, TVER_DEFAULT_MAX_PROJECT_RAI);
-  const treeIds = trees.map((t) => t.tree_id);
-  const treeName = (id: string) => trees.find((t) => t.tree_id === id)?.tree_name ?? '-';
 
   const [projectName, setProjectName] = useState(existingPlan?.project_name ?? '');
   const [target, setTarget] = useState(existingPlan ? String(Number(existingPlan.target_tco2e)) : '');
@@ -144,6 +153,7 @@ export default function TverTargetClient({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [savedPlanId, setSavedPlanId] = useState<string | null>(existingPlan?.targetplan_id ?? null);
   const [saving, setSaving] = useState(false);
+  const [listMode, setListMode] = useState<'filter' | 'all' | null>(null);
 
   // เปิดแผนที่บันทึกไว้ -> แสดงผลทันทีจากค่าที่บันทึก (คำนวณใหม่ด้วยสูตรเดียวกัน)
   const [shown, setShown] = useState<Shown | null>(() => {
@@ -155,8 +165,8 @@ export default function TverTargetClient({
       species: [...existingSpecies]
         .sort((a, b) => a.sort_order - b.sort_order)
         .map((s) => ({
-          key: s.tree_id,
-          name: treeName(s.tree_id),
+          key: s.tree_name,
+          name: s.tree_name,
           spacingTreeM: Number(s.spacing_tree_m),
           spacingRowM: Number(s.spacing_row_m),
           plots: (s.org_tree_target_plot ?? []).map((p) => ({ sizeRai: Number(p.plot_size_rai), count: p.plot_count })),
@@ -170,7 +180,7 @@ export default function TverTargetClient({
   };
 
   /* ---------- แก้แถวในฟอร์ม (สร้าง array ใหม่ทุกครั้ง ไม่แก้ของเดิม) ---------- */
-  function updateSpecies(uid: string, patch: Partial<Pick<SpeciesRow, 'treeId' | 'spacingTree' | 'spacingRow'>>) {
+  function updateSpecies(uid: string, patch: Partial<Pick<SpeciesRow, 'treeName' | 'spacingTree' | 'spacingRow'>>) {
     setSpecies((prev) => prev.map((s) => (s.uid === uid ? { ...s, ...patch } : s)));
   }
   function updatePlot(spUid: string, plotUid: string, patch: Partial<Pick<PlotRow, 'size' | 'count'>>) {
@@ -189,7 +199,7 @@ export default function TverTargetClient({
       prev.map((s) => (s.uid === spUid ? { ...s, plots: s.plots.filter((p) => p.uid !== plotUid) } : s))
     );
 
-  // เลือกแผนจาก dropdown: ค่าว่าง = แผนใหม่ / id = เปิดแผนนั้น (โหลดหน้าใหม่ทั้งหน้า แบบเดียวกับหน้าแบบเดิม)
+  // เลือกแผนจากรายการใต้ช่องชื่อโครงการ: ค่าว่าง = แผนใหม่ / id = เปิดแผนนั้น (โหลดหน้าใหม่ทั้งหน้า แบบเดียวกับหน้าแบบเดิม)
   function openSavedPlan(id: string) {
     window.location.assign(id ? `/organization/tver-target?edit=${encodeURIComponent(id)}` : '/organization/tver-target');
   }
@@ -218,9 +228,18 @@ export default function TverTargetClient({
     if (species.length === 0) errs.species = 'กรุณาเพิ่มพันธุ์ไม้อย่างน้อย 1 พันธุ์';
 
     species.forEach((s, i) => {
-      // พันธุ์ไม้: ต้องเลือก มีอยู่จริง และห้ามซ้ำกับแถวก่อนหน้า
-      let treeErr = firstError(s.treeId, [requiredSelect('พันธุ์ไม้'), existsIn('พันธุ์ไม้', treeIds)]);
-      if (!treeErr && species.slice(0, i).some((o) => o.treeId === s.treeId)) treeErr = 'เลือกพันธุ์ไม้นี้ไปแล้ว';
+      // ชื่อพันธุ์ไม้: พิมพ์เอง ไม่ใช่ไผ่หรือต้นจาก และห้ามซ้ำกับแถวก่อนหน้า (ไม่สนช่องว่าง/ตัวพิมพ์)
+      const name = normalizeText(s.treeName);
+      let treeErr = firstError(name, [
+        required('ชื่อพันธุ์ไม้'),
+        notNumericOnly('ชื่อพันธุ์ไม้'),
+        maxLength('ชื่อพันธุ์ไม้', 100),
+        noSqlSyntax('ชื่อพันธุ์ไม้'),
+        notExcludedSpecies,
+      ]);
+      if (!treeErr && species.slice(0, i).some((o) => normalizeForCompare(o.treeName) === normalizeForCompare(name))) {
+        treeErr = 'กรอกพันธุ์ไม้นี้ไปแล้ว';
+      }
       if (treeErr) errs[`${s.uid}:tree`] = treeErr;
 
       // ระยะปลูก
@@ -263,8 +282,8 @@ export default function TverTargetClient({
       year: Number(top.clean.year),
       maxProjectArea: projectLimit,
       species: species.map((s) => ({
-        key: s.treeId,
-        name: treeName(s.treeId),
+        key: normalizeText(s.treeName),
+        name: normalizeText(s.treeName),
         spacingTreeM: num(s.spacingTree),
         spacingRowM: num(s.spacingRow),
         plots: s.plots.map((p) => ({ sizeRai: num(p.size), count: num(p.count) })),
@@ -308,21 +327,21 @@ export default function TverTargetClient({
       .insert(
         input.species.map((s, i) => ({
           targetplan_id: planId,
-          tree_id: s.key,
+          tree_name: s.key,
           spacing_tree_m: s.spacingTreeM,
           spacing_row_m: s.spacingRowM,
           sort_order: i,
         }))
       )
-      .select('targetspecies_id, tree_id');
+      .select('targetspecies_id, tree_name');
     if (speciesError || !inserted) {
       showError('บันทึกพันธุ์ไม้ไม่สำเร็จ: ' + (speciesError ? dbErrorMessage(speciesError) : 'ไม่ทราบสาเหตุ'));
       return false;
     }
 
-    // พันธุ์ไม่ซ้ำในแผนเดียวกัน จึงจับคู่แปลงกับพันธุ์ด้วย tree_id ได้
+    // ชื่อพันธุ์ไม่ซ้ำในแผนเดียวกัน จึงจับคู่แปลงกับพันธุ์ด้วยชื่อได้
     const speciesIdByTree = new Map<string, string>(
-      (inserted as { targetspecies_id: string; tree_id: string }[]).map((r) => [r.tree_id, r.targetspecies_id])
+      (inserted as { targetspecies_id: string; tree_name: string }[]).map((r) => [r.tree_name, r.targetspecies_id])
     );
     const { error: plotError } = await supabase.from('org_tree_target_plot').insert(
       input.species.flatMap((s) =>
@@ -363,11 +382,21 @@ export default function TverTargetClient({
     openSavedPlan('');
   }
 
-  // dropdown แผนที่บันทึกไว้ (แผนที่เพิ่งบันทึกครั้งแรกยังไม่อยู่ในรายการจาก server จึงเติมให้)
+  // แผนที่บันทึกไว้ (แผนที่เพิ่งบันทึกครั้งแรกยังไม่อยู่ในรายการจาก server จึงเติมให้)
   const planOptions = [...savedPlans];
   if (savedPlanId && !planOptions.some((p) => p.targetplan_id === savedPlanId)) {
     planOptions.push({ targetplan_id: savedPlanId, project_name: projectName || 'แผนนี้' });
   }
+
+  // รายการใต้ช่องชื่อโครงการ: null = ปิด / 'filter' = กรองตามที่พิมพ์ / 'all' = ทั้งหมด (กดปุ่มลูกศร)
+  // แผนที่แสดงในรายการ (ไม่รวมแผนที่เปิดอยู่) ถ้าชื่อในช่องยังเป็นชื่อเดิมของแผนที่เปิดอยู่ ถือว่ายังไม่ได้พิมพ์ค้น
+  const otherPlans = planOptions.filter((p) => p.targetplan_id !== savedPlanId);
+  const query = projectName.trim().toLowerCase();
+  const isSearching = query !== '' && query !== (existingPlan?.project_name ?? '').trim().toLowerCase();
+  const shownPlans =
+    listMode === 'filter' && isSearching
+      ? otherPlans.filter((p) => (p.project_name ?? '').toLowerCase().includes(query))
+      : otherPlans;
 
   const liveTotal = totalAreaCenti(species) / 100;
   const inputClass = (hasError: boolean) =>
@@ -379,7 +408,7 @@ export default function TverTargetClient({
         <Link href="/organization/tver" className="text-sm text-[#6B7280] hover:underline">
           ‹ เลือกวิธีคำนวณ
         </Link>
-        <h1 className="text-[32px] font-medium text-black">จำลองโครงการ T-VER จากเป้าหมาย</h1>
+        <h1 className="text-[32px] font-medium text-black">จำลองโครงการ T-VER จากการกักเก็บก๊าซเรือนกระจก</h1>
         <p className="text-base font-medium text-[#6B7280]">
           กรอกปริมาณคาร์บอนที่ต้องการกักเก็บ ระบบคำนวณว่าต้องปลูกกี่ต้น และที่ดินที่มีพอหรือไม่
         </p>
@@ -394,33 +423,76 @@ export default function TverTargetClient({
         >
           <h2 className="text-xl font-bold text-[#1F2937]">ตั้งค่าแผนการปลูก</h2>
 
-          {planOptions.length > 0 && (
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-[#374151]">แผนที่บันทึกไว้</label>
-              <Select
-                value={savedPlanId ?? ''}
-                onChange={openSavedPlan}
-                className="w-full border border-[#E5E7EB] rounded-xl px-3 py-3 text-base"
-                options={[
-                  { value: '', label: '+ สร้างแผนใหม่' },
-                  ...planOptions.map((p) => ({ value: p.targetplan_id, label: p.project_name })),
-                ]}
-              />
-            </div>
-          )}
-
+          {/* ชื่อโครงการแบบ combobox (แบบเดียวกับหน้าแบบเดิม): พิมพ์ชื่อใหม่ หรือเลือกแผนที่บันทึกไว้จากรายการ (เลือกแล้วเปิดแผนนั้น)
+              - คลิก/พิมพ์ในช่อง: รายการกรองตามข้อความที่พิมพ์ / ปุ่มลูกศร: แสดงทั้งหมด */}
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-[#374151]">ชื่อโครงการ</label>
-            <input
-              value={projectName}
-              maxLength={150}
-              onChange={(e) => {
-                setProjectName(e.target.value);
-                clearError('projectName');
-              }}
-              placeholder="เช่น แผนปลูกป่าชดเชยคาร์บอน ปี 2570"
-              className={inputClass(!!errors.projectName)}
-            />
+            <div className="relative">
+              <input
+                value={projectName}
+                maxLength={150}
+                onChange={(e) => {
+                  setProjectName(e.target.value);
+                  clearError('projectName');
+                  setListMode('filter');
+                }}
+                onFocus={() => setListMode('filter')}
+                onBlur={() => setListMode(null)}
+                onKeyDown={(e) => e.key === 'Escape' && setListMode(null)}
+                placeholder={planOptions.length > 0 ? 'พิมพ์ชื่อโครงการใหม่ หรือเลือกโครงการที่บันทึกไว้' : 'เช่น แผนปลูกป่าชดเชยคาร์บอน ปี 2570'}
+                autoComplete="off"
+                className={`${inputClass(!!errors.projectName)} ${planOptions.length > 0 ? 'pr-10' : ''}`}
+              />
+              {planOptions.length > 0 && (
+                <button
+                  type="button"
+                  aria-label="แสดงโครงการที่บันทึกไว้"
+                  // onMouseDown + preventDefault: ไม่ให้ช่อง input เสีย focus (ไม่งั้นรายการปิดก่อน)
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setListMode(listMode === 'all' ? null : 'all');
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 px-2 text-[#6B7280] hover:text-[#1F2937]"
+                >
+                  <ChevronDown />
+                </button>
+              )}
+              {listMode && (shownPlans.length > 0 || savedPlanId) && (
+                <ul className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-[#E5E7EB] bg-white py-1 shadow-lg">
+                  {shownPlans.map((p) => (
+                    <li key={p.targetplan_id}>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setListMode(null);
+                          openSavedPlan(p.targetplan_id);
+                        }}
+                        className="w-full px-3 py-2 text-left text-base hover:bg-[#F3F4F6]"
+                      >
+                        {p.project_name || '(ไม่มีชื่อ)'}
+                      </button>
+                    </li>
+                  ))}
+                  {/* กำลังเปิดแผนเดิมอยู่ -> มีทางกลับไปเริ่มแผนใหม่ */}
+                  {savedPlanId && (
+                    <li className="border-t border-[#F3F4F6]">
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setListMode(null);
+                          openSavedPlan('');
+                        }}
+                        className="w-full px-3 py-2 text-left text-base text-[#2d4a63] hover:bg-[#F3F4F6]"
+                      >
+                        + สร้างโครงการใหม่
+                      </button>
+                    </li>
+                  )}
+                </ul>
+              )}
+            </div>
             <FieldError message={errors.projectName} />
           </div>
 
@@ -461,9 +533,6 @@ export default function TverTargetClient({
           {/* พันธุ์ไม้ ระยะปลูก และแปลง */}
           <div className="space-y-3">
             <h3 className="text-base font-bold text-[#1F2937]">พันธุ์ไม้และพื้นที่ปลูกที่มี</h3>
-            {trees.length === 0 && (
-              <p className="text-sm text-red-600">ยังไม่มีรายการพันธุ์ไม้ในระบบ กรุณาติดต่อผู้ดูแลระบบ</p>
-            )}
 
             {species.map((s, i) => (
               <div key={s.uid} className="rounded-xl border border-[#E5E7EB] p-4 space-y-3">
@@ -481,18 +550,18 @@ export default function TverTargetClient({
                 </div>
 
                 <div className="space-y-1">
-                  <Select
-                    value={s.treeId}
-                    onChange={(v) => {
-                      updateSpecies(s.uid, { treeId: v });
+                  <input
+                    value={s.treeName}
+                    maxLength={100}
+                    aria-label="ชื่อพันธุ์ไม้"
+                    placeholder="พิมพ์ชื่อพันธุ์ไม้ เช่น สัก"
+                    onChange={(e) => {
+                      updateSpecies(s.uid, { treeName: e.target.value });
                       clearError(`${s.uid}:tree`);
                     }}
                     className={inputClass(!!errors[`${s.uid}:tree`])}
-                    options={[
-                      { value: '', label: 'เลือกพันธุ์ไม้', placeholder: true },
-                      ...trees.map((t) => ({ value: t.tree_id, label: t.tree_name ?? '-' })),
-                    ]}
                   />
+                  <p className="text-xs text-[#9CA3AF]">ไม้ยืนต้นชนิดใดก็ได้ ยกเว้นไผ่และต้นจาก (ตามเกณฑ์ T-VER)</p>
                   <FieldError message={errors[`${s.uid}:tree`]} />
                 </div>
 

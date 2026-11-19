@@ -25,7 +25,7 @@ export interface OrgTreeTargetPlot {
 export interface OrgTreeTargetSpecies {
   targetspecies_id: string;
   targetplan_id: string;
-  tree_id: string;
+  tree_name: string; // ชื่อพันธุ์ที่องค์กรพิมพ์เอง
   spacing_tree_m: number; // ระยะห่างระหว่างต้น (ม.)
   spacing_row_m: number; // ระยะห่างระหว่างแถว (ม.)
   sort_order: number; // ลำดับที่องค์กรกรอก
@@ -34,6 +34,11 @@ export interface OrgTreeTargetSpecies {
 
 // แผนที่บันทึกไว้ (ใช้แค่ id + ชื่อ แสดงใน dropdown)
 export type SavedTargetPlanOption = { targetplan_id: string; project_name: string };
+
+// ชื่อพันธุ์ที่ไม่อยู่ในเกณฑ์ T-VER-S-TOOL-01-01 (ไม่นับเป็นไม้ยืนต้น)
+//   ชื่อที่มีคำว่า "ไผ่" หรือเป็นต้นจาก ระบบไม่รับ
+export const TVER_EXCLUDED_SPECIES_WORDS = ['ไผ่'];
+export const TVER_EXCLUDED_SPECIES_NAMES = ['จาก', 'ต้นจาก', 'ปาล์มจาก'];
 
 // ชื่อเงื่อนไข (detail_name) ในหน้าแอดมิน T-VER Project ที่โหมดนี้ใช้เป็นเพดานพื้นที่
 // ต้องตรงกับในตาราง tver_project_detail ทุกตัวอักษร ถ้าหาไม่เจอจะใช้ค่าตามเกณฑ์ T-VER แทน

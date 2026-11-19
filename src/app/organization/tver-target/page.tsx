@@ -7,10 +7,10 @@ import { notFound } from 'next/navigation';
 import { createSupabaseServer } from '@/lib/supabaseServer';
 import { requireOrgId } from '@/lib/auth';
 import TverTargetClient from './TverTargetClient';
-import type { TreeListItem, TverProjectDetail } from '@/types/tver-project';
+import type { TverProjectDetail } from '@/types/tver-project';
 import type { OrgTreeTargetPlan, OrgTreeTargetSpecies, SavedTargetPlanOption } from '@/types/tver-target';
 
-// ดึงรายการต้นไม้ เงื่อนไขโครงการของแอดมิน แผนที่บันทึกไว้ และแผนที่จะเปิด (ถ้ามี ?edit=) แล้วส่งให้หน้าจอ
+// ดึงเงื่อนไขโครงการของแอดมิน แผนที่บันทึกไว้ และแผนที่จะเปิด (ถ้ามี ?edit=) แล้วส่งให้หน้าจอ
 export default async function TverTargetPage({
   searchParams,
 }: {
@@ -20,8 +20,7 @@ export default async function TverTargetPage({
   const supabase = await createSupabaseServer();
   const { edit } = await searchParams;
 
-  const [treesRes, criteriaRes, savedRes, planRes, speciesRes] = await Promise.all([
-    supabase.from('tree_list').select('*').order('tree_name'),
+  const [criteriaRes, savedRes, planRes, speciesRes] = await Promise.all([
     // เงื่อนไขของแอดมิน: ใช้หาเพดาน "พื้นที่โครงการ" และ "ขนาดแปลงย่อย"
     supabase.from('tver_project_detail').select('*'),
     supabase.from('org_tree_target_plan').select('targetplan_id, project_name').eq('org_id', orgId).order('project_name'),
@@ -45,7 +44,6 @@ export default async function TverTargetPage({
       // key: เปลี่ยนแผนที่เปิด -> เริ่มฟอร์มใหม่จากค่าของแผนนั้น
       key={edit ?? 'new'}
       orgId={orgId}
-      trees={(treesRes.data ?? []) as TreeListItem[]}
       criteria={(criteriaRes.data ?? []) as TverProjectDetail[]}
       savedPlans={(savedRes.data ?? []) as SavedTargetPlanOption[]}
       existingPlan={(planRes?.data ?? null) as OrgTreeTargetPlan | null}
