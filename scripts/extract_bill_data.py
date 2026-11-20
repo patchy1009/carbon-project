@@ -3,9 +3,9 @@ import unicodedata
 from datetime import date
 
 
-# ==================================================
+
 # 1. ฟังก์ชันพื้นฐาน
-# ==================================================
+
 
 THAI_DIGITS = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
 
@@ -96,9 +96,9 @@ def find_labels(items, keywords):
     ]
 
 
-# ==================================================
+
 # 2. ระบุประเภทบิล
-# ==================================================
+
 
 def detect_type(items):
     full = " ".join(compact(i["text"]) for i in items)
@@ -124,9 +124,8 @@ def detect_type(items):
     return "unknown"
 
 
-# ==================================================
+
 # 3. อ่านเดือนและปี
-# ==================================================
 
 def convert_year(value):
     year = int(value)
@@ -262,9 +261,9 @@ def extract_period(items, bill_type):
     return None
 
 
-# ==================================================
+
 # 4. อ่านเลขที่บิล
-# ==================================================
+
 
 def extract_bill_number(items, bill_type):
     if bill_type == "water":
@@ -401,9 +400,8 @@ def extract_bill_number(items, bill_type):
     return None
 
 
-# ==================================================
+
 # 5. อ่านปริมาณน้ำ
-# ==================================================
 
 def extract_water_quantity(items):
     labels = find_labels(items, [
@@ -457,9 +455,8 @@ def extract_water_quantity(items):
     return candidates[0][1]
 
 
-# ==================================================
+
 # 6. อ่านปริมาณไฟฟ้า
-# ==================================================
 
 def extract_electricity_quantity(items):
     labels = find_labels(items, [
@@ -516,9 +513,8 @@ def extract_electricity_quantity(items):
     return scored[0][1]
 
 
-# ==================================================
+
 # 7. อ่านชนิดน้ำมัน
-# ==================================================
 
 def extract_fuel_type(items):
     for item in items:
@@ -549,9 +545,8 @@ def extract_fuel_type(items):
     return None
 
 
-# ==================================================
+
 # 8. อ่านปริมาณน้ำมัน
-# ==================================================
 
 def extract_fuel_quantity(items):
     fuel_labels = find_labels(items, [
@@ -749,9 +744,8 @@ def extract_fuel_quantity(items):
     return None
 
 
-# ==================================================
+
 # 9. รวมผลลัพธ์เป็น JSON
-# ==================================================
 
 def extract_bill_data(items):
     bill_type = detect_type(items)
