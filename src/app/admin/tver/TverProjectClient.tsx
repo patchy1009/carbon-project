@@ -1,16 +1,16 @@
-// หน้าจัดการโครงการ T-VER ของแอดมิน: เพิ่ม แก้ไข ลบ รายการต้นไม้และเงื่อนไขโครงการ
+// หน้าจัดการโครงการ T-VER ของแอดมิน: เพิ่ม แก้ไข ลบ เงื่อนไขโครงการ
 'use client';
 
 import Select from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
 import { useState } from 'react';
-import type { TreeListItem, TverProjectDetail } from '@/types/tver-project';
+import type { TverProjectDetail } from '@/types/tver-project';
 import { ModalActions, ModalShell } from '@/components/Modal';
 import { deleteRecord, withOrgImpact, insertRecord, updateRecord } from '@/lib/supabaseCrud';
 import { showSaved } from '@/lib/dialog'; // popup แจ้งบันทึกสำเร็จ
 import { validateForm, extendSchema, notDuplicate, requiredWith, type formError } from '@/lib/validation';
 import { normalizeToArabicNumber, formatCondition, CONDITION_OPERATORS } from '@/lib/normalization';
 import FieldError from '@/components/FieldError';
-import { treeSchema, tverDetailSchema, type TreeField, type TverDetailField } from './schema';
+import { tverDetailSchema, type TverDetailField } from './schema';
 import RowActions from '@/components/RowActions'; // ปุ่มแก้ไข/ลบกลาง (เดิมเขียนซ้ำทุกตาราง)
 import { T } from '@/components/adminTable'; // การ์ด/ตารางกลางของหน้าแอดมิน (ยกแบบมาจากหน้านี้)
 import { inputClass } from '@/components/formStyles'; // class ช่องกรอกกลาง
@@ -20,45 +20,28 @@ import { inputClass } from '@/components/formStyles'; // class ช่องก�
  * 2) เงื่อนไข: เลือกตัวดำเนินการจาก dropdown + กรอกตัวเลขแยกช่อง
  *    บันทึกเป็น condition_operator / condition_number (เลิกใช้คอลัมน์ข้อความ condition_value)
  *    ต้องกรอกคู่กัน หรือเว้นว่างทั้งคู่ = ไม่มีเงื่อนไข
- * 3) ตรวจข้อมูลซ้ำ: ชื่อต้นไม้ห้ามซ้ำ, รายละเอียดโครงการห้ามซ้ำ
+ * 3) ตรวจข้อมูลซ้ำ: รายละเอียดโครงการห้ามซ้ำ
  * 4) เปลี่ยนมาใช้ฟังก์ชันกลาง insertRecord / updateRecord / deleteRecord แทนเรียก supabase เอง
  * 5) ใช้ ModalShell / ModalActions จาก components/Modal แทนตัวที่เขียนซ้ำไว้ท้ายไฟล์
- * 6) เพิ่มการแก้ไขทั้ง 2 ตาราง */
+ * 6) เพิ่มการแก้ไขเงื่อนไขโครงการ
+ * 7) เอารายการพันธุ์ไม้ (tree_list) ออก: พันธุ์ไม้ไม่มีผลต่อการคำนวณ (MAI 9.5 เท่ากันทุกพันธุ์) */
 
 
 const emptyDetailForm = { detail_name: '', unit: '', condition_operator: '', condition_number: '', detail: '' };
 
 // หน้าจอหลัก รับข้อมูลเริ่มต้นจาก page.tsx แล้วเก็บใน state เพื่อให้แก้ไขบนหน้าได้ทันที
-export default function TverProjectClient({
-  initialTrees,
-  initialDetails,
-}: {
-  initialTrees: TreeListItem[];
-  initialDetails: TverProjectDetail[];
-}) {
-  const [trees, setTrees] = useState<TreeListItem[]>(initialTrees);
+export default function TverProjectClient({ initialDetails }: { initialDetails: TverProjectDetail[] }) {
   const [details, setDetails] = useState<TverProjectDetail[]>(initialDetails);
 
-  const [showTreeModal, setShowTreeModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
   // id ของแถวที่กำลังแก้ไข (null = เพิ่มใหม่)
-  const [editTreeId, setEditTreeId] = useState<string | null>(null);
   const [editDetailId, setEditDetailId] = useState<string | null>(null);
 
-  const [treeForm, setTreeForm] = useState({ tree_name: '' });
   const [detailForm, setDetailForm] = useState(emptyDetailForm);
 
-  const [treeErrors, setTreeErrors] = useState<formError<TreeField>>({});
   const [detailErrors, setDetailErrors] = useState<formError<TverDetailField>>({});
 
-  // เปิดฟอร์มต้นไม้ ถ้าส่ง row มาคือโหมดแก้ไข ถ้าไม่ส่งคือเพิ่มใหม่
-  function openTreeModal(row?: TreeListItem) {
-    setEditTreeId(row?.tree_id ?? null);
-    setTreeForm({ tree_name: row?.tree_name ?? '' });
-    setTreeErrors({});
-    setShowTreeModal(true);
-  }
   // เปิดฟอร์มเงื่อนไข ถ้าส่ง row มาคือโหมดแก้ไข ถ้าไม่ส่งคือเพิ่มใหม่
   function openDetailModal(row?: TverProjectDetail) {
     setEditDetailId(row?.tverdetail_id ?? null);
@@ -76,46 +59,8 @@ export default function TverProjectClient({
     setDetailErrors({});
     setShowDetailModal(true);
   }
-  // ปิดฟอร์มต้นไม้และล้างข้อความ error
-  const closeTreeModal = () => { setShowTreeModal(false); setTreeErrors({}); };
   // ปิดฟอร์มเงื่อนไขและล้างข้อความ error
   const closeDetailModal = () => { setShowDetailModal(false); setDetailErrors({}); };
-
-  // ---------- Tree List ----------
-  async function handleSaveTree(e: React.FormEvent) {
-    e.preventDefault();
-    const others = trees.filter((t) => t.tree_id !== editTreeId).map((t) => t.tree_name);
-    const result = validateForm(
-      treeForm,
-      extendSchema(treeSchema, { tree_name: [notDuplicate('ชื่อต้นไม้', others)] })
-    );
-    if (!result.ok) { setTreeErrors(result.errors); return; }
-    setTreeErrors({});
-
-    const values = { tree_name: result.clean.tree_name };
-    if (editTreeId) {
-      const updated = await updateRecord<TreeListItem>(
-        'tree_list', 'tree_id', editTreeId,
-        { ...values, updated_at: new Date().toISOString() }, '*', 'แก้ไขต้นไม้'
-      );
-      if (!updated) return;
-      setTrees((prev) => prev.map((t) => (t.tree_id === editTreeId ? updated : t)));
-    } else {
-      const created = await insertRecord<TreeListItem>('tree_list', values, '*', 'เพิ่มต้นไม้');
-      if (!created) return;
-      setTrees((prev) => [...prev, created]);
-    }
-    closeTreeModal();
-    showSaved(); // popup แจ้งบันทึกสำเร็จ (เหมือนฝั่งองค์กร)
-  }
-
-  // ลบต้นไม้ สำเร็จแล้วเอาออกจากรายการบนหน้า
-  async function handleDeleteTree(id: string) {
-    const ok = await deleteRecord('tree_list', 'tree_id', id,
-      withOrgImpact(`ลบต้นไม้ "${trees.find((t) => t.tree_id === id)?.tree_name ?? ''}"?`));
-    if (!ok) return;
-    setTrees((prev) => prev.filter((t) => t.tree_id !== id));
-  }
 
   // ---------- Project Detail ----------
   async function handleSaveDetail(e: React.FormEvent) {
@@ -173,50 +118,7 @@ export default function TverProjectClient({
         ข้อมูลการจัดทำโครงการปลูกป่า T-VER
       </h1>
 
-      {/* Section 1: Tree Species Catalog */}
-      <section className={T.card}>
-        <div className={T.cardHead}>
-          <h2 className={T.h2}>
-            รายการต้นไม้ (Tree Species Catalog)
-          </h2>
-          <button
-            onClick={() => openTreeModal()}
-            className={T.addBtn}
-          >
-            + เพิ่มต้นไม้ใหม่
-          </button>
-        </div>
-
-        <div className={T.wrap}>
-          <table className={T.table}>
-            <thead className={T.thead}>
-              <tr className={T.headRow}>
-                <th className={`${T.th} text-left`}>ชื่อต้นไม้</th>
-                <th className={`${T.th} text-right`}>จัดการ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {trees.map((t) => (
-                <tr key={t.tree_id} className={T.row}>
-                  <td className={T.tdMain}>{t.tree_name}</td>
-                  <td className={T.tdActions}>
-                    <RowActions onEdit={() => openTreeModal(t)} onDelete={() => handleDeleteTree(t.tree_id)} />
-                  </td>
-                </tr>
-              ))}
-              {trees.length === 0 && (
-                <tr>
-                  <td colSpan={2} className={T.empty}>
-                    ยังไม่มีข้อมูลต้นไม้
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* Section 2: Forestry Project Parameters & Criteria */}
+      {/* Forestry Project Parameters & Criteria */}
       <section className={T.card}>
         <div className={T.cardHead}>
           <h2 className={T.h2}>
@@ -271,26 +173,6 @@ export default function TverProjectClient({
           </table>
         </div>
       </section>
-
-      {/* --- Modal: เพิ่ม/แก้ไขต้นไม้ --- */}
-      {showTreeModal && (
-        <ModalShell onClose={closeTreeModal}>
-          <form onSubmit={handleSaveTree} className="space-y-4" noValidate>
-            <h3 className="text-lg font-bold">{editTreeId ? 'แก้ไขต้นไม้' : 'เพิ่มต้นไม้ใหม่'}</h3>
-            <div>
-              <input
-                className={inputClass(!!treeErrors.tree_name)}
-                placeholder="ชื่อต้นไม้ เช่น ยางนา"
-                maxLength={100}
-                value={treeForm.tree_name}
-                onChange={(e) => setTreeForm({ tree_name: e.target.value })}
-              />
-              <FieldError message={treeErrors.tree_name} />
-            </div>
-            <ModalActions onCancel={closeTreeModal} />
-          </form>
-        </ModalShell>
-      )}
 
       {/* --- Modal: เพิ่ม/แก้ไขเงื่อนไขโครงการ --- */}
       {showDetailModal && (
