@@ -145,7 +145,7 @@ export default function AuthModal({
     } else if (!EMAIL_REGEX.test(cleanLoginEmail)) {
       errors.email = "รูปแบบอีเมลไม่ถูกต้อง เช่น name@company.co.th";
     } else if (containsSqlSyntax(cleanLoginEmail)) {
-      // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งไปล็อกอิน (TOR 2.2)
+      // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งไปล็อกอิน 
       errors.email = "อีเมลมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่";
     }
     if (!loginPassword) {
@@ -188,7 +188,7 @@ export default function AuthModal({
     }
   };
 
-  // 1.1 ขอลิงก์รีเซ็ตรหัสผ่าน: เช็กก่อนว่ามีบัญชีที่ใช้อีเมลนี้ แล้ว Supabase ส่งลิงก์ (อายุตามที่ตั้งไว้ใน Supabase = 10 นาที) ไปที่อีเมลที่ลงทะเบียน (TOR 3.2)
+  // ขอลิงก์รีเซ็ตรหัสผ่าน: เช็กก่อนว่ามีบัญชีที่ใช้อีเมลนี้ แล้ว Supabase ส่งลิงก์ (อายุตามที่ตั้งไว้ใน Supabase = 10 นาที) ไปที่อีเมลที่ลงทะเบียน
   const handleForgotPasswordSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setForgotError("");
@@ -205,7 +205,7 @@ export default function AuthModal({
       setForgotEmailError("รูปแบบอีเมลไม่ถูกต้อง เช่น name@company.co.th");
       return;
     }
-    // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งอีเมลไปขอลิงก์ (TOR 3.4)
+    // ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งอีเมลไปขอลิงก์
     if (containsSqlSyntax(cleanEmail)) {
       setForgotEmailError("อีเมลมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
       return;
@@ -213,7 +213,7 @@ export default function AuthModal({
 
     setLoading(true);
     try {
-      // ไม่มีบัญชีที่ใช้อีเมลนี้ -> แจ้งให้สมัครสมาชิกก่อน ไม่ส่งลิงก์
+      // ไม่มีบัญชีที่ใช้อีเมลนี้จะแจ้งให้สมัครสมาชิกก่อน ไม่ส่งลิงก์
       const emailProblem = await checkEmailBeforeReset(cleanEmail);
       if (emailProblem) {
         setForgotError(emailProblem);
@@ -258,6 +258,10 @@ export default function AuthModal({
     } else if (!USERNAME_REGEX.test(cleanUsername)) {
       errors.username = "Username ต้องมีความยาว 3-20 ตัวอักษรภาษาอังกฤษ, ตัวเลข, _ , -";
       hasError = true;
+    } else if (containsSqlSyntax(cleanUsername)) {
+      // ตรวจ Syntax คล้ายคำสั่ง SQL 
+      errors.username = "ชื่อผู้ใช้งานมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่";
+      hasError = true;
     }
 
     if (!cleanEmail) {
@@ -276,7 +280,7 @@ export default function AuthModal({
       errors.password = "กรุณากรอกรหัสผ่าน";
       hasError = true;
     } else if (containsSqlSyntax(password, { lenient: true })) {
-      // ตรวจ Syntax SQL ก่อนตรวจรูปแบบรหัสผ่าน เพื่อให้รหัสที่เป็นคำสั่ง SQL ถูกปฏิเสธด้วยข้อความนี้เสมอ แม้จะสั้น
+      // ตรวจ Syntax SQL ก่อนตรวจรูปแบบรหัสผ่าน เพื่อให้รหัสที่เป็นคำสั่ง SQL ถูกปฏิเสธด้วยข้อความนี้เสมอ
       errors.password = "รหัสผ่านมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่";
       hasError = true;
     } else if (validatePasswordStrength(password)) {
@@ -337,7 +341,7 @@ export default function AuthModal({
     }
   };
 
-  // 3. ยืนยัน OTP (TOR 1.4) แล้วบันทึกข้อมูลลงตาราง user และ organization
+  // 3. ยืนยัน OTP แล้วบันทึกข้อมูลลงตาราง user และ organization
   //    ต้องทำหลังยืนยัน OTP เพราะตอนนั้นผู้ใช้จึงจะล็อกอินแล้ว (RLS อนุญาตเฉพาะเจ้าของแถว)
   const handleVerifyOtp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();

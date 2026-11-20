@@ -1,6 +1,6 @@
 "use client";
 /*
- * หน้าจอบัญชีผู้ใช้ขององค์กร (TOR ข้อ 3.1, 4.1–4.3) มี 3 ส่วน
+ * หน้าจอบัญชีผู้ใช้ขององค์กรมี 3 ส่วน
  *   1) ข้อมูลบัญชี: แสดงอีเมล (แก้ไม่ได้) และแก้ Username, ชื่อองค์กร, ประเภทธุรกิจ ได้
  *      ใช้กฎตรวจและรูปแบบแจ้งเตือนเดียวกับหน้าลงทะเบียน (AuthModal): Username 3-20 ตัว อังกฤษ/ตัวเลข/_/-
  *      ชื่อองค์กรห้ามว่างและตรวจ Syntax คล้าย SQL ช่องที่ผิดขึ้นกรอบแดงพร้อมข้อความใต้ช่อง
@@ -182,8 +182,10 @@ export default function AccountUserClient({
     if (!cleanUsername) {
       errors.username = "กรุณากรอกชื่อผู้ใช้งาน";
     } else if (!USERNAME_REGEX.test(cleanUsername)) {
-      // รูปแบบนี้อนุญาตแค่อังกฤษ ตัวเลข _ - จึงกันสัญลักษณ์ที่ใช้เขียนคำสั่ง SQL ไปด้วย (TOR 4.3)
       errors.username = "Username ต้องมีความยาว 3-20 ตัวอักษรภาษาอังกฤษ, ตัวเลข, _ , -";
+    } else if (containsSqlSyntax(cleanUsername)) {
+      // ตรวจ Syntax คล้ายคำสั่ง SQL (TOR 4.3) เช่น -- ที่รูปแบบ Username ยอมให้ผ่าน (ตรงกับ server และ trigger ในฐานข้อมูล)
+      errors.username = "ชื่อผู้ใช้งานมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่";
     }
 
     if (!cleanCompanyName) {

@@ -1,9 +1,9 @@
-// กฎตรวจข้อมูลของฟอร์มประเมินภาษี (TOR ข้อ 12.2, 12.5) ใช้กับ validateForm กลางของระบบ (lib/validation.ts)
+// กฎตรวจข้อมูลของฟอร์มประเมินภาษีใช้กับ validateForm กลางของระบบ (lib/validation.ts)
 import { required, notNumericOnly, maxLength, isDecimal, notDuplicate, type formSchema } from '@/lib/validation';
 import { normalizeNumberString } from '@/lib/normalization';
-import { noSqlSyntax } from '@/lib/sqlSyntax'; // ตรวจ Syntax ป้องกัน SQL Injection (TOR 12.5)
+import { noSqlSyntax } from '@/lib/sqlSyntax'; // ตรวจ Syntax ป้องกัน SQL Injection
 
-/* schema ของหน้าประเมินการยกเว้นภาษี (TOR ข้อ 12.2)
+/* schema ของหน้าประเมินการยกเว้นภาษี
  * ตรวจ 2 อย่างที่ผู้ใช้กรอก: ราคาขายต่อหน่วย และค่าใช้จ่ายของโครงการ (กี่รายการก็ได้)
  * ช่องของค่าใช้จ่ายมีจำนวนไม่แน่นอน จึงสร้าง schema ตามรายการที่มีอยู่ตอนกดคำนวณ
  *   - ราคา: ห้ามว่าง / ต้องเป็นตัวเลข (รับเลขไทยและ comma) / ทศนิยมไม่เกิน 2 ตำแหน่ง / มากกว่า 0 (ตรวจใน checkTaxRanges)
@@ -57,7 +57,7 @@ export function buildTaxSchema(rows: CostRowShape[]): formSchema<string> {
   return schema;
 }
 
-// ตรวจช่วงของค่า "หลัง" ผ่านกฎรูปแบบแล้ว (ใช้ค่าที่ normalize แล้วจาก validateForm)
+// ตรวจช่วงของค่าหลังผ่านกฎรูปแบบแล้ว (ใช้ค่าที่ normalize แล้วจาก validateForm)
 //   ราคาต้องมากกว่า 0 และไม่เกินขนาดช่องในฐานข้อมูล / จำนวนเงินไม่เกินขนาดช่องในฐานข้อมูล
 const isNumber = (v: string | undefined): v is string => !!v && /^-?\d+(\.\d+)?$/.test(v);
 
