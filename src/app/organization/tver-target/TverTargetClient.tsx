@@ -1,7 +1,7 @@
 // หน้าจำลองโครงการ T-VER จากการกักเก็บก๊าซเรือนกระจก (แบบใหม่)
 //   องค์กรกรอก: ชื่อโครงการ เป้าหมาย (tCO2e) ปีที่ต้องการให้ถึงเป้า พันธุ์ไม้ ระยะปลูก และแปลงที่มี
 //   ระบบแสดง: ต้องปลูกกี่ต้น ที่ดินที่มีพอไหม ถ้าไม่พอต้องเพิ่มพื้นที่อีกกี่ไร่ (แยกทีละพันธุ์ ให้เลือกปลูกเพิ่มพันธุ์ใดพันธุ์หนึ่ง)
-//   สูตรทั้งหมดอยู่ที่ src/lib/tverTargetPlan.ts / ไม่แตะหน้า tver-simulation (แบบเดิม)
+//   สูตรทั้งหมดอยู่ที่ calculation.ts (โฟลเดอร์เดียวกัน) / ไม่แตะหน้า tver-simulation (แบบเดิม)
 //
 // normalize / validate (ใช้กฎกลางของระบบใน lib/validation.ts)
 //   1) ชื่อโครงการ: ห้ามว่าง / ตัวเลขล้วน / เกิน 150 ตัวอักษร / คล้ายคำสั่ง SQL
@@ -29,13 +29,13 @@ import { dbErrorMessage } from '@/lib/supabaseCrud';
 import { showConfirm, showError } from '@/lib/dialog';
 import { TVER_AREA_NAME, type TverProjectDetail } from '@/types/tver-project';
 import {
-  TVER_SUBPLOT_NAME, TVER_EXCLUDED_SPECIES_WORDS, TVER_EXCLUDED_SPECIES_NAMES, type OrgTreeTargetPlan, type OrgTreeTargetSpecies, type SavedTargetPlanOption,
+  TVER_SUBPLOT_NAME, type OrgTreeTargetPlan, type OrgTreeTargetSpecies, type SavedTargetPlanOption,
 } from '@/types/tver-target';
 import {
   calculateTargetPlan, upperLimitFrom, TVER_DEFAULT_MAX_PLOT_RAI, TVER_DEFAULT_MAX_PROJECT_RAI,
   TARGET_YEAR_MIN, TARGET_YEAR_MAX, TARGET_YEAR_DEFAULT, DEFAULT_SPACING_M, MIN_SPACING_M,
   type AreaLimit, type PlanInput, type PlanResult,
-} from '@/lib/tverTargetPlan';
+} from './calculation';
 
 // เพดานตามชนิดคอลัมน์ในตาราง (numeric(12,2) / numeric(5,2) / numeric(6,2))
 const MAX_TARGET = 9999999999.99;
@@ -45,20 +45,24 @@ const MAX_PLOT_SIZE = 9999.99;
 const YEAR_OPTIONS = Array.from({ length: TARGET_YEAR_MAX - TARGET_YEAR_MIN + 1 }, (_, i) => TARGET_YEAR_MIN + i);
 
 type PlotRow = { uid: string; size: string; count: string };
-type SpeciesRow = { uid: string; treeName: string; spacingTree: string; spacingRow: string; plots: PlotRow[] };
+// noLand = ยังไม่มีพื้นที่ปลูกของพันธุ์นี้ (ไม่ต้องกรอกแปลง ระบบบอกว่าต้องใช้พื้นที่กี่ไร่)
+type SpeciesRow = { uid: string; treeName: string; spacingTree: string; spacingRow: string; noLand: boolean; plots: PlotRow[] };
 type TopField = 'projectName' | 'target' | 'year';
 // ผลที่แสดงอยู่ + ค่าที่ใช้คำนวณ (ผลไม่เปลี่ยนตามฟอร์มจนกว่าจะกดคำนวณใหม่)
 type Shown = { plan: PlanResult; input: PlanInput };
 
-// id ของแถวในฟอร์ม (ใช้เป็น key ของ React และ key ของ error)
+// ใส่ค่าสุ่มต่อการโหลดไฟล์ไว้หน้าเลขลำดับ: ตอนแก้โค้ดแล้ว Next.js โหลดไฟล์นี้ใหม่ (uidSeq กลับเป็น 0)
+// แต่แถวเดิมในฟอร์มยังอยู่ ถ้าใช้เลขลำดับอย่างเดียว แถวใหม่จะได้ id ซ้ำกับแถวเดิม (React เตือน key ซ้ำ)
+const UID_PREFIX = Math.random().toString(36).slice(2, 8);
 let uidSeq = 0;
-const newUid = () => `row-${++uidSeq}`;
+const newUid = () => `row-${UID_PREFIX}-${++uidSeq}`;
 const emptyPlot = (): PlotRow => ({ uid: newUid(), size: '', count: '' });
 const emptySpecies = (): SpeciesRow => ({
   uid: newUid(),
   treeName: '',
   spacingTree: String(DEFAULT_SPACING_M),
   spacingRow: String(DEFAULT_SPACING_M),
+  noLand: false,
   plots: [emptyPlot()],
 });
 
@@ -74,6 +78,7 @@ function rowsFromSaved(list: OrgTreeTargetSpecies[]): SpeciesRow[] {
         treeName: s.tree_name,
         spacingTree: String(Number(s.spacing_tree_m)),
         spacingRow: String(Number(s.spacing_row_m)),
+        noLand: plots.length === 0, // บันทึกไว้โดยไม่มีแปลง = ยังไม่มีพื้นที่ปลูก
         plots: plots.length
           ? plots.map((p) => ({ uid: newUid(), size: String(Number(p.plot_size_rai)), count: String(p.plot_count) }))
           : [emptyPlot()],
@@ -88,6 +93,7 @@ const centi = (n: number) => Math.round(n * 100);
 function totalAreaCenti(rows: SpeciesRow[]): number {
   let sum = 0;
   for (const s of rows) {
+    if (s.noLand) continue;
     for (const p of s.plots) {
       const size = normalizeToArabicNumber(p.size);
       const count = normalizeToArabicNumber(p.count);
@@ -106,15 +112,6 @@ const withinLimit = (label: string, limit: AreaLimit, unit: string): fieldRule =
     : { ok: false, message: `${label}ต้อง ${formatCondition(limit.operator, limit.value, unit)} ตามเงื่อนไขโครงการ T-VER` };
 };
 
-// กฎ: พันธุ์ต้องเป็นไม้ยืนต้นตาม T-VER-S-TOOL-01-01 (ไม่ใช่ไผ่ หรือต้นจาก)
-const notExcludedSpecies: fieldRule = (value) => {
-  const v = normalizeForCompare(value);
-  const banned =
-    TVER_EXCLUDED_SPECIES_WORDS.some((w) => v.includes(w)) || TVER_EXCLUDED_SPECIES_NAMES.includes(v);
-  return banned
-    ? { ok: false, message: 'ไผ่และต้นจากเข้าร่วมโครงการป่าไม้ T-VER ไม่ได้ กรุณากรอกไม้ยืนต้นชนิดอื่น' }
-    : { ok: true };
-};
 
 // ตรวจค่าเดียวตามลำดับกฎ คืนข้อความ error ข้อแรก ('' = ผ่าน)
 function firstError(value: string, rules: fieldRule[]): string {
@@ -180,7 +177,7 @@ export default function TverTargetClient({
   };
 
   /* ---------- แก้แถวในฟอร์ม (สร้าง array ใหม่ทุกครั้ง ไม่แก้ของเดิม) ---------- */
-  function updateSpecies(uid: string, patch: Partial<Pick<SpeciesRow, 'treeName' | 'spacingTree' | 'spacingRow'>>) {
+  function updateSpecies(uid: string, patch: Partial<Pick<SpeciesRow, 'treeName' | 'spacingTree' | 'spacingRow' | 'noLand'>>) {
     setSpecies((prev) => prev.map((s) => (s.uid === uid ? { ...s, ...patch } : s)));
   }
   function updatePlot(spUid: string, plotUid: string, patch: Partial<Pick<PlotRow, 'size' | 'count'>>) {
@@ -219,7 +216,7 @@ export default function TverTargetClient({
           isDecimal('เป้าหมายการกักเก็บคาร์บอน', { allowZero: false, maxDecimals: 2, max: MAX_TARGET }),
         ],
       },
-      year: { rules: [requiredSelect('ปีที่ต้องการให้ถึงเป้าหมาย'), existsIn('ปี', YEAR_OPTIONS.map(String))] },
+      year: { rules: [requiredSelect('ปีที่สะสม'), existsIn('ปี', YEAR_OPTIONS.map(String))] },
     };
     const top = validateForm<TopField>({ projectName, target, year }, schema);
     const errs: Record<string, string> = {};
@@ -228,14 +225,13 @@ export default function TverTargetClient({
     if (species.length === 0) errs.species = 'กรุณาเพิ่มพันธุ์ไม้อย่างน้อย 1 พันธุ์';
 
     species.forEach((s, i) => {
-      // ชื่อพันธุ์ไม้: พิมพ์เอง ไม่ใช่ไผ่หรือต้นจาก และห้ามซ้ำกับแถวก่อนหน้า (ไม่สนช่องว่าง/ตัวพิมพ์)
+      // ชื่อพันธุ์ไม้: พิมพ์เอง และห้ามซ้ำกับแถวก่อนหน้า (ไม่สนช่องว่าง/ตัวพิมพ์)
       const name = normalizeText(s.treeName);
       let treeErr = firstError(name, [
         required('ชื่อพันธุ์ไม้'),
         notNumericOnly('ชื่อพันธุ์ไม้'),
         maxLength('ชื่อพันธุ์ไม้', 100),
         noSqlSyntax('ชื่อพันธุ์ไม้'),
-        notExcludedSpecies,
       ]);
       if (!treeErr && species.slice(0, i).some((o) => normalizeForCompare(o.treeName) === normalizeForCompare(name))) {
         treeErr = 'กรอกพันธุ์ไม้นี้ไปแล้ว';
@@ -251,8 +247,9 @@ export default function TverTargetClient({
       const srErr = firstError(normalizeNumberString(s.spacingRow), spacingRules('ระยะห่างระหว่างแถว'));
       if (stErr || srErr) errs[`${s.uid}:spacing`] = stErr || srErr;
 
-      // แปลง
-      if (s.plots.length === 0) errs[`${s.uid}:plots`] = 'กรุณาเพิ่มแปลงอย่างน้อย 1 กลุ่ม';
+      // แปลง (ติ๊ก "ยังไม่มีพื้นที่ปลูก" = ไม่ต้องกรอกแปลง)
+      if (s.noLand) return;
+      if (s.plots.length === 0) errs[`${s.uid}:plots`] = 'กรุณาเพิ่มแปลงอย่างน้อย 1 กลุ่ม หรือติ๊ก "ยังไม่มีพื้นที่ปลูก"';
       for (const p of s.plots) {
         const sizeErr = firstError(normalizeNumberString(p.size), [
           required('ขนาดแปลง'),
@@ -265,7 +262,7 @@ export default function TverTargetClient({
     });
 
     // พื้นที่รวมทุกพันธุ์ตามเงื่อนไขพื้นที่โครงการ (ตรวจเมื่อแปลงทุกแถวถูกต้องแล้ว)
-    const plotsOk = species.every((s) => s.plots.length > 0 && s.plots.every((p) => !errs[`${p.uid}:plot`]));
+    const plotsOk = species.every((s) => s.noLand || (s.plots.length > 0 && s.plots.every((p) => !errs[`${p.uid}:plot`])));
     if (plotsOk && species.length > 0) {
       const total = totalAreaCenti(species);
       if (!meetsCondition(total, projectLimit.operator, centi(projectLimit.value))) {
@@ -286,7 +283,7 @@ export default function TverTargetClient({
         name: normalizeText(s.treeName),
         spacingTreeM: num(s.spacingTree),
         spacingRowM: num(s.spacingRow),
-        plots: s.plots.map((p) => ({ sizeRai: num(p.size), count: num(p.count) })),
+        plots: s.noLand ? [] : s.plots.map((p) => ({ sizeRai: num(p.size), count: num(p.count) })),
       })),
     };
     return { ok: true, errors: errs, clean: top.clean, input };
@@ -301,8 +298,25 @@ export default function TverTargetClient({
       updated_at: new Date().toISOString(),
     };
 
-    let planId = savedPlanId;
+    // ชื่อโครงการซ้ำกับแผนที่บันทึกไว้ (ไม่สนช่องว่าง/ตัวพิมพ์) -> อัปเดตแผนนั้น ไม่สร้างแผนใหม่
+    //   ดึงชื่อจากฐานข้อมูลทุกครั้ง (รายการในหน้าอาจไม่ล่าสุด)
+    const { data: samePlans, error: nameError } = await supabase
+      .from('org_tree_target_plan')
+      .select('targetplan_id, project_name')
+      .eq('org_id', orgId);
+    if (nameError) { showError('ตรวจชื่อโครงการไม่สำเร็จ: ' + dbErrorMessage(nameError)); return false; }
+    const sameName = (samePlans ?? []).find(
+      (p) => normalizeForCompare(p.project_name ?? '') === normalizeForCompare(cleanName)
+    );
+    if (sameName && savedPlanId && sameName.targetplan_id !== savedPlanId) {
+      // กำลังแก้แผนหนึ่งอยู่ แต่เปลี่ยนชื่อไปซ้ำกับอีกแผน -> ไม่ทับแผนอื่น
+      showError(`มีแผนชื่อ "${sameName.project_name}" อยู่แล้ว กรุณาใช้ชื่ออื่น หรือเลือกแผนนั้นจากรายการเพื่อแก้ไข`);
+      return false;
+    }
+
+    let planId = savedPlanId ?? sameName?.targetplan_id ?? null;
     if (planId) {
+      if (planId !== savedPlanId) setSavedPlanId(planId); // บันทึกทับแผนชื่อเดิม กดครั้งต่อไปก็อัปเดตแผนนี้
       const { error } = await supabase.from('org_tree_target_plan').update(planValues).eq('targetplan_id', planId);
       if (error) { showError('อัปเดตแผนไม่สำเร็จ: ' + dbErrorMessage(error)); return false; }
       // ลบพันธุ์เดิมก่อน (แปลงถูกลบตามด้วย on delete cascade) แล้วบันทึกชุดใหม่ด้านล่าง
@@ -343,17 +357,19 @@ export default function TverTargetClient({
     const speciesIdByTree = new Map<string, string>(
       (inserted as { targetspecies_id: string; tree_name: string }[]).map((r) => [r.tree_name, r.targetspecies_id])
     );
-    const { error: plotError } = await supabase.from('org_tree_target_plot').insert(
-      input.species.flatMap((s) =>
-        s.plots.map((p, j) => ({
-          targetspecies_id: speciesIdByTree.get(s.key),
-          plot_size_rai: p.sizeRai,
-          plot_count: p.count,
-          sort_order: j,
-        }))
-      )
+    // พันธุ์ที่ยังไม่มีพื้นที่ปลูกไม่มีแถวแปลง (เปิดแผนกลับมาระบบติ๊ก "ยังไม่มีพื้นที่ปลูก" ให้เอง)
+    const plotRows = input.species.flatMap((s) =>
+      s.plots.map((p, j) => ({
+        targetspecies_id: speciesIdByTree.get(s.key),
+        plot_size_rai: p.sizeRai,
+        plot_count: p.count,
+        sort_order: j,
+      }))
     );
-    if (plotError) { showError('บันทึกแปลงไม่สำเร็จ: ' + dbErrorMessage(plotError)); return false; }
+    if (plotRows.length > 0) {
+      const { error: plotError } = await supabase.from('org_tree_target_plot').insert(plotRows);
+      if (plotError) { showError('บันทึกแปลงไม่สำเร็จ: ' + dbErrorMessage(plotError)); return false; }
+    }
     return true;
   }
 
@@ -513,7 +529,7 @@ export default function TverTargetClient({
               <FieldError message={errors.target} />
             </div>
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-[#374151]">ให้ถึงเป้าหมายในปีที่</label>
+              <label className="block text-sm font-semibold text-[#374151]">สะสมปีที่</label>
               <Select
                 value={year}
                 onChange={(v) => {
@@ -521,14 +537,11 @@ export default function TverTargetClient({
                   clearError('year');
                 }}
                 className={inputClass(!!errors.year)}
-                options={YEAR_OPTIONS.map((y) => ({ value: String(y), label: `ปีที่ ${y}` }))}
+                options={YEAR_OPTIONS.map((y) => ({ value: String(y), label: `${y}` }))}
               />
               <FieldError message={errors.year} />
             </div>
           </div>
-          <p className="text-xs text-[#9CA3AF]">
-            เลือกได้ปีที่ {TARGET_YEAR_MIN}-{TARGET_YEAR_MAX} ตามระยะคิดเครดิตโครงการป่าไม้ T-VER (ค่าเริ่มต้นปีที่ {TARGET_YEAR_DEFAULT})
-          </p>
 
           {/* พันธุ์ไม้ ระยะปลูก และแปลง */}
           <div className="space-y-3">
@@ -561,7 +574,7 @@ export default function TverTargetClient({
                     }}
                     className={inputClass(!!errors[`${s.uid}:tree`])}
                   />
-                  <p className="text-xs text-[#9CA3AF]">ไม้ยืนต้นชนิดใดก็ได้ ยกเว้นไผ่และต้นจาก (ตามเกณฑ์ T-VER)</p>
+                  <p className="text-xs text-[#9CA3AF]">ไม้ยืนต้นตามเกณฑ์ T-VER</p>
                   <FieldError message={errors[`${s.uid}:tree`]} />
                 </div>
 
@@ -593,13 +606,31 @@ export default function TverTargetClient({
                     />
                   </div>
                   <p className="text-xs text-[#9CA3AF]">
-                    ระยะห่างระหว่างต้น × ระยะห่างระหว่างแถว (ค่าเริ่มต้น {DEFAULT_SPACING_M} × {DEFAULT_SPACING_M} ม.) ไม่ใช่ขนาดของแปลง
+                    ระยะห่างระหว่างต้น × ระยะห่างระหว่างแถว โดยมีค่าเริ่มต้นเป็น {DEFAULT_SPACING_M} × {DEFAULT_SPACING_M} ม.
                   </p>
                   <FieldError message={errors[`${s.uid}:spacing`]} />
                 </div>
 
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-[#374151]">แปลงปลูก</label>
+                  <label className="flex items-center gap-2 text-sm text-[#374151]">
+                    <input
+                      type="checkbox"
+                      checked={s.noLand}
+                      onChange={(e) => {
+                        updateSpecies(s.uid, { noLand: e.target.checked });
+                        clearError(`${s.uid}:plots`);
+                        clearError('totalArea');
+                        for (const p of s.plots) clearError(`${p.uid}:plot`);
+                      }}
+                      className="h-4 w-4 accent-[#2d4a63]"
+                    />
+                    ยังไม่มีพื้นที่ปลูก
+                  </label>
+                  {s.noLand ? (
+                    <p className="text-xs text-[#9CA3AF]">ระบบจะคำนวณว่าต้องใช้พื้นที่ปลูกพันธุ์นี้กี่ไร่</p>
+                  ) : (
+                  <>
                   {s.plots.map((p) => (
                     <div key={p.uid} className="space-y-1">
                       <div className="flex items-center gap-2">
@@ -656,6 +687,8 @@ export default function TverTargetClient({
                   <p className="text-xs text-[#9CA3AF]">
                     เงื่อนไข: แต่ละแปลง {formatCondition(plotLimit.operator, plotLimit.value, 'ไร่')}
                   </p>
+                  </>
+                  )}
                 </div>
               </div>
             ))}
@@ -699,7 +732,6 @@ export default function TverTargetClient({
         {/* ขวา: ผลลัพธ์ */}
         <div className="bg-white border border-[#F3F4F6] shadow-sm rounded-2xl p-8">
           <h2 className="text-xl font-bold text-[#1F2937]">ผลการคำนวณ</h2>
-          <p className="text-sm text-[#9CA3AF] mb-6">คำนวณตามสูตรของ T-VER (MAI 9.5 kgCO2/ต้น/ปี)</p>
 
           {!shown && (
             <p className="text-center text-[#9CA3AF] py-20">
@@ -710,7 +742,6 @@ export default function TverTargetClient({
           {shown && (
             <ResultPanel
               shown={shown}
-              projectLimit={projectLimit}
               plotLimit={plotLimit}
             />
           )}
@@ -721,32 +752,43 @@ export default function TverTargetClient({
 }
 
 /* ---------- แผงผลลัพธ์ ---------- */
-function ResultPanel({ shown, projectLimit, plotLimit }: { shown: Shown; projectLimit: AreaLimit; plotLimit: AreaLimit }) {
+function ResultPanel({ shown, plotLimit }: { shown: Shown; plotLimit: AreaLimit }) {
   const { plan, input } = shown;
-  const limitText = formatCondition(projectLimit.operator, projectLimit.value, 'ไร่');
+  // ขนาดแปลงสูงสุดแบบคำพูด เช่น "ไม่เกิน 30 ไร่" (ตามเงื่อนไขที่แอดมินตั้ง)
+  const plotLimitWords = `${plotLimit.operator === '<' ? 'น้อยกว่า' : 'ไม่เกิน'} ${fmtNum(plotLimit.value)} ไร่`;
+  // พันธุ์ที่ยังไม่มีพื้นที่ปลูก (ไม่มีแปลง) / ทั้งแผนยังไม่มีพื้นที่ปลูกเลย
+  const noLandOf = (i: number) => input.species[i].plots.length === 0;
+  const noLandAtAll = input.species.every((x) => x.plots.length === 0);
 
   return (
     <div className="space-y-6">
       {/* ตัวเลขหลัก */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Stat label="ต้องปลูกตามเป้าหมาย" value={fmtInt(plan.treesNeeded)} unit="ต้น" />
-        <Stat label="ที่ดินที่มีปลูกได้" value={fmtInt(plan.treesCapacity)} unit={`ต้น บนพื้นที่ ${fmtNum(plan.areaRai)} ไร่`} />
-        <Stat label={`กักเก็บได้จริงในปีที่ ${input.year}`} value={fmt2(plan.carbonCapacity)} unit="tCO2e" />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Stat label="จำนวนต้นไม้ที่ต้องปลูก" value={fmtInt(plan.treesNeeded)} unit={`ต้น ในปีสะสมที่ ${input.year}`} />
+        {noLandAtAll ? (
+          <Stat label="จำนวนต้นไม้ที่ปลูกได้จริง" value="-" unit="ยังไม่มีพื้นที่ปลูก" />
+        ) : (
+          <Stat label="จำนวนต้นไม้ที่ปลูกได้จริง" value={fmtInt(plan.treesCapacity)} unit={`ต้น บนพื้นที่ ${fmtNum(plan.areaRai)} ไร่`} />
+        )}
       </div>
 
-      {/* ผลต่าง = เป้าหมาย − ที่ทำได้จริง */}
+      {/* ต้นที่ขาด = ต้นตามเป้าหมาย − ต้นที่ที่ดินรองรับได้ */}
       {plan.isSufficient ? (
         <div className="rounded-xl border border-[#BBE5CF] bg-[#F2F8F5] p-4 text-[#18794a]">
           <p className="font-semibold">ที่ดินพอ ปลูกได้ถึงเป้าหมาย {fmt2(input.targetTco2e)} tCO2e</p>
           <p className="mt-1 text-sm">
-            {plan.carbonGap < 0 ? `ปลูกได้เกินเป้าหมาย ${fmt2(-plan.carbonGap)} tCO2e ` : ''}
-            ต้องปลูกอย่างน้อย {fmtInt(plan.treesNeeded)} ต้นจึงจะถึงเป้าหมายในปีที่ {input.year}
+            ต้องปลูกอย่างน้อย {fmtInt(plan.treesNeeded)} ต้นจึงจะถึงเป้าหมาย
           </p>
+        </div>
+      ) : noLandAtAll ? (
+        <div className="rounded-xl border border-[#D6E2EC] bg-[#F3F7FA] p-4 text-[#2d4a63]">
+          <p className="font-semibold">ต้องปลูก {fmtInt(plan.treesNeeded)} ต้น</p>
+          <p className="mt-1 text-sm">ยังไม่มีพื้นที่ปลูก ดูพื้นที่ที่ต้องใช้ตามทางเลือกด้านล่าง จึงจะถึงเป้าหมาย {fmt2(input.targetTco2e)} tCO2e</p>
         </div>
       ) : (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
-          <p className="font-semibold">ที่ดินไม่พอ ยังขาดอีก {fmt2(plan.carbonGap)} tCO2e</p>
-          <p className="mt-1 text-sm">ต้องปลูกเพิ่มอีก {fmtInt(plan.treesShort)} ต้น</p>
+          <p className="font-semibold">ที่ดินไม่พอ ยังขาดอีก {fmtInt(plan.treesShort)} ต้น</p>
+          <p className="mt-1 text-sm">ต้องเพิ่มพื้นที่ปลูกตามทางเลือกด้านล่าง จึงจะถึงเป้าหมาย {fmt2(input.targetTco2e)} tCO2e</p>
         </div>
       )}
 
@@ -768,8 +810,14 @@ function ResultPanel({ shown, projectLimit, plotLimit }: { shown: Shown; project
                 <td className="py-2 pr-3">
                   {fmtNum(input.species[i].spacingTreeM)} × {fmtNum(input.species[i].spacingRowM)}
                 </td>
-                <td className="py-2 pr-3 text-right">{fmtNum(s.areaRai)}</td>
-                <td className="py-2 text-right">{fmtInt(s.treesCapacity)}</td>
+                {noLandOf(i) ? (
+                  <td colSpan={2} className="py-2 text-right text-[#9CA3AF]">ยังไม่มีพื้นที่ปลูก</td>
+                ) : (
+                  <>
+                    <td className="py-2 pr-3 text-right">{fmtNum(s.areaRai)}</td>
+                    <td className="py-2 text-right">{fmtInt(s.treesCapacity)}</td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>
@@ -779,24 +827,32 @@ function ResultPanel({ shown, projectLimit, plotLimit }: { shown: Shown; project
       {/* ที่ดินไม่พอ: ต้องเพิ่มพื้นที่เท่าไหร่ (เลือกปลูกเพิ่มพันธุ์ใดพันธุ์หนึ่ง) */}
       {!plan.isSufficient && (
         <div className="space-y-3">
-          <h3 className="text-base font-bold text-[#1F2937]">ต้องเพิ่มพื้นที่ปลูกเท่าไหร่</h3>
-          <p className="text-sm text-[#6B7280]">เลือกปลูกเพิ่มพันธุ์ใดพันธุ์หนึ่ง (คิดจากระยะปลูกของพันธุ์นั้น)</p>
+          <h3 className="text-base font-bold text-[#1F2937]">
+            {noLandAtAll ? 'ต้องใช้พื้นที่ปลูกเท่าไหร่' : 'ต้องเพิ่มพื้นที่ปลูกเท่าไหร่'}
+          </h3>
+          <p className="text-sm text-[#6B7280]">
+            {noLandAtAll ? 'เลือกปลูกพันธุ์ใดพันธุ์หนึ่ง' : 'เลือกปลูกเพิ่มพันธุ์ใดพันธุ์หนึ่ง'} โดยคิดจากระยะปลูกของพันธุ์นั้น
+          </p>
           <ul className="space-y-2">
             {/* ทางเลือกที่ผ่านเงื่อนไขขึ้นก่อน ที่เกินเพดานต่อท้ายเป็นหมายเหตุ */}
             {[...plan.species].sort((a, b) => Number(b.withinLimit) - Number(a.withinLimit)).map((s) =>
               s.withinLimit ? (
                 <li key={s.key} className="rounded-xl border border-[#E5E7EB] p-3">
                   <p className="font-semibold text-[#1F2937]">
-                    ปลูก{s.name}เพิ่มอีก {fmtInt(s.addRai ?? 0)} ไร่
+                    {noLandAtAll
+                      ? `ปลูก${s.name} ต้องใช้พื้นที่ ${fmtInt(s.addRai ?? 0)} ไร่`
+                      : `ปลูก${s.name}เพิ่มอีก ${fmtInt(s.addRai ?? 0)} ไร่`}
                   </p>
                   <p className="text-sm text-[#6B7280]">
-                    พื้นที่รวมเป็น {fmtNum(s.totalRaiAfterAdd ?? 0)} ไร่ ผ่านเงื่อนไขพื้นที่โครงการ ({limitText})
+                    {noLandAtAll ? '' : `พื้นที่รวมเป็น ${fmtNum(s.totalRaiAfterAdd ?? 0)} ไร่ `}ผ่านเงื่อนไขพื้นที่โครงการ
                   </p>
                 </li>
               ) : (
                 <li key={s.key} className="rounded-xl border border-dashed border-[#E5E7EB] p-3 text-sm text-[#9CA3AF]">
-                  {s.name}: ต้องเพิ่ม {fmtInt(s.addRai ?? 0)} ไร่ ทำให้พื้นที่รวมเป็น {fmtNum(s.totalRaiAfterAdd ?? 0)} ไร่
-                  เกินเงื่อนไขพื้นที่โครงการ ({limitText})
+                  {noLandAtAll
+                    ? `${s.name}: ต้องใช้พื้นที่ ${fmtInt(s.addRai ?? 0)} ไร่ `
+                    : `${s.name}: ต้องเพิ่ม ${fmtInt(s.addRai ?? 0)} ไร่ รวมเป็น ${fmtNum(s.totalRaiAfterAdd ?? 0)} ไร่ `}
+                  เกินเงื่อนไขพื้นที่โครงการ
                 </li>
               )
             )}
@@ -804,19 +860,10 @@ function ResultPanel({ shown, projectLimit, plotLimit }: { shown: Shown; project
 
           {plan.hasFeasibleOption ? (
             <p className="text-sm text-[#6B7280]">
-              แบ่งแปลงเองได้ แต่ละแปลง {formatCondition(plotLimit.operator, plotLimit.value, 'ไร่')} แล้วกรอกแปลงที่เพิ่มในฟอร์มเพื่อคำนวณใหม่
+              สามารถแบ่งแปลงเองได้ โดยแต่ละแปลงขนาด{plotLimitWords}
             </p>
           ) : (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-              <p className="font-semibold">ทุกพันธุ์ทำให้พื้นที่โครงการเกินเงื่อนไข ({limitText}) ลองปรับแล้วคำนวณใหม่</p>
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                <li>ลดเป้าหมายการกักเก็บคาร์บอน</li>
-                {input.year < TARGET_YEAR_MAX && (
-                  <li>เลือกปีที่ไกลขึ้น (สูงสุดปีที่ {TARGET_YEAR_MAX}) ต้นไม้จะกักเก็บได้มากขึ้นตามเวลา</li>
-                )}
-                <li>ลดระยะปลูก ถ้าพันธุ์ไม้นั้นปลูกถี่ได้</li>
-              </ul>
-            </div>
+            <p className="text-sm font-semibold text-[#6B7280]">ทุกพันธุ์ทำให้พื้นที่โครงการเกินเงื่อนไข</p>
           )}
         </div>
       )}
