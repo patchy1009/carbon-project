@@ -47,7 +47,11 @@ export const FUEL_CONSUMPTION_RATES: Record<string, Record<string, number>> = {
     diesel_b20: 2.850,
     cng: 11.905,
     lpg: 8.929,
-  }
+  },
+  // รถยนต์ไฟฟ้า (EV): 6.06 กม./kWh ใช้คำนวณ EV_KWH_PER_KM ด้านล่าง ห้ามลบ ไม่งั้นหน้าบันทึกกิจกรรมทั่วไป error
+  ev: {
+    electricity: 6.06,
+  },
 };
 
 // อัตราใช้ไฟฟ้าของ EV มาตรฐาน (kWh ต่อ กม.) = 1 / 6.06 กม./kWh ใช้ค่าเดียวกันทั้งตอนคำนวณจริงและตอนแนะนำให้เปลี่ยนเป็น EV

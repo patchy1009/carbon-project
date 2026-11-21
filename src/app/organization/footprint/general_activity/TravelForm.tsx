@@ -10,6 +10,7 @@ import { useState, useEffect, useRef } from "react";
 import { AlertCircle, Trash2 } from "lucide-react";
 import { showConfirm } from "@/lib/dialog"; // กล่องยืนยันของระบบ (แทน confirm ของเบราว์เซอร์)
 import { supabase } from "@/lib/supabaseClient";
+import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
 import { getErrorMessage } from "@/lib/errorMessage";
 import { evKwhPerKmToPer100, evPer100ToKwhPerKm, VEHICLE_OPTIONS, FUEL_OPTIONS_MAP } from "./calculation";
 
@@ -163,6 +164,11 @@ export default function TravelForm({ orgId, initialData, onDataChange, getEFDeta
   const handleDeleteTravel = async () => {
     if (!travelName.trim()) return;
     setActionError("");
+    // ชื่อที่พิมพ์ใช้เป็นเงื่อนไขการลบ -> ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งไปฐานข้อมูล
+    if (containsSqlSyntax(travelName)) {
+      setActionError("ชื่อการเดินทาง / ภารกิจ มีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
+      return;
+    }
     if (!(await showConfirm(`คุณต้องการลบการเดินทาง "${travelName}" ออกจากระบบใช่หรือไม่?`, { danger: true }))) return;
 
     try {

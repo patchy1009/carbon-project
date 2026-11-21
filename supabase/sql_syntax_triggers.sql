@@ -134,3 +134,84 @@ drop trigger if exists trg_tax_detail_no_sql on public.org_tax_assessment_detail
 create trigger trg_tax_detail_no_sql
   before insert or update of cost_name on public.org_tax_assessment_detail
   for each row execute function public.reject_sql_syntax('cost_name');
+
+
+-- ===== ตารางที่เพิ่มภายหลัง: ครอบคลุมทุกช่องข้อความที่ผู้ใช้กรอก (ทั้งแอดมินและองค์กร) =====
+-- ชื่อตาราง/คอลัมน์ตรงกับที่หน้าเว็บบันทึก (ช่องตัวเลข / id / วันที่ ไม่ต้องตรวจ เพราะชนิดคอลัมน์รับแต่ค่าแบบนั้น)
+
+-- [แอดมิน] Scope / กิจกรรม / รายการย่อย (admin/activities)
+drop trigger if exists trg_scope_no_sql on public.carbon_scope;
+create trigger trg_scope_no_sql
+  before insert or update of scope_name, scope_detail on public.carbon_scope
+  for each row execute function public.reject_sql_syntax('scope_name', 'scope_detail');
+
+drop trigger if exists trg_activity_no_sql on public.activity;
+create trigger trg_activity_no_sql
+  before insert or update of activity_name on public.activity
+  for each row execute function public.reject_sql_syntax('activity_name');
+
+drop trigger if exists trg_activity_detail_no_sql on public.activity_detail;
+create trigger trg_activity_detail_no_sql
+  before insert or update of detail_name, unit, description on public.activity_detail
+  for each row execute function public.reject_sql_syntax('detail_name', 'unit', 'description');
+
+-- [แอดมิน] ประเภท EF / ค่า EF / ค่า GWP (admin/ef-gwp)
+drop trigger if exists trg_ef_type_no_sql on public.ef_type;
+create trigger trg_ef_type_no_sql
+  before insert or update of type_name on public.ef_type
+  for each row execute function public.reject_sql_syntax('type_name');
+
+drop trigger if exists trg_emission_factor_no_sql on public.emission_factor;
+create trigger trg_emission_factor_no_sql
+  before insert or update of ef_name, real_unit on public.emission_factor
+  for each row execute function public.reject_sql_syntax('ef_name', 'real_unit');
+
+drop trigger if exists trg_gwp_no_sql on public.global_warming_potential;
+create trigger trg_gwp_no_sql
+  before insert or update of gas_name on public.global_warming_potential
+  for each row execute function public.reject_sql_syntax('gas_name');
+
+-- [แอดมิน] พันธุ์ไม้ / หัวข้อโครงการ T-VER (admin/tver)
+drop trigger if exists trg_tree_no_sql on public.tree_list;
+create trigger trg_tree_no_sql
+  before insert or update of tree_name on public.tree_list
+  for each row execute function public.reject_sql_syntax('tree_name');
+
+drop trigger if exists trg_tver_detail_no_sql on public.tver_project_detail;
+create trigger trg_tver_detail_no_sql
+  before insert or update of detail_name, unit, detail on public.tver_project_detail
+  for each row execute function public.reject_sql_syntax('detail_name', 'unit', 'detail');
+
+-- [แอดมิน] หัวข้อข้อมูลสำนักงาน / แนวทางลดคาร์บอน (admin/officerec)
+--   ชื่อตัวเลือก (office_info_option.label) มี trigger อยู่ใน office_info_choice.sql แล้ว
+drop trigger if exists trg_info_type_no_sql on public.office_info_type;
+create trigger trg_info_type_no_sql
+  before insert or update of info_name, unit, info_detail on public.office_info_type
+  for each row execute function public.reject_sql_syntax('info_name', 'unit', 'info_detail');
+
+drop trigger if exists trg_recommendation_no_sql on public.carbon_reduction_recommendation;
+create trigger trg_recommendation_no_sql
+  before insert or update of recommendation on public.carbon_reduction_recommendation
+  for each row execute function public.reject_sql_syntax('recommendation');
+
+-- [แอดมิน] ชื่อเอกสาร (admin/allotaxdoc)
+drop trigger if exists trg_documents_no_sql on public.documents;
+create trigger trg_documents_no_sql
+  before insert or update of document_name on public.documents
+  for each row execute function public.reject_sql_syntax('document_name');
+
+-- [องค์กร] ข้อมูลสำนักงานที่กรอก / ชื่อรายการบันทึก / ชื่อโครงการ T-VER
+drop trigger if exists trg_org_office_info_no_sql on public.org_office_info;
+create trigger trg_org_office_info_no_sql
+  before insert or update of amount on public.org_office_info
+  for each row execute function public.reject_sql_syntax('amount');
+
+drop trigger if exists trg_activity_list_no_sql on public.org_activity_list;
+create trigger trg_activity_list_no_sql
+  before insert or update of orgact_name on public.org_activity_list
+  for each row execute function public.reject_sql_syntax('orgact_name');
+
+drop trigger if exists trg_tree_project_no_sql on public.org_tree_project;
+create trigger trg_tree_project_no_sql
+  before insert or update of project_name on public.org_tree_project
+  for each row execute function public.reject_sql_syntax('project_name');

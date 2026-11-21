@@ -17,8 +17,9 @@ import { checkBill, type BillTarget } from '@/lib/bills/checks';
 import { summarize, fillValue, formatQty, type GapChoice, type GapState } from '@/lib/bills/aggregate';
 import { ocrSourceOf, type ActivityPeriod, type BillType, type OcrSource } from '@/lib/bills/types';
 import { validateForm, required, notNumericOnly, maxLength, isDecimal, type formSchema } from '@/lib/validation';
+import { noSqlSyntax } from '@/lib/sqlSyntax'; // ตรวจ Syntax ป้องกัน SQL Injection
 import { normalizeNumberString, normalizeToArabicNumber } from '@/lib/normalization';
-import { clearOfficeDraft, draftScope, hasOfficeValues, readOfficeDraft } from '@/lib/officeDraft';
+import { clearOfficeDraft, draftScope, hasOfficeValues, parseQtyKey, readOfficeDraft } from '@/lib/officeDraft';
 import { showAlert, showConfirm, showError } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert/confirm
 import { CheckIcon, TrashIcon } from '@/components/icons'; // เพิ่ม CheckIcon แทนสัญลักษณ์ ✓
 
@@ -266,7 +267,7 @@ export default function FootprintClient({
   // schema ของทั้งหน้า: ชื่อกิจกรรม + ปริมาณทุกรายการ (key = scopedetail_id)
   function buildSchema(): formSchema<string> {
     const schema: formSchema<string> = {
-      name: { rules: [required('ชื่อกิจกรรม'), notNumericOnly('ชื่อกิจกรรม'), maxLength('ชื่อกิจกรรม', NAME_MAX)] },
+      name: { rules: [required('ชื่อกิจกรรม'), notNumericOnly('ชื่อกิจกรรม'), maxLength('ชื่อกิจกรรม', NAME_MAX), noSqlSyntax('ชื่อกิจกรรม')] },
     };
     for (const group of scopeGroups) {
       for (const d of group.details) {
@@ -474,19 +475,36 @@ export default function FootprintClient({
     const draft = readOfficeDraft(orgId, scope);
     if (!draft) return;
 
-    const rows = Object.entries(draft)
-      .filter(([, amount]) => amount !== '')
-      .map(([info_id, amount]) => ({ orgactlist_id: logId, info_id, amount })); // ไม่มี org_id แล้ว
+    // แยกค่าธรรมดา (key = info_id) กับจำนวนของตัวเลือก (key = qtyKey -> org_office_info_option)
+    const rows: { orgactlist_id: string; info_id: string; amount: string | null }[] = [];
+    const qtyByInfo: Record<string, { option_id: string; quantity: number }[]> = {};
+    for (const [key, amount] of Object.entries(draft)) {
+      if (amount === '') continue;
+      const q = parseQtyKey(key);
+      if (q) (qtyByInfo[q.infoId] ??= []).push({ option_id: q.optionId, quantity: Number(amount) });
+      else rows.push({ orgactlist_id: logId, info_id: key, amount }); // ไม่มี org_id แล้ว
+    }
+    // หัวข้อที่กรอกจำนวน: แถวแม่ใน org_office_info (amount ว่าง) ไว้ผูกจำนวนของแต่ละตัวเลือก
+    for (const infoId of Object.keys(qtyByInfo)) rows.push({ orgactlist_id: logId, info_id: infoId, amount: null });
 
     let error: { message: string } | null = null;
     if (isEdit) {
+      // ลบชุดเดิม (จำนวนของตัวเลือกถูกลบตามด้วย on delete cascade)
       ({ error } = await supabase
         .from('org_office_info')
         .delete()
         .eq('orgactlist_id', logId));
     }
     if (!error && rows.length > 0) {
-      ({ error } = await supabase.from('org_office_info').insert(rows));
+      const res = await supabase.from('org_office_info').insert(rows).select('orginfo_id, info_id');
+      error = res.error;
+      // จำนวนของแต่ละตัวเลือก ผูกกับแถวแม่ของหัวข้อนั้น
+      const qtyRows = (res.data ?? []).flatMap((parent) =>
+        (qtyByInfo[parent.info_id as string] ?? []).map((q) => ({ orginfo_id: parent.orginfo_id, ...q }))
+      );
+      if (!error && qtyRows.length > 0) {
+        ({ error } = await supabase.from('org_office_info_option').insert(qtyRows));
+      }
     }
     if (error) {
       await showError('บันทึกรายการเรียบร้อย แต่บันทึกข้อมูลสำนักงานไม่สำเร็จ: ' + error.message +

@@ -8,6 +8,8 @@ export const dynamic = 'force-dynamic';
 
 import { createSupabaseServer } from '@/lib/supabaseServer';
 import { requireOrgId } from '@/lib/auth';
+import { notFound } from 'next/navigation';
+import { isUuid } from '@/lib/sqlSyntax'; // ตรวจค่าจาก URL ก่อนส่งไปฐานข้อมูล
 import OfficeInfoClient, { type OfficeInfoType, type SavedInfo } from './OfficeInfoClient';
 
 // อ่านค่า edit และ resume จาก URL ดึงข้อมูล แล้วส่งให้ OfficeInfoClient
@@ -21,10 +23,13 @@ export default async function FootprintOfficePage({
   // edit   = กำลังแก้ไขรายการเดิม ต้องส่งต่อไปขั้นที่ 2
   // resume = ย้อนกลับมาจากขั้นที่ 2 -> เอาค่าที่กรอกค้างไว้ (ยังไม่บันทึก) กลับมา
   const { edit, resume } = await searchParams;
+  // ?edit= ต้องเป็น uuid เท่านั้น (ค่าอื่นไม่ส่งไปค้นฐานข้อมูล) -> หน้า 404
+  if (edit !== undefined && !isUuid(edit)) notFound();
 
+  // input_type + ตัวเลือก (office_info_option) ใช้สร้าง dropdown ของหัวข้อแบบตัวเลือก
   const typesRes = await supabase
     .from('office_info_type')
-    .select('info_id, info_name, unit, info_detail')
+    .select('info_id, info_name, unit, info_detail, input_type, info_group, has_quantity, office_info_option(option_id, label, sort_order)')
     .order('updated_at', { ascending: true });
   if (typesRes.error) console.error('office_info_type error:', typesRes.error.message);
 
@@ -43,7 +48,7 @@ export default async function FootprintOfficePage({
     if (log) {
       const savedRes = await supabase
         .from('org_office_info')
-        .select('orginfo_id, info_id, amount')
+        .select('orginfo_id, info_id, amount, org_office_info_option(option_id, quantity)') // + จำนวนของแต่ละตัวเลือก
         .eq('orgactlist_id', edit);
       if (savedRes.error) console.error('org_office_info error:', savedRes.error.message);
       saved = (savedRes.data ?? []) as SavedInfo[];

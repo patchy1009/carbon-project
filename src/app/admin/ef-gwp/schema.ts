@@ -1,4 +1,5 @@
 import { required, requiredSelect, notNumericOnly, englishOnly, isDecimal, maxLength, type formSchema } from "@/lib/validation";
+import { noSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
 import { normalizeNumberString } from "@/lib/normalization";
 
 /* กฎที่ "ต้องใช้ข้อมูลบนหน้าจอ" (ห้ามซ้ำ / ประเภทที่เลือกต้องมีอยู่จริง) ใส่เพิ่มตอน submit
@@ -12,7 +13,7 @@ export const efSchema : formSchema<EfField> = {
         rules: [requiredSelect('ประเภท EF')], // ข้อความ "กรุณาเลือก" แทน "กรุณากรอก" เพราะเป็น dropdown
     },
     ef_name: {
-        rules: [required('ชื่อ EF'), notNumericOnly('ชื่อ EF'), maxLength('ชื่อ EF', 150)],
+        rules: [required('ชื่อ EF'), notNumericOnly('ชื่อ EF'), maxLength('ชื่อ EF', 150), noSqlSyntax('ชื่อ EF')],
     },
     ef_value: {
         normalize: normalizeNumberString, //แปลงเลขไทย + ลบ,ก่อนตรวจ
@@ -20,7 +21,7 @@ export const efSchema : formSchema<EfField> = {
         rules: [required('ค่า EF'), isDecimal('ค่า EF', { allowNegative: false, allowZero: false, maxDecimals: 6 })],
     },
     real_unit: {
-        rules: [required('หน่วย'), englishOnly('หน่วย'), maxLength('หน่วย', 50)],
+        rules: [required('หน่วย'), englishOnly('หน่วย'), maxLength('หน่วย', 50), noSqlSyntax('หน่วย')],
     },
 };
 
@@ -29,7 +30,7 @@ export type EfTypeField = 'type_name' ;
 
 export const efTypeSchema : formSchema<EfTypeField> = {
     type_name: {
-        rules: [required('ประเภท EF'), englishOnly('ประเภท EF'), notNumericOnly('ประเภท EF'), maxLength('ประเภท EF', 100)],
+        rules: [required('ประเภท EF'), englishOnly('ประเภท EF'), notNumericOnly('ประเภท EF'), maxLength('ประเภท EF', 100), noSqlSyntax('ประเภท EF')],
     },
 };
 
@@ -38,7 +39,7 @@ export type GwpField = 'gas_name' | 'gwp_value' ;
 
 export const gwpSchema : formSchema<GwpField> = {
     gas_name: {
-        rules: [required('ชื่อก๊าซ'), notNumericOnly('ชื่อก๊าซ'), maxLength('ชื่อก๊าซ', 100)],
+        rules: [required('ชื่อก๊าซ'), notNumericOnly('ชื่อก๊าซ'), maxLength('ชื่อก๊าซ', 100), noSqlSyntax('ชื่อก๊าซ')],
     },
     gwp_value: {
         normalize: normalizeNumberString, //แปลงเลขไทย + ลบ,ก่อนตรวจ

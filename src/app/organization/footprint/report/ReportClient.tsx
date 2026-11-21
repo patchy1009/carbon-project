@@ -9,9 +9,11 @@ import { SCOPE_COLORS } from '@/lib/scopeColors';
 export type Measure = {
   name: string;
   amount: number | null; // tCO2e ที่ลดได้ null = แนะนำทั่วไป
-  percent: number; // % ที่ลดได้
+  percent: number | null; // % ที่ลดได้ null = แอดมินไม่ได้กรอก
   // [ลบ] low / high / percentMin / percentMax (ช่วงประมาณการ) ไม่มี percent_max แล้ว
   basis: string;
+  findings: string[]; // ค่าจริงขององค์กรที่ทำให้ผ่านเงื่อนไข เช่น "ชนิดหลอดไฟ: Fluorescent 40 ดวง"
+  calcNote: string | null; // แนวทางแบบสูตร: ข้อความสั้น เช่น "เปลี่ยน 50 หลอด" (หรือเหตุผลที่ยังคำนวณไม่ได้)
 };
 type ReportData = {
   name: string | null;
@@ -288,10 +290,6 @@ export default function ReportClient({
         {/* มาตรการลดการปล่อยก๊าซ */}
         <div className="rounded-2xl bg-white p-8 shadow-md">
           <h2 className="text-lg font-bold text-[#1E293B]">มาตรการลดการปล่อยก๊าซที่แนะนำ</h2>
-          <p className="mt-1 text-xs text-[#94A3B8]">
-            ประมาณการเบื้องต้นจากเปอร์เซ็นต์อ้างอิงที่ผู้ดูแลระบบกำหนด
-            ไม่ใช่การรับรองปริมาณที่ลดได้จริง
-          </p>
 
           <div className="mt-6 space-y-4">
             {measures.length === 0 && (
@@ -303,6 +301,15 @@ export default function ReportClient({
               <div key={i} className="rounded-xl border-b-2 border-[#F7F9FB] p-4">
                 <p className="text-sm font-semibold text-[#1E293B]">{m.name}</p>
 
+                {/* ค่าที่พบจากข้อมูลขององค์กร (ตามเงื่อนไขของแนวทาง) */}
+                {m.findings.length > 0 && (
+                  <ul className="mt-1 space-y-0.5 text-xs text-[#475569]">
+                    {m.findings.map((f, j) => (
+                      <li key={j}>พบ {f}</li>
+                    ))}
+                  </ul>
+                )}
+
                 {m.amount !== null ? (
                   <>
                     <p className="mt-2 text-sm font-bold text-[#16A34A]">
@@ -310,12 +317,12 @@ export default function ReportClient({
                     </p>
                     {/* [แก้ไข] เดิม "ช่วงประมาณการ low–high tCO2e (5–10% ของ...)" ตอนนี้มี % เดียว */}
                     <p className="mt-1 text-xs text-[#64748B]">
-                      {m.percent}% ของ{m.basis}
+                      {m.calcNote ?? `${m.percent}% ของ${m.basis}`}
                     </p>
                   </>
                 ) : (
                   <p className="mt-2 text-xs text-[#94A3B8]">
-                    แนวทางทั่วไป (ไม่มีตัวเลขประมาณการ)
+                    {m.calcNote ?? (m.findings.length > 0 ? 'ยังไม่มีตัวเลขประมาณการปริมาณที่ลดได้' : 'แนวทางทั่วไป (ไม่มีตัวเลขประมาณการ)')}
                   </p>
                 )}
               </div>

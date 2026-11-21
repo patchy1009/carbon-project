@@ -1,6 +1,7 @@
 import {
   required, notNumericOnly, thaiOrEnglishOnly, isDecimal, existsIn, maxLength, type formSchema,
 } from '@/lib/validation';
+import { noSqlSyntax } from '@/lib/sqlSyntax'; // ตรวจ Syntax ป้องกัน SQL Injection
 import { normalizeNumberString, normalizeTextArea, CONDITION_OPERATORS } from '@/lib/normalization';
 
 /* schema ของหน้า T-VER Project
@@ -11,7 +12,7 @@ import { normalizeNumberString, normalizeTextArea, CONDITION_OPERATORS } from '@
 export type TreeField = 'tree_name';
 export const treeSchema: formSchema<TreeField> = {
   tree_name: {
-    rules: [required('ชื่อต้นไม้'), notNumericOnly('ชื่อต้นไม้'), maxLength('ชื่อต้นไม้', 100)],
+    rules: [required('ชื่อต้นไม้'), notNumericOnly('ชื่อต้นไม้'), maxLength('ชื่อต้นไม้', 100), noSqlSyntax('ชื่อต้นไม้')],
   },
 };
 
@@ -19,11 +20,11 @@ export const treeSchema: formSchema<TreeField> = {
 export type TverDetailField = 'detail_name' | 'unit' | 'condition_operator' | 'condition_number' | 'detail';
 export const tverDetailSchema: formSchema<TverDetailField> = {
   detail_name: {
-    rules: [required('รายละเอียดโครงการ'), notNumericOnly('รายละเอียดโครงการ'), maxLength('รายละเอียดโครงการ', 150)],
+    rules: [required('รายละเอียดโครงการ'), notNumericOnly('รายละเอียดโครงการ'), maxLength('รายละเอียดโครงการ', 150), noSqlSyntax('รายละเอียดโครงการ')],
   },
   // หน่วยเป็นภาษาไทยได้ เช่น ไร่, แปลง, ต้น, ปี
   unit: {
-    rules: [thaiOrEnglishOnly('หน่วย'), notNumericOnly('หน่วย'), maxLength('หน่วย', 50)],
+    rules: [thaiOrEnglishOnly('หน่วย'), notNumericOnly('หน่วย'), maxLength('หน่วย', 50), noSqlSyntax('หน่วย')],
   },
   // เดิมเป็นช่องข้อความ condition_value ให้พิมพ์ "<= 1000" เอง
   // ตอนนี้แยกเป็น dropdown ตัวดำเนินการ + ช่องตัวเลข (ไม่บังคับ: ว่างทั้งคู่ = ไม่มีเงื่อนไข)
@@ -38,6 +39,6 @@ export const tverDetailSchema: formSchema<TverDetailField> = {
   },
   detail: {
     normalize: normalizeTextArea,
-    rules: [notNumericOnly('คำอธิบาย'), maxLength('คำอธิบาย', 1000)],
+    rules: [notNumericOnly('คำอธิบาย'), maxLength('คำอธิบาย', 1000), noSqlSyntax('คำอธิบาย')],
   },
 };
