@@ -38,7 +38,7 @@ export default function OrganizationLayout({
       href: email ? '/organization/dashboard' : '/' // ปรับลิงก์หน้าหลักตามต้องการ เช่น '/' หรือหน้า Home ทั่วไป
     },
     { label: 'คาร์บอนฟุตพรินต์', href: '/organization/footprint' },
-    { label: 'จำลองโครงการ T-VER', href: '/organization/tver-simulation' },
+    { label: 'จำลองโครงการ T-VER', href: '/organization/tver' }, // หน้าเลือกแบบเดิม (จำนวนต้นไม้) หรือแบบใหม่ (เป้าหมาย)
     { label: 'คำนวณภาษี', href: '/organization/tax_calculator' },
     { label: 'เอกสาร', href: '/organization/documents' },
   ];

@@ -8,10 +8,11 @@ import { createSupabaseServer } from '@/lib/supabaseServer';
 import { requireOrgId } from '@/lib/auth';
 import { isUuid } from '@/lib/sqlSyntax'; // ตรวจค่าจาก URL ก่อนส่งไปฐานข้อมูล
 import TverSimulationClient, { type SavedProjectOption } from './TverSimulationClient';
-import type { TreeListItem, TverProjectDetail } from '@/types/tver-project';
+import type { TverProjectDetail } from '@/types/tver-project';
 import type { OrgTreeProject, OrgTreeProjectDetail } from '@/types/tver-simulation';
 
-// ดึงรายการต้นไม้ เงื่อนไขโครงการ รายชื่อโครงการที่บันทึกไว้ และโครงการเดิม (ถ้ามี ?edit=) แล้วส่งให้หน้าจอ
+// [แก้ไข] เอาพันธุ์ไม้ออก (ไม่มีผลต่อการคำนวณ) ไม่ดึง tree_list แล้ว
+// ดึงเงื่อนไขโครงการ รายชื่อโครงการที่บันทึกไว้ และโครงการเดิม (ถ้ามี ?edit=) แล้วส่งให้หน้าจอ
 export default async function TverSimulationPage({
   searchParams,
 }: {
@@ -23,8 +24,7 @@ export default async function TverSimulationPage({
   // ?edit= ต้องเป็น uuid เท่านั้น (ค่าอื่นไม่ส่งไปค้นฐานข้อมูล) -> หน้า 404
   if (edit !== undefined && !isUuid(edit)) notFound();
 
-  const [treesRes, criteriaRes, savedRes, projectRes, detailsRes] = await Promise.all([
-    supabase.from('tree_list').select('*').order('tree_name'),
+  const [criteriaRes, savedRes, projectRes, detailsRes] = await Promise.all([
     supabase.from('tver_project_detail').select('*').order('updated_at'),
     // รายชื่อโครงการที่องค์กรนี้บันทึกไว้ (ให้ช่องชื่อโครงการเลือกเปิดได้)
     supabase.from('org_tree_project').select('orgtreeproject_id, project_name').eq('org_id', orgId).order('project_name'),
@@ -43,7 +43,6 @@ export default async function TverSimulationPage({
   return (
     <TverSimulationClient
       orgId={orgId}
-      trees={(treesRes.data ?? []) as TreeListItem[]}
       criteria={(criteriaRes.data ?? []) as TverProjectDetail[]}
       savedProjects={(savedRes.data ?? []) as SavedProjectOption[]}
       existingProject={project}

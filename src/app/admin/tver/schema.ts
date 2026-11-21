@@ -8,14 +8,6 @@ import { normalizeNumberString, normalizeTextArea, CONDITION_OPERATORS } from '@
  * เดิมหน้านี้บันทึกค่าที่กรอกลง DB ตรงๆ ไม่มี normalize / validate เลย
  * กฎที่ต้องใช้ข้อมูลบนหน้าจอ (ห้ามซ้ำ / กรอกคู่กัน) ใส่เพิ่มตอน submit ด้วย extendSchema ใน TverProjectClient.tsx */
 
-/* รายการต้นไม้ */
-export type TreeField = 'tree_name';
-export const treeSchema: formSchema<TreeField> = {
-  tree_name: {
-    rules: [required('ชื่อต้นไม้'), notNumericOnly('ชื่อต้นไม้'), maxLength('ชื่อต้นไม้', 100), noSqlSyntax('ชื่อต้นไม้')],
-  },
-};
-
 /* เงื่อนไขโครงการ */
 export type TverDetailField = 'detail_name' | 'unit' | 'condition_operator' | 'condition_number' | 'detail';
 export const tverDetailSchema: formSchema<TverDetailField> = {

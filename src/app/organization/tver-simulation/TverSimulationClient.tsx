@@ -1,15 +1,15 @@
 // หน้าจำลองโครงการปลูกป่า T-VER: กรอกข้อมูล ตรวจเงื่อนไข คำนวณเครดิต และบันทึกโครงการ
 'use client';
 
-import Select, { ChevronDown } from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
+import { ChevronDown } from '@/components/Select'; // dropdown กลาง (แทน <select> ของ browser ให้หน้าตาเหมือนกันทั้งระบบ)
 import { useState } from 'react';
 import Link from 'next/link';
 import { calculateTverCredits } from '@/lib/tverCredits'; // [MERGE aom + cyn2] สูตรเครดิตของ cyn2
 import { supabase } from '@/lib/supabaseClient';
-import { TVER_TREE_COUNT_NAME, type TreeListItem, type TverProjectDetail } from '@/types/tver-project';
+import { TVER_TREE_COUNT_NAME, type TverProjectDetail } from '@/types/tver-project';
 import type { OrgTreeProject, OrgTreeProjectDetail } from '@/types/tver-simulation';
 import {
-  validateForm, required, requiredSelect, notNumericOnly, maxLength, isDecimal, isDate, existsIn,
+  validateForm, required, notNumericOnly, maxLength, isDecimal, isDate,
   meetsCondition, type formSchema,
 } from '@/lib/validation';
 import { noSqlSyntax } from '@/lib/sqlSyntax'; // ตรวจ Syntax ป้องกัน SQL Injection
@@ -19,7 +19,7 @@ import { showError } from '@/lib/dialog'; // กล่องแจ้งเต�
 
 /* normalize / validate ฟอร์มจำลองโครงการ T-VER
  * 1) ชื่อโครงการ: ห้ามว่าง / ตัวเลขล้วน / ยาวเกิน 150 ตัวอักษร
- * 2) พันธุ์ไม้: ต้องเลือก และต้องมีอยู่จริงใน tree_list (ตรวจความสัมพันธ์)
+ * 2) [ลบ] พันธุ์ไม้: เอาออกแล้ว เพราะไม่มีผลต่อการคำนวณ (MAI 9.5 เท่ากันทุกพันธุ์)
  * 3) ค่าของแต่ละเงื่อนไข: แปลงเลขไทย/ลบ comma, ไม่ติดลบ (เดิม parseFloat รับ "12abc" และค่าติดลบได้)
  * 4) เทียบค่าที่กรอกกับเงื่อนไขที่แอดมินตั้ง เช่น พื้นที่ "<= 1000" ไร่ กรอก 1200 -> แจ้งว่าไม่ผ่าน
  * 5) วันที่เริ่มโครงการ: ต้องเป็นวันที่ที่มีอยู่จริง และอยู่ในช่วงปีที่สมเหตุสมผล
@@ -45,14 +45,12 @@ export type SavedProjectOption = { orgtreeproject_id: string; project_name: stri
 // หน้าจอหลัก รองรับทั้งโครงการใหม่ และการแก้ไขโครงการเดิม
 export default function TverSimulationClient({
   orgId,
-  trees,
   criteria,
   existingProject = null,
   existingDetails = [],
   savedProjects = [],
 }: {
   orgId: string; // auth.uid() ของบัญชีที่ล็อกอิน
-  trees: TreeListItem[];
   criteria: TverProjectDetail[];
   existingProject?: OrgTreeProject | null; // ถ้ามีค่า = โหมดแก้ไขโครงการเดิม
   existingDetails?: OrgTreeProjectDetail[];
@@ -82,8 +80,6 @@ export default function TverSimulationClient({
       ? otherProjects.filter((p) => (p.project_name ?? '').toLowerCase().includes(query))
       : otherProjects;
 
-  // พันธุ์ไม้เก็บอยู่ในแถวรายละเอียดของโครงการ (org_tree_project_detail.tree_id) ทุกแถวมีค่าเดียวกัน
-  const [treeId, setTreeId] = useState(existingDetails.find((d) => d.tree_id)?.tree_id ?? '');
 
   // [แก้ไข] ลบ join_year แล้ว ทุกโครงการมี join_date (schema_cleanup.sql เติมให้รายการเก่า)
   const [startDate, setStartDate] = useState(existingProject?.join_date ?? '');
@@ -112,7 +108,7 @@ export default function TverSimulationClient({
     existingProject?.orgtreeproject_id ?? null
   );
   const [saving, setSaving] = useState(false);
-  // error ใต้ช่อง: key = projectName / treeId / startDate / tverdetail_id
+  // error ใต้ช่อง: key = projectName / startDate / tverdetail_id
   const [errors, setErrors] = useState<Record<string, string>>({});
   // ล้างข้อความ error ของช่องที่ระบุ
   const clearError = (key: string) => {
@@ -129,7 +125,6 @@ export default function TverSimulationClient({
   function buildSchema(): formSchema<string> {
     const schema: formSchema<string> = {
       projectName: { rules: [required('ชื่อโครงการ'), notNumericOnly('ชื่อโครงการ'), maxLength('ชื่อโครงการ', 150), noSqlSyntax('ชื่อโครงการ')] },
-      treeId: { rules: [requiredSelect('พันธุ์ไม้'), existsIn('พันธุ์ไม้', trees.map((t) => t.tree_id))] },
       startDate: {
         rules: [required('วันที่เริ่มโครงการ'), isDate('วันที่เริ่มโครงการ', { minYear: MIN_START_YEAR, maxYear: MAX_START_YEAR })],
       },
@@ -153,7 +148,7 @@ export default function TverSimulationClient({
     e.preventDefault();
 
     // normalize + validate ทั้งฟอร์มก่อนคำนวณ/บันทึก
-    const result = validateForm({ ...amounts, projectName, treeId, startDate }, buildSchema());
+    const result = validateForm({ ...amounts, projectName, startDate }, buildSchema());
     const errs: Record<string, string> = {};
     if (!result.ok) Object.assign(errs, result.errors);
 
@@ -228,14 +223,13 @@ export default function TverSimulationClient({
       setSavedProjectId(projectId); // จำไว้ เพื่อให้การกดครั้งต่อไปเป็นการอัปเดต
     }
 
-    // บันทึกรายละเอียดแต่ละ criteria ที่กรอกไว้ (พร้อมพันธุ์ไม้ที่เลือก)
+    // บันทึกรายละเอียดแต่ละ criteria ที่กรอกไว้ (ไม่บันทึกพันธุ์ไม้แล้ว คอลัมน์ tree_id เป็น null)
     // ใช้ค่าที่ normalize แล้วจาก result.clean แทน parseFloat(ค่าดิบ)
     const detailRows = criteria
       .filter((c) => result.clean[c.tverdetail_id] !== '')
       .map((c) => ({
         orgtreeproject_id: projectId,
         tverdetail_id: c.tverdetail_id,
-        tree_id: result.clean.treeId || null,
         amount: normalizeToArabicNumber(result.clean[c.tverdetail_id]) ?? 0,
         unit: c.unit,
       }));
@@ -358,23 +352,6 @@ export default function TverSimulationClient({
               )}
             </div>
             {errors.projectName && <p className="text-xs text-red-600">{errors.projectName}</p>}
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-[#374151]">พันธุ์ไม้</label>
-            <Select
-              value={treeId}
-              onChange={(v) => {
-                setTreeId(v);
-                clearError('treeId');
-              }}
-              className={`w-full border rounded-xl px-3 py-3 text-base ${errors.treeId ? 'border-red-500' : 'border-[#E5E7EB]'}`}
-              options={[
-                { value: '', label: 'เลือกพันธุ์ไม้', placeholder: true },
-                ...trees.map((t) => ({ value: t.tree_id, label: t.tree_name })),
-              ]}
-            />
-            {errors.treeId && <p className="text-xs text-red-600">{errors.treeId}</p>}
           </div>
 
           {/* ช่องกรอกแบบไดนามิกตามเงื่อนไขที่แอดมินตั้งไว้ */}
