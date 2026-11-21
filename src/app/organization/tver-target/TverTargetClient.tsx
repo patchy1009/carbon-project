@@ -1,11 +1,12 @@
 // หน้าจำลองโครงการ T-VER จากการกักเก็บก๊าซเรือนกระจก (แบบใหม่)
-//   องค์กรกรอก: ชื่อโครงการ เป้าหมาย (tCO2e) และปีสะสม
-//   ระบบแสดง: ต้องปลูกกี่ต้น ต้องใช้พื้นที่กี่ไร่ (ระยะปลูกมาตรฐาน 4 × 4 ม.) และผ่านเงื่อนไขพื้นที่โครงการไหม
-//   สูตรทั้งหมดอยู่ที่ calculation.ts (โฟลเดอร์เดียวกัน) / ไม่แตะหน้า tver-simulation (แบบเดิม)
+//   องค์กรกรอก: ปริมาณคาร์บอน (พิมพ์เอง หรือเลือกจาก org_activity_list.total_ghg_emission) + ปีสะสม + ชื่อโครงการ
+//   ระบบเติมให้ทันที: จำนวนต้นไม้ที่ปลูก พื้นที่ต่อต้น (16 ตร.ม.) จำนวนไร่รวม (ระยะปลูก 4 × 4 ม.) จำนวนไร่ย่อย (แบ่งแปลงตามเงื่อนไขแอดมิน)
+//   กดปุ่ม: บันทึกแผน แล้วแสดงกราฟคาร์บอนสะสมปีที่ 1 ถึงปีสะสมที่เลือก
+//   สูตรทั้งหมดอยู่ที่ lib/tverTarget.ts / ไม่แตะหน้า tver-simulation (แบบเดิม)
 //
 // normalize / validate (ใช้กฎกลางของระบบใน lib/validation.ts)
 //   1) ชื่อโครงการ: ห้ามว่าง / ตัวเลขล้วน / เกิน 150 ตัวอักษร / คล้ายคำสั่ง SQL
-//   2) เป้าหมาย: ตัวเลข > 0 ทศนิยมไม่เกิน 2 หลัก / ปีสะสม: 1-10
+//   2) ปริมาณคาร์บอน (พิมพ์เอง หรือเลือกจากคาร์บอนฟุตพรินต์ที่คำนวณไว้แล้วแก้ต่อได้): ตัวเลข > 0 ทศนิยมไม่เกิน 2 หลัก / ปีสะสม: 1-10
 // บันทึก: ชื่อซ้ำกับแผนที่มี = อัปเดตแผนนั้น / เปิดแผนหนึ่งแล้วเปลี่ยนชื่อไปซ้ำกับอีกแผน = แจ้งเตือน ไม่บันทึก
 'use client';
 
@@ -18,23 +19,38 @@ import {
   validateForm, required, requiredSelect, notNumericOnly, maxLength, isDecimal, existsIn, type formSchema,
 } from '@/lib/validation';
 import { noSqlSyntax } from '@/lib/sqlSyntax';
-import { normalizeNumberString, normalizeToArabicNumber, normalizeForCompare, formatCondition } from '@/lib/normalization';
+import { normalizeNumberString, normalizeToArabicNumber, normalizeForCompare } from '@/lib/normalization';
 import { dbErrorMessage } from '@/lib/supabaseCrud';
 import { showConfirm, showError } from '@/lib/dialog';
 import { TVER_AREA_NAME, type TverProjectDetail } from '@/types/tver-project';
-import { TVER_SUBPLOT_NAME, type OrgTreeTargetPlan, type SavedTargetPlanOption } from '@/types/tver-target';
+import { TVER_SUBPLOT_NAME, type FootprintOption, type OrgTreeTargetPlan, type SavedTargetPlanOption } from '@/types/tver-target';
 import {
-  calculateTargetPlan, upperLimitFrom, TVER_DEFAULT_MAX_PLOT_RAI, TVER_DEFAULT_MAX_PROJECT_RAI,
-  TARGET_YEAR_MIN, TARGET_YEAR_MAX, TARGET_YEAR_DEFAULT, STANDARD_SPACING_M,
+  calculateTargetPlan, cumulativeByYear, upperLimitFrom, TVER_DEFAULT_MAX_PLOT_RAI, TVER_DEFAULT_MAX_PROJECT_RAI,
+  TARGET_YEAR_MIN, TARGET_YEAR_MAX, TARGET_YEAR_DEFAULT,
   type AreaLimit, type PlanInput, type PlanResult,
-} from './calculation';
+} from '@/lib/tverTarget';
 
 // เพดานตามชนิดคอลัมน์ในตาราง (numeric(12,2))
 const MAX_TARGET = 9999999999.99;
 
 const YEAR_OPTIONS = Array.from({ length: TARGET_YEAR_MAX - TARGET_YEAR_MIN + 1 }, (_, i) => TARGET_YEAR_MIN + i);
 
+
+// กฎของช่องปริมาณคาร์บอน (ใช้ทั้งตอนกดบันทึก และตอนเติมช่องผลลัพธ์ทันที)
+const TARGET_LABEL = 'ปริมาณคาร์บอนที่ต้องชดเชย';
+const targetRules = {
+  normalize: normalizeNumberString,
+  rules: [required(TARGET_LABEL), isDecimal(TARGET_LABEL, { allowZero: false, maxDecimals: 2, max: MAX_TARGET })],
+};
+
+// ยอดคาร์บอนฟุตพรินต์ -> ทศนิยม 2 หลัก ปัดขึ้น (ชดเชยไม่ขาด) ใช้ทั้งตอนแสดงในรายการและตอนเติมลงช่อง ให้ตัวเลขตรงกัน toFixed ก่อนกันเศษทศนิยมของคอมพิวเตอร์
+const toTwoDecimalsUp = (n: number) => Math.ceil(Number((n * 100).toFixed(6))) / 100;
+// วันที่ของรายการ -> เดือน/ปี เช่น "ม.ค. 2569"
+const monthYear = (d: string | null) =>
+  d ? new Date(d).toLocaleDateString('th-TH', { month: 'short', year: 'numeric' }) : '';
+
 type TopField = 'projectName' | 'target' | 'year';
+type ErrorField = TopField;
 // ผลที่แสดงอยู่ + ค่าที่ใช้คำนวณ (ผลไม่เปลี่ยนตามฟอร์มจนกว่าจะกดคำนวณใหม่)
 type Shown = { plan: PlanResult; input: PlanInput };
 
@@ -47,20 +63,24 @@ export default function TverTargetClient({
   criteria,
   savedPlans = [],
   existingPlan = null,
+  footprints = [],
 }: {
   orgId: string; // auth.uid() ของบัญชีที่ล็อกอิน
   criteria: TverProjectDetail[];
   savedPlans?: SavedTargetPlanOption[];
   existingPlan?: OrgTreeTargetPlan | null; // มีค่า = เปิดแผนที่บันทึกไว้
+  footprints?: FootprintOption[]; // คาร์บอนฟุตพรินต์ที่องค์กรคำนวณไว้
 }) {
   // เพดานจากเงื่อนไขที่แอดมินตั้ง (ไม่มี -> ค่าตามเกณฑ์ T-VER)
   const plotLimit = upperLimitFrom(criteria, TVER_SUBPLOT_NAME, TVER_DEFAULT_MAX_PLOT_RAI);
   const projectLimit = upperLimitFrom(criteria, TVER_AREA_NAME, TVER_DEFAULT_MAX_PROJECT_RAI);
 
   const [projectName, setProjectName] = useState(existingPlan?.project_name ?? '');
+  // รายการคาร์บอนฟุตพรินต์ใต้ช่องปริมาณคาร์บอน (เปิด/ปิด)
+  const [fpListOpen, setFpListOpen] = useState(false);
   const [target, setTarget] = useState(existingPlan ? String(Number(existingPlan.target_tco2e)) : '');
   const [year, setYear] = useState(String(existingPlan?.target_year ?? TARGET_YEAR_DEFAULT));
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Partial<Record<ErrorField, string>>>({});
   const [savedPlanId, setSavedPlanId] = useState<string | null>(existingPlan?.targetplan_id ?? null);
   const [saving, setSaving] = useState(false);
   const [listMode, setListMode] = useState<'filter' | 'all' | null>(null);
@@ -72,11 +92,31 @@ export default function TverTargetClient({
       targetTco2e: Number(existingPlan.target_tco2e),
       year: existingPlan.target_year,
       maxProjectArea: projectLimit,
+      maxPlotArea: plotLimit,
     };
     return { plan: calculateTargetPlan(input), input };
   });
 
-  const clearError = (key: string) => {
+  // ช่องที่ระบบเติมให้: คำนวณทันทีทุกครั้งที่ปริมาณคาร์บอนหรือปีเปลี่ยน (ค่าไม่ถูกต้อง -> ยังไม่เติม)
+  const liveTarget = validateForm<'target'>({ target }, { target: targetRules });
+  const live: PlanResult | null =
+    liveTarget.ok && YEAR_OPTIONS.includes(Number(year))
+      ? calculateTargetPlan({
+          targetTco2e: normalizeToArabicNumber(liveTarget.clean.target) ?? 0,
+          year: Number(year),
+          maxProjectArea: projectLimit,
+          maxPlotArea: plotLimit,
+        })
+      : null;
+
+  // เลือกรายการคาร์บอนฟุตพรินต์ -> เติมยอด (total_ghg_emission) ลงช่องปริมาณคาร์บอน แล้วยังแก้ต่อได้
+  function chooseFootprint(f: FootprintOption) {
+    setTarget(String(toTwoDecimalsUp(f.amount)));
+    clearError('target');
+    setFpListOpen(false);
+  }
+
+  const clearError = (key: ErrorField) => {
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: '' }));
   };
 
@@ -87,24 +127,18 @@ export default function TverTargetClient({
 
   /* ---------- ตรวจทั้งฟอร์ม แล้วคืนค่าที่พร้อมคำนวณ ---------- */
   function validateAll():
-    | { ok: true; errors: Record<string, string>; clean: Record<TopField, string>; input: PlanInput }
-    | { ok: false; errors: Record<string, string> } {
+    | { ok: true; errors: Partial<Record<ErrorField, string>>; clean: Record<TopField, string>; input: PlanInput }
+    | { ok: false; errors: Partial<Record<ErrorField, string>> } {
     const schema: formSchema<TopField> = {
       projectName: {
         rules: [required('ชื่อโครงการ'), notNumericOnly('ชื่อโครงการ'), maxLength('ชื่อโครงการ', 150), noSqlSyntax('ชื่อโครงการ')],
       },
-      target: {
-        normalize: normalizeNumberString,
-        rules: [
-          required('เป้าหมายการกักเก็บคาร์บอน'),
-          isDecimal('เป้าหมายการกักเก็บคาร์บอน', { allowZero: false, maxDecimals: 2, max: MAX_TARGET }),
-        ],
-      },
+      target: targetRules,
       year: { rules: [requiredSelect('ปีที่สะสม'), existsIn('ปี', YEAR_OPTIONS.map(String))] },
     };
     const top = validateForm<TopField>({ projectName, target, year }, schema);
-    const errs: Record<string, string> = {};
-    if (!top.ok) for (const [k, m] of Object.entries(top.errors)) if (m) errs[k] = m;
+    const errs: Partial<Record<ErrorField, string>> = {};
+    if (!top.ok) for (const [k, m] of Object.entries(top.errors)) if (m) errs[k as TopField] = m;
 
     const hasError = Object.values(errs).some((m) => m);
     if (hasError || !top.ok) return { ok: false, errors: errs };
@@ -114,6 +148,7 @@ export default function TverTargetClient({
       targetTco2e: num(top.clean.target),
       year: Number(top.clean.year),
       maxProjectArea: projectLimit,
+      maxPlotArea: plotLimit,
     };
     return { ok: true, errors: errs, clean: top.clean, input };
   }
@@ -165,7 +200,7 @@ export default function TverTargetClient({
     return true;
   }
 
-  // กดปุ่ม "บันทึกและคำนวณ": ตรวจ -> คำนวณแล้วแสดงผลทันที -> บันทึก
+  // กดปุ่ม "บันทึกและแสดงกราฟ": ตรวจ -> แสดงกราฟทันที -> บันทึก
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const v = validateAll();
@@ -217,7 +252,7 @@ export default function TverTargetClient({
         </Link>
         <h1 className="text-[32px] font-medium text-black">จำลองโครงการ T-VER จากการกักเก็บก๊าซเรือนกระจก</h1>
         <p className="text-base font-medium text-[#6B7280]">
-          กรอกปริมาณคาร์บอนที่ต้องการกักเก็บ ระบบคำนวณว่าต้องปลูกกี่ต้น และต้องใช้พื้นที่เท่าไหร่
+          เลือกคาร์บอนฟุตพรินต์ที่คำนวณไว้ ระบบคำนวณให้ว่าต้องปลูกกี่ต้น ใช้พื้นที่กี่ไร่ และแบ่งเป็นแปลงย่อยกี่แปลง
         </p>
       </div>
 
@@ -303,20 +338,67 @@ export default function TverTargetClient({
             <FieldError message={errors.projectName} />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-[1fr_120px] gap-4">
+            {/* ปริมาณคาร์บอนแบบ combobox: พิมพ์/แก้เองได้ หรือกดลูกศรเลือกจากคาร์บอนฟุตพรินต์ที่คำนวณไว้ (org_activity_list.total_ghg_emission) */}
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-[#374151]">เป้าหมายการกักเก็บ (tCO2e)</label>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={target}
-                onChange={(e) => {
-                  setTarget(e.target.value);
-                  clearError('target');
-                }}
-                placeholder="เช่น 1000"
-                className={inputClass(!!errors.target)}
-              />
+              <label className="block text-sm font-semibold text-[#374151]">ปริมาณที่ต้องชดเชย (tCO2e)</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={target}
+                  onChange={(e) => {
+                    setTarget(e.target.value);
+                    clearError('target');
+                  }}
+                  onBlur={() => setFpListOpen(false)}
+                  onKeyDown={(e) => e.key === 'Escape' && setFpListOpen(false)}
+                  placeholder={footprints.length > 0 ? 'กรอก หรือเลือกจากผลคำนวณ' : 'เช่น 1000'}
+                  autoComplete="off"
+                  className={`${inputClass(!!errors.target)} ${footprints.length > 0 ? 'pr-10' : ''}`}
+                />
+                {footprints.length > 0 && (
+                  <button
+                    type="button"
+                    aria-label="เลือกจากคาร์บอนฟุตพรินต์ที่คำนวณไว้"
+                    // onMouseDown + preventDefault: ไม่ให้ช่อง input เสีย focus (ไม่งั้นรายการปิดก่อน)
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setFpListOpen(!fpListOpen);
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-2 text-[#6B7280] hover:text-[#1F2937]"
+                  >
+                    <ChevronDown />
+                  </button>
+                )}
+                {fpListOpen && (
+                  <ul className="absolute z-20 mt-1 max-h-60 w-[456px] max-w-[calc(100vw-4rem)] overflow-auto rounded-xl border border-[#E5E7EB] bg-white py-1 shadow-lg">
+                    <li className="px-3 py-1.5 text-xs text-[#9CA3AF]">ผลคำนวณคาร์บอนฟุตพรินต์ที่บันทึกไว้</li>
+                    {footprints.map((f) => {
+                      const usable = toTwoDecimalsUp(f.amount) > 0; // ยอด 0 ใช้คำนวณไม่ได้
+                      return (
+                        <li key={f.id}>
+                          <button
+                            type="button"
+                            disabled={!usable}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              if (usable) chooseFootprint(f);
+                            }}
+                            className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-base hover:bg-[#F3F4F6] disabled:cursor-not-allowed disabled:text-[#D1D5DB]"
+                          >
+                            <span className="truncate">
+                              {f.name}
+                              {f.periodDate && <span className="text-[#9CA3AF]"> ({monthYear(f.periodDate)})</span>}
+                            </span>
+                            <span className="shrink-0 tabular-nums text-[#6B7280]">{fmt2(toTwoDecimalsUp(f.amount))} tCO2e</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
               <FieldError message={errors.target} />
             </div>
             <div className="space-y-2">
@@ -334,13 +416,36 @@ export default function TverTargetClient({
             </div>
           </div>
 
+          {/* ช่องที่ระบบเติมให้ (แก้ไม่ได้) */}
+          <div className="space-y-3 rounded-xl border border-[#F3F4F6] bg-[#F9FAFB] p-4">
+            <p className="text-sm font-semibold text-[#374151]">ระบบคำนวณให้</p>
+            <AutoField label="จำนวนต้นไม้ที่ปลูก" value={live ? `${fmtInt(live.treesNeeded)} ต้น` : null} />
+            <AutoField
+              label="พื้นที่ที่ใช้ปลูกต้นไม้ 1 ต้น"
+              value={live ? `${fmtNum(live.areaPerTreeSqm)} ตร.ม.` : null}
+            />
+            <AutoField
+              label="จำนวนไร่รวม"
+              value={live ? `${fmtInt(live.areaRai)} ไร่` : null}
+            />
+            <AutoField
+              label="จำนวนไร่ย่อย"
+              value={live ? `${fmtInt(live.plotCount)} แปลง` : null}
+            />
+            {live && (
+              <p className={`text-sm font-medium ${live.withinLimit ? 'text-[#18794a]' : 'text-red-600'}`}>
+                {live.withinLimit ? '✓ ผ่าน' : '✗ เกิน'}เงื่อนไขพื้นที่โครงการ (พื้นที่โครงการ{plotLimitWords(projectLimit)})
+              </p>
+            )}
+          </div>
+
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="submit"
               disabled={saving}
               className="btn btn-primary w-[239px] h-[60px] rounded-[20px] text-base font-semibold"
             >
-              {saving ? 'กำลังบันทึก...' : 'บันทึกและคำนวณ'}
+              {saving ? 'กำลังบันทึก...' : 'บันทึกและแสดงกราฟ'}
             </button>
             {savedPlanId && (
               <button
@@ -357,20 +462,21 @@ export default function TverTargetClient({
 
         {/* ขวา: ผลลัพธ์ */}
         <div className="bg-white border border-[#F3F4F6] shadow-sm rounded-2xl p-8">
-          <h2 className="text-xl font-bold text-[#1F2937]">ผลการคำนวณ</h2>
+          <h2 className="text-xl font-bold text-[#1F2937]">คาร์บอนที่กักเก็บสะสมรายปี</h2>
+          <p className="text-sm text-[#9CA3AF] mb-6">
+            {shown
+              ? `ต้นไม้ที่ปลูกกักเก็บคาร์บอนถึงปริมาณที่ต้องชดเชยในปีสะสมที่ ${shown.input.year}`
+              : 'ปีที่ 1 ถึงปีสะสมที่เลือก เทียบกับปริมาณที่ต้องชดเชย'}
+          </p>
 
           {!shown && (
             <p className="text-center text-[#9CA3AF] py-20">
-              กรอกข้อมูลด้านซ้ายแล้วกด &quot;บันทึกและคำนวณ&quot; เพื่อดูผลลัพธ์
+              เลือกคาร์บอนฟุตพรินต์ด้านซ้ายแล้วกด &quot;บันทึกและแสดงกราฟ&quot;
             </p>
           )}
 
           {shown && (
-            <ResultPanel
-              shown={shown}
-              plotLimit={plotLimit}
-              projectLimit={projectLimit}
-            />
+            <ResultPanel shown={shown} />
           )}
         </div>
       </div>
@@ -378,48 +484,72 @@ export default function TverTargetClient({
   );
 }
 
-/* ---------- แผงผลลัพธ์ ---------- */
-function ResultPanel({ shown, plotLimit, projectLimit }: { shown: Shown; plotLimit: AreaLimit; projectLimit: AreaLimit }) {
+/* ---------- ข้อความแบ่งแปลง ---------- */
+// เพดานแปลงย่อยแบบคำพูด เช่น "ไม่เกิน 30 ไร่" (ตามเงื่อนไขที่แอดมินตั้ง)
+function plotLimitWords(limit: AreaLimit) {
+  return `${limit.operator === '<' ? 'น้อยกว่า' : 'ไม่เกิน'} ${fmtNum(limit.value)} ไร่`;
+}
+
+/* ---------- ช่องที่ระบบเติมให้ ---------- */
+function AutoField({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-sm text-[#6B7280]">{label}</span>
+        <span className={`text-base font-bold ${value ? 'text-[#16A34A]' : 'text-[#D1D5DB]'}`}>{value ?? '–'}</span>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- กราฟคาร์บอนสะสม ---------- */
+// แสดงเฉพาะปีที่ 1 ถึงปีสะสมที่เลือก ปีก่อนหน้า = เขียวอ่อน / ปีสะสมที่เลือก = เขียวเข้ม
+// ตัวเลขต้น/ไร่/แปลง และผ่านเงื่อนไขไหม อยู่ในช่องที่ระบบเติมให้ด้านซ้ายแล้ว ไม่แสดงซ้ำ
+const BAR_PAST = '#BFE8CF';
+const BAR_CHOSEN = '#16A34A';
+
+function ResultPanel({ shown }: { shown: Shown }) {
   const { plan, input } = shown;
-  // ขนาดแปลงสูงสุดแบบคำพูด เช่น "ไม่เกิน 30 ไร่" (ตามเงื่อนไขที่แอดมินตั้ง)
-  const plotLimitWords = `${plotLimit.operator === '<' ? 'น้อยกว่า' : 'ไม่เกิน'} ${fmtNum(plotLimit.value)} ไร่`;
+  const target = input.targetTco2e;
+  const values = cumulativeByYear(plan.treesNeeded, input.year); // ปีที่ 1 ถึงปีที่เลือก
+  const yMax = Math.max(values[values.length - 1], target) * 1.18; // เผื่อที่ให้ตัวเลขบนแท่ง
+  const pct = (v: number) => (v / yMax) * 100;
 
   return (
-    <div className="space-y-6">
-      {/* ตัวเลขหลัก */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Stat label="จำนวนต้นไม้ที่ต้องปลูก" value={fmtInt(plan.treesNeeded)} unit={`ต้น ในปีสะสมที่ ${input.year}`} />
-        <Stat
-          label="พื้นที่ที่ต้องใช้"
-          value={fmtInt(plan.areaRai)}
-          unit={`ไร่ (ระยะปลูก ${STANDARD_SPACING_M} × ${STANDARD_SPACING_M} ม.`}
-        />
+    <div className="rounded-2xl bg-[#F9FAFB] px-6 pt-8 pb-5">
+      <div className="relative h-[300px]">
+        {/* แท่ง + ตัวเลขบนแท่ง */}
+        <div className="absolute inset-0 z-10 flex items-end justify-around gap-4 border-b border-[#E5E7EB]">
+          {values.map((v, i) => {
+            const isChosen = i + 1 === input.year;
+            return (
+              <div key={i} className="flex h-full max-w-[96px] flex-1 flex-col items-center justify-end">
+                <span className={`mb-2 text-sm tabular-nums ${isChosen ? 'font-bold text-[#1F2937]' : 'text-[#6B7280]'}`}>
+                  {fmtNum(Math.round(v))}
+                </span>
+                <div
+                  className="w-full rounded-t-xl"
+                  style={{ height: `${pct(v)}%`, backgroundColor: isChosen ? BAR_CHOSEN : BAR_PAST }}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      {/* เงื่อนไขพื้นที่โครงการ */}
-      {plan.withinLimit ? (
-        <div className="rounded-xl border border-[#BBE5CF] bg-[#F2F8F5] p-4 text-[#18794a]">
-          <p className="font-semibold">ผ่านเงื่อนไขพื้นที่โครงการ ปลูกได้ถึงเป้าหมาย {fmt2(input.targetTco2e)} tCO2e</p>
-          <p className="mt-1 text-sm">สามารถแบ่งแปลงเองได้ โดยแต่ละแปลงขนาด{plotLimitWords}</p>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
-          <p className="font-semibold">พื้นที่ {fmtInt(plan.areaRai)} ไร่ เกินเงื่อนไขพื้นที่โครงการ</p>
-          <p className="mt-1 text-sm">
-            เงื่อนไขพื้นที่โครงการ {formatCondition(projectLimit.operator, projectLimit.value, 'ไร่')}
-          </p>
-        </div>
-      )}
+      {/* ปี */}
+      <div className="mt-3 flex justify-around gap-4">
+        {values.map((_, i) => (
+          <span
+            key={i}
+            className={`max-w-[96px] flex-1 text-center text-sm ${i + 1 === input.year ? 'font-semibold text-[#16A34A]' : 'text-[#9CA3AF]'}`}
+          >
+            ปีที่ {i + 1}
+          </span>
+        ))}
+      </div>
+      <p className="mt-4 text-center text-xs text-[#9CA3AF]">หน่วย tCO2e สะสม</p>
     </div>
   );
 }
 
-function Stat({ label, value, unit }: { label: string; value: string; unit: string }) {
-  return (
-    <div className="bg-[#F9FAFB] border border-[#F3F4F6] rounded-xl p-4 text-center space-y-1">
-      <p className="text-xs text-[#6B7280]">{label}</p>
-      <p className="text-2xl font-bold text-[#16A34A]">{value}</p>
-      <p className="text-[11px] text-[#9CA3AF]">{unit}</p>
-    </div>
-  );
-}

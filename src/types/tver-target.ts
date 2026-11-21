@@ -20,3 +20,11 @@ export type SavedTargetPlanOption = { targetplan_id: string; project_name: strin
 // ต้องตรงกับในตาราง tver_project_detail ทุกตัวอักษร ถ้าหาไม่เจอจะใช้ค่าตามเกณฑ์ T-VER แทน
 //   พื้นที่โครงการ ใช้ชื่อเดียวกับ TVER_AREA_NAME ใน types/tver-project.ts
 export const TVER_SUBPLOT_NAME = 'ขนาดแปลงย่อย';
+
+// คาร์บอนฟุตพรินต์ที่องค์กรคำนวณและบันทึกไว้ (org_activity_list) ใช้เป็นตัวเลือกปริมาณคาร์บอนที่ต้องชดเชย
+export type FootprintOption = {
+  id: string; // orgactlist_id
+  name: string; // orgact_name
+  amount: number; // total_ghg_emission (tCO2e)
+  periodDate: string | null; // period_date
+};

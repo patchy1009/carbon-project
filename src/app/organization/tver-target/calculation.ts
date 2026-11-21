@@ -1,6 +1,6 @@
 // สูตรของโหมด "จำลองโครงการ T-VER จากการกักเก็บก๊าซเรือนกระจก"
-//   องค์กรกรอกแค่ เป้าหมาย (tCO2e) และปีสะสม t
-//   ระบบตอบว่า ต้องปลูกกี่ต้น ต้องใช้พื้นที่กี่ไร่ และพื้นที่ผ่านเงื่อนไขพื้นที่โครงการไหม
+//   องค์กรเลือกคาร์บอนฟุตพรินต์ที่คำนวณไว้ (หรือกรอกเอง) และปีสะสม t
+//   ระบบตอบว่า ต้องปลูกกี่ต้น ใช้พื้นที่รวมกี่ไร่ แบ่งเป็นแปลงย่อยกี่แปลง ผ่านเงื่อนไขไหม และคาร์บอนสะสมแต่ละปี
 //
 // สูตรหลัก: CTT = T × t × MAI × 10^-3   (T-VER-S-TOOL-01-01, MAI = 9.5 kgCO2/ต้น/ปี)
 //
@@ -9,6 +9,9 @@
 //   2) พื้นที่ต่อต้น        = ระยะปลูกมาตรฐาน 4 × 4 ม. = 16 ตร.ม. (1 ไร่ปลูกได้ 100 ต้น)
 //   3) พื้นที่ที่ต้องใช้    = ⌈จำนวนต้น × พื้นที่ต่อต้น ÷ 1,600⌉ ไร่   (1 ไร่ = 1,600 ตร.ม.)
 //   4) เกณฑ์พื้นที่โครงการ  = พื้นที่ที่ต้องใช้ ต้องไม่เกิน 1,000 ไร่ (ตามเงื่อนไขของแอดมิน)
+//   5) แบ่งแปลงย่อย         = แปลงละไม่เกิน 30 ไร่ (ตามเงื่อนไขของแอดมิน)
+//                            จำนวนแปลง = ⌈พื้นที่ ÷ 30⌉ / แปลงเต็ม 30 ไร่ = ⌊พื้นที่ ÷ 30⌋ / แปลงสุดท้าย = เศษที่เหลือ
+//   6) กราฟคาร์บอนสะสม       = จำนวนต้น × ปีที่ n × MAI × 10^-3  (n = 1-10)
 //
 // การปัดเศษตามหลักความระมัดระวัง (conservativeness): ปัดขึ้นทั้งจำนวนต้นและพื้นที่ ให้ถึงเป้าแน่นอน
 //
@@ -36,6 +39,7 @@ export type PlanInput = {
   targetTco2e: number;
   year: number;
   maxProjectArea: AreaLimit; // เพดานพื้นที่โครงการ (ข้อ 4)
+  maxPlotArea: AreaLimit; // เพดานขนาดแปลงย่อย (ข้อ 5)
 };
 
 export type PlanResult = {
@@ -44,6 +48,10 @@ export type PlanResult = {
   treesPerRai: number; // 1,600 ÷ พื้นที่ต่อต้น
   areaRai: number; // ข้อ 3
   withinLimit: boolean; // ข้อ 4
+  plotSizeRai: number; // ข้อ 5: ขนาดแปลงเต็ม (ไร่)
+  plotCount: number; // ข้อ 5: จำนวนแปลงย่อยทั้งหมด
+  fullPlots: number; // ข้อ 5: จำนวนแปลงที่มีขนาดเต็ม
+  remainderRai: number; // ข้อ 5: ขนาดแปลงสุดท้าย (0 = แบ่งลงตัวทุกแปลง)
 };
 
 /* ---------- เลขจำนวนเต็ม ---------- */
@@ -70,6 +78,21 @@ export function upperLimitFrom(
   return { operator: '<=', value: fallback };
 }
 
+/* ข้อ 5: ขนาดแปลงใหญ่สุดเป็นจำนวนเต็มไร่ที่ผ่านเงื่อนไข ("ไม่เกิน 30" -> 30 / "น้อยกว่า 30" -> 29) อย่างน้อย 1 ไร่ */
+export function maxPlotRai(limit: AreaLimit): number {
+  const size = limit.operator === '<' ? Math.ceil(limit.value) - 1 : Math.floor(limit.value);
+  return Math.max(1, size);
+}
+
+/* ข้อ 6: คาร์บอนสะสม (tCO2e) ของจำนวนต้นนี้ ปีที่ 1 ถึงปีที่ years */
+export function cumulativeByYear(trees: number, years = TARGET_YEAR_MAX): number[] {
+  return Array.from({ length: years }, (_, i) => {
+    // ต้น × ปี × MAI_TENTHS ÷ 10,000 = ต้น × ปี × 9.5 × 10^-3 (คิดเป็นจำนวนเต็มก่อนแล้วค่อยหาร)
+    const tenThousandths = B(trees) * B(i + 1) * MAI_TENTHS;
+    return Number(tenThousandths) / 10000;
+  });
+}
+
 /* คำนวณทั้งแผน (ค่าที่ส่งเข้ามาต้องผ่านการตรวจในฟอร์มแล้ว) */
 export function calculateTargetPlan(input: PlanInput): PlanResult {
   const year = Math.round(input.year);
@@ -78,11 +101,19 @@ export function calculateTargetPlan(input: PlanInput): PlanResult {
   // ข้อ 3: ⌈ต้น × พื้นที่ต่อต้น ÷ 1,600⌉ = ⌈ต้น × units ÷ (10,000 × 1,600)⌉
   const area = ceilDiv(trees * PER_TREE_UNITS, B(10000 * SQM_PER_RAI));
   const areaRai = Number(area);
+  // ข้อ 5: แบ่งแปลงย่อย
+  const plotSizeRai = maxPlotRai(input.maxPlotArea);
+  const fullPlots = Math.floor(areaRai / plotSizeRai);
+  const remainderRai = areaRai - fullPlots * plotSizeRai;
   return {
     treesNeeded: Number(trees),
     areaPerTreeSqm: Number(PER_TREE_UNITS) / 10000,
     treesPerRai: Number(B(SQM_PER_RAI * 10000) / PER_TREE_UNITS),
     areaRai,
     withinLimit: meetsCondition(areaRai, input.maxProjectArea.operator, input.maxProjectArea.value), // ข้อ 4
+    plotSizeRai,
+    plotCount: fullPlots + (remainderRai > 0 ? 1 : 0),
+    fullPlots,
+    remainderRai,
   };
 }

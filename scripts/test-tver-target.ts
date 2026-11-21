@@ -1,10 +1,12 @@
-// ทดสอบสูตรของโหมด "จำลองโครงการ T-VER จากการกักเก็บก๊าซเรือนกระจก" (src/app/organization/tver-target/calculation.ts)
+// ทดสอบสูตรของโหมด "จำลองโครงการ T-VER จากการกักเก็บก๊าซเรือนกระจก" (src/lib/tverTarget.ts)
 // รัน: npx tsx scripts/test-tver-target.ts
 import assert from 'node:assert/strict';
-import { calculateTargetPlan, type AreaLimit } from '../src/app/organization/tver-target/calculation';
+import { calculateTargetPlan, cumulativeByYear, maxPlotRai, type AreaLimit } from '../src/lib/tverTarget';
 
 const LIMIT: AreaLimit = { operator: '<=', value: 1000 };
-const calc = (target: number, year: number) => calculateTargetPlan({ targetTco2e: target, year, maxProjectArea: LIMIT });
+const PLOT: AreaLimit = { operator: '<=', value: 30 };
+const calc = (target: number, year: number) =>
+  calculateTargetPlan({ targetTco2e: target, year, maxProjectArea: LIMIT, maxPlotArea: PLOT });
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -81,8 +83,56 @@ test('เป้าน้อยสุด 0.01 ตัน ปีที่ 10', () =
 });
 
 test('เงื่อนไขแบบ "น้อยกว่า" 1,000 ไร่: 1,000 ไร่พอดีไม่ผ่าน', () => {
-  const r = calculateTargetPlan({ targetTco2e: 2850, year: 3, maxProjectArea: { operator: '<', value: 1000 } });
+  const r = calculateTargetPlan({ targetTco2e: 2850, year: 3, maxProjectArea: { operator: '<', value: 1000 }, maxPlotArea: PLOT });
   assert.equal(r.withinLimit, false);
+});
+
+test('แบ่งแปลง 351 ไร่ = 30 ไร่ × 11 แปลง + 21 ไร่ × 1 แปลง', () => {
+  const r = calc(1000, 3);
+  assert.equal(r.plotSizeRai, 30);
+  assert.equal(r.fullPlots, 11);
+  assert.equal(r.remainderRai, 21);
+  assert.equal(r.plotCount, 12);
+});
+
+test('แบ่งแปลง 18 ไร่ (ไม่ถึง 30) = แปลงเดียว', () => {
+  const r = calc(50, 3);
+  assert.equal(r.fullPlots, 0);
+  assert.equal(r.remainderRai, 18);
+  assert.equal(r.plotCount, 1);
+});
+
+test('แบ่งแปลง 30 ไร่พอดี = 1 แปลงเต็ม ไม่มีเศษ', () => {
+  const r = calc(85.5, 3); // 3,000 ต้น -> 30 ไร่
+  assert.equal(r.areaRai, 30);
+  assert.equal(r.fullPlots, 1);
+  assert.equal(r.remainderRai, 0);
+  assert.equal(r.plotCount, 1);
+});
+
+test('แบ่งแปลง 1,000 ไร่ = 30 ไร่ × 33 แปลง + 10 ไร่', () => {
+  const r = calc(2850, 3);
+  assert.equal(r.fullPlots, 33);
+  assert.equal(r.remainderRai, 10);
+  assert.equal(r.plotCount, 34);
+});
+
+test('ขนาดแปลงตามเงื่อนไขแอดมิน (น้อยกว่า 30 -> 29 / ไม่เกิน 25.5 -> 25)', () => {
+  assert.equal(maxPlotRai({ operator: '<', value: 30 }), 29);
+  assert.equal(maxPlotRai({ operator: '<=', value: 25.5 }), 25);
+  const r = calculateTargetPlan({ targetTco2e: 1000, year: 3, maxProjectArea: LIMIT, maxPlotArea: { operator: '<', value: 30 } });
+  assert.equal(r.fullPlots, 12); // 351 = 29 × 12 + 3
+  assert.equal(r.remainderRai, 3);
+  assert.equal(r.plotCount, 13);
+});
+
+test('กราฟคาร์บอนสะสม 35,088 ต้น: ถึงเป้า 1,000 ตันในปีที่ 3 พอดี', () => {
+  const v = cumulativeByYear(35088);
+  assert.equal(v.length, 10);
+  assert.equal(v[0], 333.336); // 35,088 × 1 × 0.0095
+  assert.equal(v[1], 666.672);
+  assert.equal(v[2], 1000.008); // >= 1,000
+  assert.equal(v[9], 3333.36);
 });
 
 console.log(`\nผ่านทั้งหมด ${passed} กรณี`);

@@ -12,7 +12,6 @@ import {
   validateForm, required, notNumericOnly, maxLength, isDecimal, isDate,
   meetsCondition, type formSchema,
 } from '@/lib/validation';
-import { noSqlSyntax } from '@/lib/sqlSyntax'; // ตรวจ Syntax ป้องกัน SQL Injection
 import { normalizeNumberString, normalizeToArabicNumber, formatCondition } from '@/lib/normalization';
 import { dbErrorMessage } from '@/lib/supabaseCrud';
 import { showError } from '@/lib/dialog'; // กล่องแจ้งเตือนกลางแทน alert
@@ -124,7 +123,7 @@ export default function TverSimulationClient({
   // schema ของทั้งฟอร์ม (ช่องค่าของ criteria สร้างตามที่แอดมินตั้งไว้)
   function buildSchema(): formSchema<string> {
     const schema: formSchema<string> = {
-      projectName: { rules: [required('ชื่อโครงการ'), notNumericOnly('ชื่อโครงการ'), maxLength('ชื่อโครงการ', 150), noSqlSyntax('ชื่อโครงการ')] },
+      projectName: { rules: [required('ชื่อโครงการ'), notNumericOnly('ชื่อโครงการ'), maxLength('ชื่อโครงการ', 150)] },
       startDate: {
         rules: [required('วันที่เริ่มโครงการ'), isDate('วันที่เริ่มโครงการ', { minYear: MIN_START_YEAR, maxYear: MAX_START_YEAR })],
       },
@@ -495,4 +494,4 @@ export default function TverSimulationClient({
       </div>
     </div>
   );
-}
+}
