@@ -392,7 +392,7 @@ function ResultPanel({ shown, plotLimit, projectLimit }: { shown: Shown; plotLim
         <Stat
           label="พื้นที่ที่ต้องใช้"
           value={fmtInt(plan.areaRai)}
-          unit={`ไร่ (ระยะปลูก ${STANDARD_SPACING_M} × ${STANDARD_SPACING_M} ม. ไร่ละ ${fmtInt(plan.treesPerRai)} ต้น)`}
+          unit={`ไร่ (ระยะปลูก ${STANDARD_SPACING_M} × ${STANDARD_SPACING_M} ม.`}
         />
       </div>
 
