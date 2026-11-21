@@ -59,6 +59,12 @@ export function containsSqlSyntax(value : string, opts : { lenient? : boolean } 
     return opts.lenient === true ? false : WEAK.some((re) => re.test(s));
 }
 
+/* ค่า id ที่รับมาทาง URL (?edit= / ?id= / ?project=) ต้องเป็น uuid เท่านั้น
+ * ไม่ใช่ uuid -> ไม่ส่งไปค้นฐานข้อมูลเลย (ใช้แทนการตรวจข้อความ เพราะรู้รูปแบบที่ถูกต้องแน่นอน) */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const isUuid = (value : unknown) : value is string =>
+    typeof value === 'string' && UUID_RE.test(value);
+
 /* กฎของ validateForm: ไม่ผ่านถ้าข้อความมีรูปแบบคำสั่ง SQL (ค่าว่างปล่อยผ่าน ให้ required จัดการ) */
 export const noSqlSyntax = (label : string, opts : { lenient? : boolean } = {}) : fieldRule => {
     return (value : string) : validationResult =>

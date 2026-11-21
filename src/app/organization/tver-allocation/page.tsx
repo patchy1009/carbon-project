@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 import { notFound, redirect } from "next/navigation";
 import { requireOrgId } from "@/lib/auth";
+import { isUuid } from "@/lib/sqlSyntax"; // ตรวจค่าจาก URL ก่อนส่งไปฐานข้อมูล
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getErrorMessage } from "@/lib/errorMessage"; // แปล error ของฐานข้อมูล (ภาษาอังกฤษ) เป็นภาษาไทย
 import AllocationClient, {
@@ -17,8 +18,7 @@ import AllocationClient, {
   type SavedAllocation,
 } from "./allocation";
 
-// ?project= ต้องหน้าตาเป็น uuid เท่านั้น (ค่าอื่นไม่ถูกส่งไปค้นฐานข้อมูล)
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// ?project= ต้องหน้าตาเป็น uuid เท่านั้น (ค่าอื่นไม่ถูกส่งไปค้นฐานข้อมูล) ใช้ isUuid กลางใน lib/sqlSyntax.ts
 
 type ProjectRow = { orgtreeproject_id: string; project_name: string | null; credit_year_1: number | string | null };
 type ActivityRow = {
@@ -41,7 +41,7 @@ export default async function TverAllocationPage({
 
   // ยังไม่ได้เลือกโครงการ -> ไปเลือก/สร้างที่หน้าจำลองโครงการก่อน
   if (!requestedProject) redirect("/organization/tver-simulation");
-  if (typeof requestedProject !== "string" || !UUID_RE.test(requestedProject)) notFound();
+  if (!isUuid(requestedProject)) notFound();
 
   // โครงการต้องเป็นขององค์กรนี้เท่านั้น
   const projectRes = await supabase

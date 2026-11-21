@@ -7,7 +7,17 @@
 
 const keyOf = (scope: string) => `footprint:office-draft:${scope}`;
 
-export type OfficeDraft = Record<string, string>; // key = info_id, value = ค่าที่ normalize แล้ว
+export type OfficeDraft = Record<string, string>; // key = info_id (หรือ qtyKey), value = ค่าที่ normalize แล้ว
+
+/* หัวข้อแบบตัวเลือกที่กรอกจำนวน: 1 ค่าต่อ 1 ตัวเลือก ใช้ key 'qty:<info_id>:<option_id>'
+ * ตอนบันทึก (FootprintClient -> saveOfficeInfo) แยก key แบบนี้ออกไปเก็บที่ org_office_info_option */
+const QTY_PREFIX = 'qty:';
+export const qtyKey = (infoId: string, optionId: string) => `${QTY_PREFIX}${infoId}:${optionId}`;
+export function parseQtyKey(key: string): { infoId: string; optionId: string } | null {
+  if (!key.startsWith(QTY_PREFIX)) return null;
+  const [infoId, optionId] = key.slice(QTY_PREFIX.length).split(':');
+  return infoId && optionId ? { infoId, optionId } : null;
+}
 
 /* scope: 'new' หรือ orgactlist_id ของรายการที่แก้ไข */
 export const draftScope = (editId: string | null | undefined) => editId ?? 'new';

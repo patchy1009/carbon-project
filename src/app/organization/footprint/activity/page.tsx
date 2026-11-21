@@ -2,6 +2,8 @@ export const dynamic = 'force-dynamic';
 
 import { createSupabaseServer } from '@/lib/supabaseServer';
 import { requireOrgId } from '@/lib/auth';
+import { notFound } from 'next/navigation';
+import { isUuid } from '@/lib/sqlSyntax'; // ตรวจค่าจาก URL ก่อนส่งไปฐานข้อมูล
 import FootprintClient from './FootprintClient';
 import type { CarbonScope } from '@/types/activity-management';
 import type { ActivityDetailWithValues, ActivityGroup, ScopeGroup } from '@/types/footprint';
@@ -33,6 +35,8 @@ export default async function FootprintActivityPage({
   const orgId = await requireOrgId(); // org_id = auth.uid() ของบัญชีที่ล็อกอิน
   const supabase = await createSupabaseServer();
   const { edit } = await searchParams;
+  // ?edit= ต้องเป็น uuid เท่านั้น (ค่าอื่นไม่ส่งไปค้นฐานข้อมูล) -> หน้า 404
+  if (edit !== undefined && !isUuid(edit)) notFound();
 
   // รายการที่ให้กรอกตามสโคป (ดึงจาก activity_detail ที่แอดมินเพิ่มไว้)
   const DETAIL_COLS = `

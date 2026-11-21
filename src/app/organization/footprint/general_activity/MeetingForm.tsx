@@ -11,6 +11,7 @@ import { useState, useEffect, useRef } from "react";
 import { AlertCircle, Plus, Trash2 } from "lucide-react";
 import { showConfirm } from "@/lib/dialog"; // กล่องยืนยันของระบบ (แทน confirm ของเบราว์เซอร์)
 import { supabase } from "@/lib/supabaseClient";
+import { containsSqlSyntax } from "@/lib/sqlSyntax"; // ตรวจ Syntax ป้องกัน SQL Injection
 import { getErrorMessage } from "@/lib/errorMessage";
 import { evKwhPerKmToPer100, evPer100ToKwhPerKm, VEHICLE_OPTIONS, FUEL_OPTIONS_MAP } from "./calculation";
 
@@ -251,6 +252,11 @@ export default function MeetingForm({ orgId, initialData, onDataChange, fetchEle
   const handleDeleteActivity = async () => {
     if (!meetingName.trim()) return;
     setActionError("");
+    // ชื่อที่พิมพ์ใช้เป็นเงื่อนไขการลบ -> ตรวจ Syntax คล้ายคำสั่ง SQL ก่อนส่งไปฐานข้อมูล
+    if (containsSqlSyntax(meetingName)) {
+      setActionError("ชื่อการประชุม / กิจกรรม มีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่");
+      return;
+    }
     if (!(await showConfirm(`คุณต้องการลบกิจกรรม "${meetingName}" ออกจากระบบใช่หรือไม่?`, { danger: true }))) return;
 
     try {

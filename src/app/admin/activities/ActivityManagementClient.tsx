@@ -186,6 +186,9 @@ export default function ActivityManagementClient({
       'กิจกรรม'
     );
     if (inUse) return;
+    // แนวทางลดคาร์บอนที่ใช้ "ทั้ง Scope" นี้เป็นฐานของ % -> ห้ามลบ (supabase/recommendation_base_level.sql)
+    if (await blockIfInUse('carbon_reduction_recommendation', 'base_scope_id', id, 0,
+      `ขอบเขต "Scope ${scope?.scope_number ?? ''}"`, 'แนวทางลดคาร์บอนที่ใช้เป็นฐาน')) return;
 
     const ok = await deleteRecord(
       'carbon_scope',  // ชื่อตาราง
@@ -259,6 +262,9 @@ export default function ActivityManagementClient({
       `กิจกรรม "${name}"`, 'รายละเอียดกิจกรรม'
     );
     if (inUse) return;
+    // แนวทางลดคาร์บอนที่ใช้ "ทั้งกิจกรรม" นี้เป็นฐานของ % -> ห้ามลบ (supabase/recommendation_base_level.sql)
+    if (await blockIfInUse('carbon_reduction_recommendation', 'base_activity_id', id, 0,
+      `กิจกรรม "${name}"`, 'แนวทางลดคาร์บอนที่ใช้เป็นฐาน')) return;
 
     const ok = await deleteRecord(
       'activity',  // ชื่อตาราง

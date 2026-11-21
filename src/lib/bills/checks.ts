@@ -5,6 +5,7 @@
  * เดิมตรวจซ้ำกับตาราง org_bill_file -> ตอนนี้ตรวจซ้ำกับบิลอื่นที่แนบในหน้านี้ (ไม่เก็บบิลลง DB แล้ว) */
 import { normalizeForCompare, normalizeNumberString } from '@/lib/normalization';
 import { isDecimal } from '@/lib/validation';
+import { containsSqlSyntax } from '@/lib/sqlSyntax'; // ตรวจ Syntax ป้องกัน SQL Injection
 import { monthLabel } from './dates';
 import { unitFactor } from './units';
 import {
@@ -72,6 +73,11 @@ export function checkBill(it: PendingBill, ctx: CheckContext): Check[] {
   else if (!qtyResult.ok) add('fail', 'QTY_INVALID', qtyResult.message);
   else if (it.billType && Number(normalizeNumberString(it.quantity)) > HIGH[it.billType]) {
     add('warn', 'QTY_HIGH', 'ปริมาณสูงผิดปกติ ตรวจจุดทศนิยมและหน่วยอีกครั้ง');
+  }
+
+  // 3.1) เลขที่บิล (ผู้ใช้แก้เองได้): ห้ามมี Syntax คล้ายคำสั่ง SQL
+  if (containsSqlSyntax(it.billNumber)) {
+    add('fail', 'BILL_NO_SQL', 'เลขที่บิลมีรูปแบบที่ไม่อนุญาต (คล้ายคำสั่ง SQL) กรุณากรอกใหม่');
   }
 
   // 4) ชนิดน้ำมัน (บิลน้ำมันต้องรู้ชนิด เพราะแต่ละชนิดเติมคนละช่อง)
